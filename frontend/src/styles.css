@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+/* Operasyon konsolu teması */
+:root {
+  --risk-dusuk: #3b82f6;
+  --risk-orta: #eab308;
+  --risk-yuksek: #f97316;
+  --risk-kritik: #ef4444;
+}
+
+body {
+  @apply bg-zinc-950 text-zinc-200 antialiased;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.panel {
+  @apply rounded-lg border border-zinc-800 bg-zinc-900/60 flex flex-col overflow-hidden;
+}
+
+.panel-title {
+  @apply px-3 py-2 text-xs font-semibold uppercase tracking-wider text-zinc-400 border-b border-zinc-800 shrink-0;
+}
+
+.risk-dusuk { color: var(--risk-dusuk); border-color: var(--risk-dusuk); }
+.risk-orta { color: var(--risk-orta); border-color: var(--risk-orta); }
+.risk-yuksek { color: var(--risk-yuksek); border-color: var(--risk-yuksek); }
+.risk-kritik { color: var(--risk-kritik); border-color: var(--risk-kritik); }

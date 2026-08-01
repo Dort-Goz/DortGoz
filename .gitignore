@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Data & runs — clips never enter the repo (see datasets policy)
+media/*
+!media/.gitkeep
+runs/
+*.jsonl
+!backend/dortgoz/mock/sample_events.jsonl
+
+# Local
+.env
+*.db
+.DS_Store
