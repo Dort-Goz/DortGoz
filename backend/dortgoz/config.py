@@ -22,7 +22,11 @@ class Settings(BaseSettings):
     media_dir: Path = Path(__file__).resolve().parents[2] / "media"
     runs_dir: Path = Path(__file__).resolve().parents[2] / "runs"
 
-    model_config = {"env_prefix": "DORTGOZ_"}
+    model_config = {
+        "env_prefix": "DORTGOZ_",
+        "env_file": str(Path(__file__).resolve().parents[2] / ".env"),
+        "extra": "ignore",
+    }
 
 
 settings = Settings()
