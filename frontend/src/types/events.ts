@@ -10,12 +10,18 @@ export interface BoundingBox {
   conf?: number | null;
 }
 
+export interface WindowEvent {
+  t: number;
+  desc: string;
+  severity_hint: Risk;
+}
+
 export interface WindowReport {
   type: "window_report";
   window_start: number;
   window_end: number;
   summary: string;
-  events: { t: number; desc: string; severity_hint?: string }[];
+  events: WindowEvent[];
   uncertainties: string[];
 }
 

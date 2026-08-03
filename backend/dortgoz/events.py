@@ -25,6 +25,14 @@ class BoundingBox(BaseModel):
     conf: float | None = None
 
 
+class WindowEvent(BaseModel):
+    """Pencere içinde tespit edilen tek olay — GBNF şemasının yaprak düğümü."""
+
+    t: float                          # video zamanı (sn)
+    desc: str                         # Türkçe kısa betim
+    severity_hint: Risk               # modelin ilk risk sezgisi (defter yeniden değerlendirir)
+
+
 class WindowReport(BaseModel):
     """Bir 30 sn'lik pencerenin VLM yorumu (şema-garantili JSON'dan)."""
 
@@ -32,7 +40,7 @@ class WindowReport(BaseModel):
     window_start: float
     window_end: float
     summary: str                      # Türkçe pencere özeti
-    events: list[dict[str, Any]] = [] # {t, desc, severity_hint}
+    events: list[WindowEvent] = []
     uncertainties: list[str] = []
 
 

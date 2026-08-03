@@ -1,0 +1,116 @@
+"""Koşu orkestrasyonu — bir videoyu uçtan uca işleyip olay akışına yazar.
+
+Hafta 1 hattı:  alım → hareket profili → pencereleme → kare seçimi → tek VLM
+çağrısı → şema-geçerli WindowReport. Algı katmanı (hafta 2) araya `meta` olarak
+girecek; imzalar bunun için hazır.
+
+Her koşu ayrıca `runs/<run_id>.jsonl` olarak diske yazılır — `/api/runs` bunu
+listeler, `ws.replay_jsonl` yeniden oynatabilir (demo ve regresyon için).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from pathlib import Path
+
+from ..config import settings
+from ..events import AgentStep, Event, RunStatus, WindowReport
+from ..ws import ConnectionManager
+from . import ingest, windowing
+from .interpret import interpret_window
+
+
+def resolve_media(video: str) -> Path:
+    """`/media` altındaki göreli yolu güvenle çözer (dizin dışına çıkışı reddeder)."""
+    root = settings.media_dir.resolve()
+    path = (root / video.lstrip("/")).resolve()
+    if not path.is_relative_to(root):
+        raise ValueError(f"medya kökü dışında: {video}")
+    if not path.is_file():
+        raise FileNotFoundError(f"video bulunamadı: {video}")
+    return path
+
+
+class RunRecorder:
+    """Koşu olaylarını hem WS'e yayınlar hem JSONL'e yazar."""
+
+    def __init__(self, manager: ConnectionManager, run_id: str) -> None:
+        self.manager = manager
+        self.path = settings.runs_dir / f"{run_id}.jsonl"
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._fh = self.path.open("w", encoding="utf-8")
+
+    async def emit(self, payload) -> None:
+        event = Event.wrap(payload)
+        await self.manager.broadcast(event)
+        self._fh.write(event.model_dump_json() + "\n")
+        self._fh.flush()
+
+    def close(self) -> None:
+        self._fh.close()
+
+
+async def run_video(manager: ConnectionManager, video: str, run_id: str) -> None:
+    """Bir videoyu işler; iptal edilirse (stop_run) durumu temiz bırakır."""
+    rec = RunRecorder(manager, run_id)
+    try:
+        path = resolve_media(video)
+
+        await rec.emit(RunStatus(run_id=run_id, state="processing", detail=video))
+        await rec.emit(AgentStep(node="perceive", status="start", detail="hareket profili"))
+        duration = await ingest.probe_duration(path)
+        profile = await ingest.motion_profile(path, settings.base_fps)
+        gate = (ingest.adaptive_gate(profile, minimum=settings.motion_gate)
+                if settings.motion_gate_adaptive else settings.motion_gate)
+        await rec.emit(AgentStep(
+            node="perceive", status="end",
+            detail=f"{duration:.0f} sn, {len(profile)} örnek, "
+                   f"taban {ingest.noise_floor(profile):.4f} → eşik {gate:.4f}",
+        ))
+
+        wins = windowing.windows(duration, settings.window_seconds)
+        for idx, (start, end) in enumerate(wins):
+            peak = windowing.window_motion(profile, start, end)
+            if peak < gate:
+                # Sert eleme yalnız burada: hareketsiz pencere VLM'e hiç gitmez
+                await rec.emit(AgentStep(
+                    node="interpret", status="end",
+                    detail=f"{start:.0f}-{end:.0f} sn atlandı (etkinlik {peak:.4f} < {gate:.4f})",
+                ))
+            else:
+                await rec.emit(AgentStep(
+                    node="interpret", status="start",
+                    detail=f"{start:.0f}-{end:.0f} sn (etkinlik {peak:.3f})",
+                ))
+                keyframes = windowing.select_keyframes(
+                    profile, start, end, settings.keyframes_per_window
+                )
+                report = await interpret_window(path, (start, end), keyframes)
+                await rec.emit(report)
+                await rec.emit(AgentStep(
+                    node="interpret", status="end",
+                    detail=f"{len(report.events)} olay",
+                ))
+            await rec.emit(RunStatus(
+                run_id=run_id, state="processing", progress=(idx + 1) / len(wins),
+            ))
+
+        await rec.emit(RunStatus(run_id=run_id, state="done", progress=1.0))
+    except asyncio.CancelledError:
+        await rec.emit(RunStatus(run_id=run_id, state="idle", detail="operatör durdurdu"))
+        raise
+    except Exception as exc:                       # hattın hatası operatöre görünür olmalı
+        await rec.emit(AgentStep(node="interpret", status="error", detail=str(exc)[:300]))
+        await rec.emit(RunStatus(run_id=run_id, state="error", detail=str(exc)[:300]))
+    finally:
+        rec.close()
+
+
+def load_run(run_id: str) -> list[dict]:
+    """Kayıtlı koşuyu JSONL'den okur (`/api/runs/{run_id}`)."""
+    path = settings.runs_dir / f"{run_id}.jsonl"
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+__all__ = ["run_video", "resolve_media", "load_run", "RunRecorder", "WindowReport"]

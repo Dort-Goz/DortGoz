@@ -18,6 +18,16 @@ class Settings(BaseSettings):
     mock: bool = False           # DORTGOZ_MOCK=1 → model/GPU olmadan mock olay akışı
     mock_speed: float = 1.0      # mock yeniden oynatma hız çarpanı
 
+    # İşleme hattı
+    base_fps: float = 1.0        # hareket profili tarama hızı
+    window_seconds: float = 30.0
+    keyframes_per_window: int = 6
+    # Eleme eşiği: uyarlanabilir mod kameranın kendi gürültü tabanından türetir
+    # (sabit küresel eşik farklı kameralara hizmet edemiyordu — 2026-08-03 ölçümü)
+    motion_gate_adaptive: bool = True
+    motion_gate: float = 0.004   # uyarlanabilir mod kapalıysa sabit eşik / taban
+    interpret_max_tokens: int = 700
+
     # Yollar
     media_dir: Path = Path(__file__).resolve().parents[2] / "media"
     runs_dir: Path = Path(__file__).resolve().parents[2] / "runs"
