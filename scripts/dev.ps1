@@ -5,6 +5,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Winget/Bun/uv kurulumlarından sonra açık kalan PowerShell, güncel kullanıcı
+# PATH'ini miras almaz. Launcher her açılışta kayıtlı PATH'i yeniden yükler.
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+$machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+$env:PATH = "$userPath;$machinePath;$env:PATH"
+
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $BackendDir = Join-Path $Root "backend"
 $FrontendDir = Join-Path $Root "frontend"
@@ -44,6 +50,9 @@ $bunPath = Resolve-Executable -Name "bun" -Fallbacks @(
     (Join-Path $env:USERPROFILE ".bun\bin\bun.exe")
 )
 
+$null = Resolve-Executable -Name "ffmpeg"
+$null = Resolve-Executable -Name "ffprobe"
+
 if (-not (Test-Path -LiteralPath $BackendDir)) {
     throw "Backend klasörü bulunamadı: $BackendDir"
 }
@@ -61,7 +70,9 @@ $backendJob = Start-Job -Name "dortgoz-backend" -ArgumentList $BackendDir, $uvPa
     } else {
         Remove-Item Env:DORTGOZ_MOCK -ErrorAction SilentlyContinue
     }
-    & $UvExecutable run uvicorn dortgoz.main:app --reload --host 0.0.0.0 --port 8000
+    # Windows'ta uvicorn --reload SelectorEventLoop kullanır; asyncio subprocess
+    # (ffmpeg/ffprobe) desteklenmediği için video hattı NotImplementedError ile düşer.
+    & $UvExecutable run uvicorn dortgoz.main:app --host 0.0.0.0 --port 8000
 }
 
 $frontendJob = Start-Job -Name "dortgoz-frontend" -ArgumentList $FrontendDir, $bunPath -ScriptBlock {

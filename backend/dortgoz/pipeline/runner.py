@@ -146,8 +146,9 @@ async def run_video(manager: ConnectionManager, video: str, run_id: str) -> None
         await rec.emit(RunStatus(run_id=run_id, state="idle", detail="operatör durdurdu"))
         raise
     except Exception as exc:                       # hattın hatası operatöre görünür olmalı
-        await rec.emit(AgentStep(node="interpret", status="error", detail=str(exc)[:300]))
-        await rec.emit(RunStatus(run_id=run_id, state="error", detail=str(exc)[:300]))
+        detail = f"{type(exc).__name__}: {exc}"[:300]
+        await rec.emit(AgentStep(node="interpret", status="error", detail=detail))
+        await rec.emit(RunStatus(run_id=run_id, state="error", detail=detail))
     finally:
         rec.close()
 
