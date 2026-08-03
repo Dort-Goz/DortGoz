@@ -5,7 +5,9 @@ import type { TraceEntry } from "../state";
  *  Jüri açıklanabilirlik kriterinin görünür yüzü. */
 export default function AgentTrace({ entries }: { entries: TraceEntry[] }) {
   const endRef = useRef<HTMLDivElement>(null);
-  useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), [entries.length]);
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [entries.length]);
 
   return (
     <div className="panel h-full">

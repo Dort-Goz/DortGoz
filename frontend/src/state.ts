@@ -1,6 +1,6 @@
 import type {
   ActuatorRequest, ActuatorResult, AgentStep, ChatMessage, Event,
-  IncidentUpdate, RunStatus, ToolCall,
+  IncidentUpdate, RunStatus, ToolCall, WindowReport,
 } from "./types/events";
 
 export interface TraceEntry {
@@ -12,6 +12,7 @@ export interface TraceEntry {
 
 export interface ConsoleState {
   incidents: IncidentUpdate[];
+  reports: WindowReport[];
   trace: TraceEntry[];
   chat: ChatMessage[];
   actuatorRequests: ActuatorRequest[];
@@ -19,10 +20,12 @@ export interface ConsoleState {
   runStatus: RunStatus | null;
   highlight: IncidentUpdate | null;
   seekTo: number | null;
+  video: string | null;
 }
 
 export const initialState: ConsoleState = {
   incidents: [],
+  reports: [],
   trace: [],
   chat: [],
   actuatorRequests: [],
@@ -30,13 +33,26 @@ export const initialState: ConsoleState = {
   runStatus: null,
   highlight: null,
   seekTo: null,
+  video: null,
 };
 
-export type Action = { kind: "event"; event: Event };
+export type Action =
+  | { kind: "event"; event: Event }
+  | { kind: "run_started"; video: string };
 
 export function consoleReducer(state: ConsoleState, action: Action): ConsoleState {
+  if (action.kind === "run_started") {
+    // Yeni koşu önceki koşunun kalıntılarını taşımamalı
+    return {
+      ...initialState,
+      chat: state.chat,          // sohbet geçmişi koşudan bağımsız
+      video: action.video,
+    };
+  }
   const { seq, payload: p } = action.event;
   switch (p.type) {
+    case "window_report":
+      return { ...state, reports: [...state.reports, p] };
     case "incident_update": {
       const others = state.incidents.filter((i) => i.incident_id !== p.incident_id);
       return { ...state, incidents: [...others, p].sort((a, b) => a.t - b.t) };

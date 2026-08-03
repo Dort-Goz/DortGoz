@@ -2,10 +2,10 @@ import { useEffect, useRef } from "react";
 import type { IncidentUpdate } from "../types/events";
 
 /** Video + canvas kaplaması. Ajan seek_video/highlight_incident komutlarına tepki verir.
- *  Video kaynağı /media/sample.mp4 — yoksa koyu zemin üzerinde bilgi gösterilir. */
+ *  Kaynak, koşuya alınan `/media` altındaki klip; koşu yoksa bilgi gösterilir. */
 export default function VideoPanel({
-  highlight, seekTo,
-}: { highlight: IncidentUpdate | null; seekTo: number | null }) {
+  highlight, seekTo, video,
+}: { highlight: IncidentUpdate | null; seekTo: number | null; video: string | null }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -48,17 +48,20 @@ export default function VideoPanel({
         )}
       </div>
       <div className="relative flex-1 bg-black flex items-center justify-center">
-        <video
-          ref={videoRef}
-          src="/media/sample.mp4"
-          controls
-          className="max-h-full max-w-full"
-          onError={(e) => ((e.target as HTMLVideoElement).style.display = "none")}
-        />
+        {video ? (
+          <video
+            key={video}
+            ref={videoRef}
+            src={`/media/${video}`}
+            controls
+            className="max-h-full max-w-full"
+          />
+        ) : (
+          <span className="text-xs text-zinc-600">
+            Koşu başlatın — üst çubuktan bir klip seçip “Başlat”a basın.
+          </span>
+        )}
         <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none" />
-        <span className="absolute bottom-2 right-3 text-xs text-zinc-600">
-          media/sample.mp4 yoksa yalnızca olay akışı görüntülenir
-        </span>
       </div>
     </div>
   );
