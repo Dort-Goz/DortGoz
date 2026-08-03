@@ -61,14 +61,14 @@ $backendJob = Start-Job -Name "dortgoz-backend" -ArgumentList $BackendDir, $uvPa
     } else {
         Remove-Item Env:DORTGOZ_MOCK -ErrorAction SilentlyContinue
     }
-    & $UvExecutable run uvicorn dortgoz.main:app --reload --port 8000
+    & $UvExecutable run uvicorn dortgoz.main:app --reload --host 0.0.0.0 --port 8000
 }
 
 $frontendJob = Start-Job -Name "dortgoz-frontend" -ArgumentList $FrontendDir, $bunPath -ScriptBlock {
     param($WorkingDirectory, $BunExecutable)
 
     Set-Location $WorkingDirectory
-    & $BunExecutable run dev
+    & $BunExecutable run dev -- --host 0.0.0.0
 }
 
 $jobs = @($backendJob, $frontendJob)
