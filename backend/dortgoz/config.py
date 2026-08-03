@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # Model uçları (OpenAI-uyumlu)
-    llama_base_url: str = "http://127.0.0.1:8080/v1"   # model sunucusu (ana VLM + ajan)
+    llama_base_url: str = "http://127.0.0.1:8080/v1"   # model sunucusu (ana VLM + ajan; eski proxy emekli 2026-08-03)
     vllm_base_url: str = "http://127.0.0.1:8001/v1"    # RTX 4060 vLLM (MiniCPM-V ön eleme)
     api_key: str = "local"
 
