@@ -38,9 +38,15 @@ export const initialState: ConsoleState = {
 
 export type Action =
   | { kind: "event"; event: Event }
-  | { kind: "run_started"; video: string };
+  | { kind: "run_started"; video: string }
+  | { kind: "select_incident"; incident: IncidentUpdate };
 
 export function consoleReducer(state: ConsoleState, action: Action): ConsoleState {
+  if (action.kind === "select_incident") {
+    // Operatör olaya tıkladı → videoyu o ana sar + kutuları vurgula.
+    // (Ajan da aynı duruma `ui_command` ile ulaşır — iki yol tek state'e bağlı.)
+    return { ...state, highlight: action.incident, seekTo: action.incident.t };
+  }
   if (action.kind === "run_started") {
     // Yeni koşu önceki koşunun kalıntılarını taşımamalı
     return {

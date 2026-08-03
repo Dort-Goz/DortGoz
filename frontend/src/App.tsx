@@ -90,6 +90,17 @@ export default function App() {
         </div>
       </header>
 
+      {/* Koşunun nihai kararı — hangi sınıf, hangi risk (backend: RunContext.verdict) */}
+      {run?.state === "done" && run.detail && (
+        <div className="shrink-0 rounded-lg border border-emerald-900/60 bg-emerald-950/30
+                        px-3 py-2 text-sm text-emerald-200 flex items-center gap-2">
+          <span className="text-[10px] uppercase tracking-wide font-bold text-emerald-500">
+            Karar
+          </span>
+          {run.detail}
+        </div>
+      )}
+
       {/* Ana ızgara */}
       <div className="flex-1 grid grid-cols-3 grid-rows-2 gap-2 min-h-0">
         <div className="col-span-2 row-span-1 min-h-0">
@@ -100,6 +111,7 @@ export default function App() {
             incidents={state.incidents}
             reports={state.reports}
             highlightId={state.highlight?.incident_id}
+            onSelect={(incident) => dispatch({ kind: "select_incident", incident })}
           />
         </div>
         <div className="min-h-0">

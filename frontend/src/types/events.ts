@@ -3,6 +3,11 @@
 
 export type Risk = "dusuk" | "orta" | "yuksek" | "kritik";
 
+/** A1 kararının olay taksonomisi; `bilinmeyen` = A1'deki `unknown_anomaly`. */
+export type AnomalyType =
+  | "kavga" | "saldiri" | "hirsizlik" | "silahli_olay" | "yangin"
+  | "patlama" | "arac_kazasi" | "vandalizm" | "normal" | "bilinmeyen";
+
 export interface BoundingBox {
   x1: number; y1: number; x2: number; y2: number;
   label: string;
@@ -20,6 +25,7 @@ export interface WindowReport {
   type: "window_report";
   window_start: number;
   window_end: number;
+  anomaly_type: AnomalyType;
   summary: string;
   events: WindowEvent[];
   uncertainties: string[];
@@ -46,6 +52,7 @@ export interface IncidentUpdate {
   t: number;
   phase: "basladi" | "gelisiyor" | "sonuclandi";
   title: string;
+  anomaly_type: AnomalyType;
   risk: Risk;
   detail: string;
   thumbnail?: string | null;
