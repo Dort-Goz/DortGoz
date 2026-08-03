@@ -14,11 +14,26 @@ import asyncio
 import json
 from pathlib import Path
 
+from ..agent.memory import RISK_ORDER, Ledger
 from ..config import settings
 from ..events import AgentStep, Event, RunStatus, WindowReport
 from ..ws import ConnectionManager
 from . import ingest, windowing
 from .interpret import interpret_window
+
+THUMB_DIR = "_thumbs"       # media/ altında; /media mount'u üzerinden servis edilir
+
+
+async def save_thumbnail(video: Path, t: float, run_id: str, name: str) -> str | None:
+    """Olayın tepe anından küçük resim yazar; `/media/...` altında URL döndürür."""
+    try:
+        jpeg = await ingest.grab_frame(video, t, width=320)
+    except ingest.FFmpegError:
+        return None
+    out = settings.media_dir / THUMB_DIR / run_id
+    out.mkdir(parents=True, exist_ok=True)
+    (out / f"{name}.jpg").write_bytes(jpeg)
+    return f"/media/{THUMB_DIR}/{run_id}/{name}.jpg"
 
 
 def resolve_media(video: str) -> Path:
@@ -54,6 +69,7 @@ class RunRecorder:
 async def run_video(manager: ConnectionManager, video: str, run_id: str) -> None:
     """Bir videoyu işler; iptal edilirse (stop_run) durumu temiz bırakır."""
     rec = RunRecorder(manager, run_id)
+    ledger = Ledger()
     try:
         path = resolve_media(video)
 
@@ -78,6 +94,10 @@ async def run_video(manager: ConnectionManager, video: str, run_id: str) -> None
                     node="interpret", status="end",
                     detail=f"{start:.0f}-{end:.0f} sn atlandı (etkinlik {peak:.4f} < {gate:.4f})",
                 ))
+                # Ölü pencere süregelen olayı da sonlandırır (olaysız pencere = kapanış)
+                for update in ledger.ingest(WindowReport(
+                        window_start=start, window_end=end, summary="")):
+                    await rec.emit(update)
             else:
                 await rec.emit(AgentStep(
                     node="interpret", status="start",
@@ -92,10 +112,28 @@ async def run_video(manager: ConnectionManager, video: str, run_id: str) -> None
                     node="interpret", status="end",
                     detail=f"{len(report.events)} olay",
                 ))
+
+                # Defter: ciddi olayları yaşam döngüsüyle olaya dönüştürür
+                await rec.emit(AgentStep(node="ledger", status="start"))
+                serious = ledger.serious(report)
+                thumb = None
+                if serious and ledger.open_incident is None:
+                    # Şiddet sıralaması RISK_ORDER'dan gelir — sözcük sırası değil
+                    peak = max(serious, key=lambda e: RISK_ORDER.index(e.severity_hint))
+                    thumb = await save_thumbnail(path, peak.t, run_id,
+                                                 f"{int(start)}")
+                for update in ledger.ingest(report, thumb):
+                    await rec.emit(update)
+                await rec.emit(AgentStep(
+                    node="ledger", status="end",
+                    detail=f"{len(ledger.incidents)} olay defterde",
+                ))
             await rec.emit(RunStatus(
                 run_id=run_id, state="processing", progress=(idx + 1) / len(wins),
             ))
 
+        for update in ledger.finalize():       # video biterken açık kalan olayı kapat
+            await rec.emit(update)
         await rec.emit(RunStatus(run_id=run_id, state="done", progress=1.0))
     except asyncio.CancelledError:
         await rec.emit(RunStatus(run_id=run_id, state="idle", detail="operatör durdurdu"))
