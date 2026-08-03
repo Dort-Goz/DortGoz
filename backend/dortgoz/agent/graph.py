@@ -39,6 +39,9 @@ async def run_chat(text: str, manager: ConnectionManager) -> None:
                   {"role": "user", "content": text}],
         stream=True,
         max_tokens=512,
+        # Düşünme modu açıkken bütçenin tamamı reasoning_content'e gidip
+        # delta.content boş kalabiliyordu → operatör boş yanıt görüyordu.
+        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )
     async for chunk in stream:
         delta = chunk.choices[0].delta.content or ""
