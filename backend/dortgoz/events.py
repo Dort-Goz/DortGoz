@@ -14,6 +14,13 @@ from pydantic import BaseModel, Field
 
 Risk = Literal["dusuk", "orta", "yuksek", "kritik"]
 
+# A1 kararının olay taksonomisi (UCF-Crime sınıflarını kapsar).
+# `bilinmeyen` = A1'deki `unknown_anomaly`: dikkat gerektiriyor ama sınıfa oturmuyor.
+AnomalyType = Literal[
+    "kavga", "saldiri", "hirsizlik", "silahli_olay", "yangin",
+    "patlama", "arac_kazasi", "vandalizm", "normal", "bilinmeyen",
+]
+
 
 class BoundingBox(BaseModel):
     x1: float
@@ -39,6 +46,7 @@ class WindowReport(BaseModel):
     type: Literal["window_report"] = "window_report"
     window_start: float
     window_end: float
+    anomaly_type: AnomalyType = "normal"   # pencerenin baskın olay sınıfı
     summary: str                      # Türkçe pencere özeti
     events: list[WindowEvent] = []
     uncertainties: list[str] = []
@@ -69,6 +77,7 @@ class IncidentUpdate(BaseModel):
     t: float                          # video zamanı (sn)
     phase: Literal["basladi", "gelisiyor", "sonuclandi"]
     title: str                        # ör. "Forklift devrilmesi"
+    anomaly_type: AnomalyType = "bilinmeyen"
     risk: Risk
     detail: str = ""
     thumbnail: str | None = None      # /media altında kare yolu

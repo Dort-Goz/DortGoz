@@ -32,7 +32,9 @@ def test_report_schema_has_no_refs():
 def test_report_schema_fields():
     """Model yalnız üretmesi gerekenleri üretsin; bildiğimiz alanlar şemada olmasın."""
     schema = report_schema()
-    assert set(schema["required"]) == {"summary", "events", "uncertainties"}
+    assert set(schema["required"]) == {"anomaly_type", "summary", "events", "uncertainties"}
+    # Sınıflandırma GBNF'de enum olarak kısıtlanmalı — serbest metin değil
+    assert "kavga" in schema["properties"]["anomaly_type"]["enum"]
     assert "window_start" not in schema["properties"]
     assert "type" not in schema["properties"]
     assert schema["additionalProperties"] is False

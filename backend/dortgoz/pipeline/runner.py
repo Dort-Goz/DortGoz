@@ -14,6 +14,7 @@ import asyncio
 import json
 from pathlib import Path
 
+from .. import session
 from ..agent.memory import RISK_ORDER, Ledger
 from ..config import settings
 from ..events import AgentStep, Event, RunStatus, WindowReport
@@ -69,13 +70,15 @@ class RunRecorder:
 async def run_video(manager: ConnectionManager, video: str, run_id: str) -> None:
     """Bir videoyu işler; iptal edilirse (stop_run) durumu temiz bırakır."""
     rec = RunRecorder(manager, run_id)
-    ledger = Ledger()
+    ctx = session.start(run_id, video)      # sohbet analiz sonrası buradan devam eder
+    ledger = ctx.ledger
     try:
         path = resolve_media(video)
 
         await rec.emit(RunStatus(run_id=run_id, state="processing", detail=video))
         await rec.emit(AgentStep(node="perceive", status="start", detail="hareket profili"))
         duration = await ingest.probe_duration(path)
+        ctx.duration = duration
         profile = await ingest.motion_profile(path, settings.base_fps)
         gate = (ingest.adaptive_gate(profile, minimum=settings.motion_gate)
                 if settings.motion_gate_adaptive else settings.motion_gate)
@@ -107,6 +110,7 @@ async def run_video(manager: ConnectionManager, video: str, run_id: str) -> None
                     profile, start, end, settings.keyframes_per_window
                 )
                 report = await interpret_window(path, (start, end), keyframes)
+                ctx.reports.append(report)
                 await rec.emit(report)
                 await rec.emit(AgentStep(
                     node="interpret", status="end",
@@ -134,7 +138,10 @@ async def run_video(manager: ConnectionManager, video: str, run_id: str) -> None
 
         for update in ledger.finalize():       # video biterken açık kalan olayı kapat
             await rec.emit(update)
-        await rec.emit(RunStatus(run_id=run_id, state="done", progress=1.0))
+        ctx.finished = True
+        # Koşunun nihai kararı operatöre görünür olmalı — sınıf + risk tek satırda
+        await rec.emit(RunStatus(run_id=run_id, state="done", progress=1.0,
+                                 detail=ctx.verdict()))
     except asyncio.CancelledError:
         await rec.emit(RunStatus(run_id=run_id, state="idle", detail="operatör durdurdu"))
         raise

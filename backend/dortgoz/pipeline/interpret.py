@@ -35,7 +35,13 @@ SYSTEM_TR = (
     "aynı zaman penceresinden alınmış kareler zaman damgalarıyla veriliyor. "
     "Gördüklerini Türkçe, kısa ve operasyonel dille raporla. Yalnızca karelerde "
     "GÖRDÜĞÜNÜ yaz; emin olmadığın çıkarımları 'uncertainties' alanına koy. "
-    "Olay yoksa 'events' boş kalsın — olay uydurma."
+    "Olay yoksa 'events' boş kalsın — olay uydurma.\n\n"
+    "`anomaly_type` pencerenin baskın olay sınıfıdır. Dikkat gerektiren bir durum "
+    "yoksa `normal` yaz. Bir şey oluyor ama listedeki sınıflardan hiçbirine "
+    "oturmuyorsa `bilinmeyen` yaz — zorlama sınıflandırma yapma.\n\n"
+    "`severity_hint` ölçeği: `dusuk` = olağan hareketlilik (yürüyen insan, park "
+    "eden araç, sahne/ışık değişimi) — bunlar ALARM DEĞİLDİR; `orta` ve üstünü "
+    "yalnız gerçekten müdahale gerektiren durumlar için kullan."
 )
 
 
@@ -71,7 +77,8 @@ def report_schema() -> dict[str, Any]:
     props = schema.get("properties", {})
     for field in ("type", "window_start", "window_end"):
         props.pop(field, None)
-    schema["required"] = [f for f in ("summary", "events", "uncertainties") if f in props]
+    schema["required"] = [f for f in ("anomaly_type", "summary", "events", "uncertainties")
+                          if f in props]
     schema["additionalProperties"] = False
     schema.pop("title", None)
     return schema

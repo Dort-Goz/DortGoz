@@ -29,7 +29,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 
-from ..events import IncidentUpdate, Risk, WindowEvent, WindowReport
+from ..events import AnomalyType, IncidentUpdate, Risk, WindowEvent, WindowReport
 
 RISK_ORDER: list[Risk] = ["dusuk", "orta", "yuksek", "kritik"]
 ALARM_FLOOR = 1                       # "orta" ve üstü deftere girer
@@ -46,6 +46,7 @@ class Incident:
     first_seen: float
     last_seen: float
     phase: str = "basladi"            # basladi | gelisiyor | sonuclandi
+    anomaly_type: AnomalyType = "bilinmeyen"
     risk: Risk = "dusuk"
     notes: list[str] = field(default_factory=list)
     thumbnail: str | None = None
@@ -107,6 +108,7 @@ class Ledger:
             first_seen=peak.t,
             last_seen=events[-1].t,
             phase="basladi",
+            anomaly_type=_classify(report),
             risk=peak.severity_hint,
             notes=[e.desc for e in events],
             thumbnail=thumbnail,
@@ -123,6 +125,9 @@ class Ledger:
         if _rank(peak.severity_hint) > _rank(inc.risk):
             inc.risk = peak.severity_hint          # risk yalnız yukarı revize edilir
             inc.title = _title(peak)               # başlık en ciddi olayı yansıtsın
+            inc.anomaly_type = _classify(report)   # sınıf da en ciddi pencereden gelir
+        elif inc.anomaly_type == "bilinmeyen":
+            inc.anomaly_type = _classify(report)   # sonradan netleşebilir
         return _update(inc, peak.t, report.summary)
 
     def _close(self) -> list[IncidentUpdate]:
@@ -131,6 +136,11 @@ class Ledger:
         inc.phase = "sonuclandi"
         detail = f"{len(inc.notes)} gözlem · {inc.first_seen:.0f}-{inc.last_seen:.0f} sn"
         return [_update(inc, inc.last_seen, detail)]
+
+
+def _classify(report: WindowReport) -> AnomalyType:
+    """Pencerenin sınıfı — ciddi olay varken `normal` gelirse `bilinmeyen`e düşer."""
+    return "bilinmeyen" if report.anomaly_type == "normal" else report.anomaly_type
 
 
 def _title(event: WindowEvent) -> str:
@@ -145,6 +155,7 @@ def _update(inc: Incident, t: float, detail: str) -> IncidentUpdate:
         t=t,
         phase=inc.phase,                           # type: ignore[arg-type]
         title=inc.title,
+        anomaly_type=inc.anomaly_type,
         risk=inc.risk,
         detail=detail,
         thumbnail=inc.thumbnail,

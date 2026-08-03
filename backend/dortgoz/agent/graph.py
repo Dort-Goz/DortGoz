@@ -23,6 +23,36 @@ SYSTEM_TR = (
     "Belirsizlikte doğru soruyu sor; gerektiğinde inisiyatif al."
 )
 
+CONTEXT_RULES = (
+    "\n\nAşağıda AZ ÖNCE çözümlediğin kaydın tam bağlamı var. Operatör bu analizin "
+    "devamı olarak konuşuyor: 'ne oldu', 'neden bu risk', 'şu saniyede ne vardı' "
+    "gibi sorular bu kayda aittir.\n"
+    "Kurallar:\n"
+    "- Yalnız bu bağlamdaki gözlemlere dayan; bağlamda olmayan ayrıntıyı UYDURMA.\n"
+    "- Bağlam yetmiyorsa 'kayıtta bu bilgi yok' de, tahmin yürütme.\n"
+    "- Zamanları dakika:saniye biçiminde ver ki operatör videoda bulabilsin.\n"
+    "- `dusuk` işaretli gözlemler olağan hareketliliktir, alarm değildir.\n"
+    "- Belirsiz olarak işaretlenmiş noktaları belirsiz olarak aktar.\n\n"
+)
+
+NO_RUN_HINT = (
+    "\n\nHenüz çözümlenmiş bir kayıt yok. Operatör bir olaydan söz ederse, önce "
+    "üst çubuktan bir klip seçip analizi başlatması gerektiğini kısaca hatırlat."
+)
+
+
+def build_system_prompt() -> str:
+    """Sistem istemi = rol + (varsa) koşu bağlamı.
+
+    Sohbetin analizden SONRA da anlamlı olmasının yolu bu: koşu bitince
+    `session` bağlamı yaşamaya devam eder, buraya gömülür.
+    """
+    from .. import session
+    ctx = session.current()
+    if ctx is None:
+        return SYSTEM_TR + NO_RUN_HINT
+    return SYSTEM_TR + CONTEXT_RULES + ctx.briefing()
+
 
 async def run_chat(text: str, manager: ConnectionManager) -> None:
     """Operatör sohbeti — v0: doğrudan ana modele, akış halinde.
@@ -31,11 +61,16 @@ async def run_chat(text: str, manager: ConnectionManager) -> None:
     highlight_incident, query_detections, lookup_procedure) ve olay defteri
     bağlamını sistem istemine ekle.
     """
-    await manager.broadcast(Event.wrap(AgentStep(node="respond", status="start")))
+    from .. import session
+    ctx = session.current()
+    await manager.broadcast(Event.wrap(AgentStep(
+        node="respond", status="start",
+        detail=f"bağlam: {ctx.video} · {len(ctx.incidents)} olay" if ctx else "bağlamsız",
+    )))
     client = main_client()
     stream = await client.chat.completions.create(
         model=settings.main_model,
-        messages=[{"role": "system", "content": SYSTEM_TR},
+        messages=[{"role": "system", "content": build_system_prompt()},
                   {"role": "user", "content": text}],
         stream=True,
         max_tokens=512,
