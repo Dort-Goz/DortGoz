@@ -1,5 +1,7 @@
 [CmdletBinding()]
-param()
+param(
+    [switch]$Mock
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -50,11 +52,15 @@ if (-not (Test-Path -LiteralPath $FrontendDir)) {
     throw "Frontend klasörü bulunamadı: $FrontendDir"
 }
 
-$backendJob = Start-Job -Name "dortgoz-backend" -ArgumentList $BackendDir, $uvPath -ScriptBlock {
-    param($WorkingDirectory, $UvExecutable)
+$backendJob = Start-Job -Name "dortgoz-backend" -ArgumentList $BackendDir, $uvPath, $Mock.IsPresent -ScriptBlock {
+    param($WorkingDirectory, $UvExecutable, $UseMock)
 
     Set-Location $WorkingDirectory
-    $env:DORTGOZ_MOCK = "1"
+    if ($UseMock) {
+        $env:DORTGOZ_MOCK = "1"
+    } else {
+        Remove-Item Env:DORTGOZ_MOCK -ErrorAction SilentlyContinue
+    }
     & $UvExecutable run uvicorn dortgoz.main:app --reload --port 8000
 }
 
@@ -67,7 +73,7 @@ $frontendJob = Start-Job -Name "dortgoz-frontend" -ArgumentList $FrontendDir, $b
 
 $jobs = @($backendJob, $frontendJob)
 
-Write-Host "Dörtgöz geliştirme sunucuları başlatıldı." -ForegroundColor Green
+Write-Host "Dörtgöz geliştirme sunucuları başlatıldı ($(if ($Mock) { 'mock' } else { 'gerçek' }) mod)." -ForegroundColor Green
 Write-Host "Backend:  http://localhost:8000/health"
 Write-Host "Frontend: http://localhost:5173"
 Write-Host "Durdurmak için Ctrl+C kullanın."
