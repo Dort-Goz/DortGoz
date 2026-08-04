@@ -20,3 +20,6 @@ runs/
 .env
 *.db
 .DS_Store
+
+# Team-internal access docs (real endpoint addresses) — never committed
+secrets/
