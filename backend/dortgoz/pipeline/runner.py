@@ -97,7 +97,7 @@ async def run_video(
         path = resolve_media(video)
 
         custom = " · özel istem" if (system_prompt or task_prompt) else ""
-        await rec.emit(RunStatus(run_id=run_id, state="processing",
+        await rec.emit(RunStatus(run_id=run_id, state="processing", video=video,
                                  detail=f"{video} · {effective_model}{custom}"))
         await rec.emit(AgentStep(node="perceive", status="start", detail="hareket profili"))
         duration = await ingest.probe_duration(path)
@@ -149,7 +149,7 @@ async def run_video(
                         detail=f"{start:.0f}-{end:.0f} sn atlandı: {str(exc)[:160]}",
                     ))
                     await rec.emit(RunStatus(
-                        run_id=run_id, state="processing",
+                        run_id=run_id, state="processing", video=video,
                         progress=(idx + 1) / len(wins),
                     ))
                     continue
@@ -176,7 +176,8 @@ async def run_video(
                     detail=f"{len(ledger.incidents)} olay defterde",
                 ))
             await rec.emit(RunStatus(
-                run_id=run_id, state="processing", progress=(idx + 1) / len(wins),
+                run_id=run_id, state="processing", video=video,
+                progress=(idx + 1) / len(wins),
             ))
 
         for update in ledger.finalize():       # video biterken açık kalan olayı kapat
@@ -184,13 +185,15 @@ async def run_video(
         ctx.finished = True
         # Koşunun nihai kararı operatöre görünür olmalı — sınıf + risk tek satırda
         await rec.emit(RunStatus(run_id=run_id, state="done", progress=1.0,
-                                 detail=ctx.verdict()))
+                                 video=video, detail=ctx.verdict()))
     except asyncio.CancelledError:
-        await rec.emit(RunStatus(run_id=run_id, state="idle", detail="operatör durdurdu"))
+        await rec.emit(RunStatus(run_id=run_id, state="idle", video=video,
+                                 detail="operatör durdurdu"))
         raise
     except Exception as exc:                       # hattın hatası operatöre görünür olmalı
         await rec.emit(AgentStep(node="interpret", status="error", detail=str(exc)[:300]))
-        await rec.emit(RunStatus(run_id=run_id, state="error", detail=str(exc)[:300]))
+        await rec.emit(RunStatus(run_id=run_id, state="error", video=video,
+                                 detail=str(exc)[:300]))
     finally:
         rec.close()
 

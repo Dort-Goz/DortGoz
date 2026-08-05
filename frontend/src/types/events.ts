@@ -94,6 +94,8 @@ export interface RunStatus {
   state: "idle" | "processing" | "done" | "error";
   progress: number;
   detail: string;
+  /** Koşulan klip — koşuyu başlatmayan istemci (yenileme, 2. izleyici) için */
+  video: string;
 }
 
 export type Payload =

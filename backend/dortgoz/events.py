@@ -123,6 +123,9 @@ class RunStatus(BaseModel):
     state: Literal["idle", "processing", "done", "error"]
     progress: float = 0.0             # 0..1
     detail: str = ""
+    # Koşuyu BAŞLATMAYAN istemci de videoyu bilmeli: sayfayı yenileyen operatör
+    # ya da ikinci bir izleyici aksi halde boş oynatıcı görür (2026-08-05 QA).
+    video: str = ""
 
 
 Payload = Union[

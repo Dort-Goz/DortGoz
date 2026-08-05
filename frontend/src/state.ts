@@ -91,8 +91,17 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
       return { ...state, actuatorRequests: [...state.actuatorRequests, p] };
     case "actuator_result":
       return { ...state, actuatorResults: [...state.actuatorResults, p] };
-    case "run_status":
-      return { ...state, runStatus: p };
+    case "run_status": {
+      // Koşuyu BAŞLATMAYAN istemci (sayfa yenileme, 2. operatör) videoyu ve
+      // yeni koşuyu buradan öğrenir — yoksa boş oynatıcı + eski koşunun
+      // olayları kalırdı (2026-08-05 QA bulgusu).
+      const newRun = p.run_id !== "-" && p.run_id !== state.runStatus?.run_id;
+      if (newRun && !state.video) {
+        return { ...initialState, chat: state.chat, video: p.video || null,
+                 runStatus: p };
+      }
+      return { ...state, runStatus: p, video: state.video ?? (p.video || null) };
+    }
     case "ui_command": {
       if (p.action === "seek_video") {
         return { ...state, seekTo: Number(p.args.t ?? 0) };
