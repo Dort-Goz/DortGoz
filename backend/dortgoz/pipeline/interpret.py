@@ -70,6 +70,93 @@ TASK_TR = (
 )
 
 
+# ---- [5] OLAY ÜZERİNDEN İKİNCİ GEÇİŞ (2026-08-05) ----
+# 30 sn'lik pencereler TESPİT için ucuz ve paralel, ama uzun bir olayı parçalıyor:
+# ölçümde 270 sn'lik tek saldırı 9 pencereye bölündü, ortadaki pencere bağlamsız
+# kaldığı için "normal" dedi ve defterdeki olay İKİYE AYRILDI. Çözüm: olay
+# kapandığında sınırları ARTIK BİLİNDİĞİ için tüm aralık TEK çağrıda yeniden
+# okunur — anlatı (öncesi/zirve/sonrası) ancak bütünü gören bir bağlamda dürüst olur.
+REVIEW_SYSTEM_TR = (
+    "Sen bir güvenlik kamerası olay analiz uzmanısın. Sana TEK bir olayın "
+    "tamamına yayılmış kareler zaman damgalarıyla veriliyor. Görevin olayı "
+    "bütün olarak değerlendirmek: nasıl başladı, en kritik an hangisi, nasıl "
+    "sonuçlandı. Türkçe, kısa ve operasyonel yaz. Yalnızca karelerde GÖRDÜĞÜNÜ "
+    "yaz; emin olmadığını 'belirsizlikler'e koy. Pencere pencere bakan bir ön "
+    "analiz bu olayı parçalı görmüş olabilir — sen bütünlüklü karar ver, "
+    "gerekiyorsa sınıfı ve riski düzelt."
+)
+
+
+def review_schema() -> dict[str, Any]:
+    """Olay-geneli ikinci geçişin şeması (Bengisu'nun öncesi-zirve-sonrası tasarımı)."""
+    return {
+        "type": "object",
+        "properties": {
+            "baslangic": {"type": "string"},     # olay nasıl başladı
+            "zirve": {"type": "string"},         # en kritik an
+            "sonuc": {"type": "string"},         # nasıl bitti
+            "zirve_t": {"type": "number"},       # zirve anının video zamanı (sn)
+            # Sınıf listesi tek kaynaktan (events.py) türetilir — taksonomi
+            # değişince burası kendiliğinden uyar
+            "anomaly_type": {"enum": WindowReport.model_json_schema()
+                             ["properties"]["anomaly_type"]["enum"]},
+            "risk": {"enum": ["dusuk", "orta", "yuksek", "kritik"]},
+            "belirsizlikler": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["baslangic", "zirve", "sonuc", "zirve_t", "anomaly_type", "risk",
+                     "belirsizlikler"],
+        "additionalProperties": False,
+    }
+
+
+async def review_incident(
+    video: Path,
+    span: tuple[float, float],
+    keyframes: list[float],
+    notes: list[str],
+    *,
+    model: str = "",
+) -> dict[str, Any]:
+    """Kapanmış bir olayın TÜM aralığını tek bağlamda yeniden okur."""
+    start, end = span
+    content: list[dict[str, Any]] = []
+    for t in keyframes:
+        content.append({"type": "text", "text": f"[t={t:.1f}s]"})
+        content.append(_image_part(await grab_frame(video, t)))
+    task = (
+        f"Yukarıdaki kareler {start:.0f}-{end:.0f} sn arasındaki TEK bir olayın "
+        f"tamamını kapsıyor ({end - start:.0f} sn). Olayı bütün olarak değerlendir: "
+        "nasıl başladı, zirve anı hangisi, nasıl sonuçlandı."
+    )
+    if notes:
+        joined = " · ".join(notes[:12])
+        task += (f"\n\nPencere pencere yapılmış ÖN gözlemler (parçalı olabilir, "
+                 f"doğrulaman gereken taslaktır): {joined}")
+    content.append({"type": "text", "text": task})
+
+    client = main_client()
+    resp = await client.chat.completions.create(
+        model=model or settings.main_model,
+        messages=[{"role": "system", "content": REVIEW_SYSTEM_TR},
+                  {"role": "user", "content": content}],
+        max_tokens=settings.interpret_max_tokens,
+        temperature=0,
+        response_format={"type": "json_schema",
+                         "json_schema": {"name": "incident_review", "strict": True,
+                                         "schema": review_schema()}},
+        extra_body={"speculative.n_max": 0,
+                    "chat_template_kwargs": {"enable_thinking": False}},
+    )
+    raw = resp.choices[0].message.content or "{}"
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        fixed = repair_truncated_json(raw)
+        if fixed is None:
+            raise
+        return json.loads(fixed)
+
+
 def _inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
     """`$ref`/`$defs` içeren Pydantic şemasını düz şemaya çevirir.
 
@@ -295,6 +382,7 @@ async def interpret_window(
     model: str = "",
     system_prompt: str = "",
     task_prompt: str = "",
+    context: str = "",
 ) -> WindowReport:
     """Bir pencereyi tek VLM çağrısıyla yorumlar; şema-geçerli WindowReport döner.
 
@@ -312,6 +400,8 @@ async def interpret_window(
             .replace("{end}", f"{end:.0f}"))
     if meta:
         task += f"\n\nAlgı katmanı verisi:\n{meta}"
+    if context:
+        task += f"\n\n{context}"
     content.append({"type": "text", "text": task})
 
     system = system_prompt or SYSTEM_TR

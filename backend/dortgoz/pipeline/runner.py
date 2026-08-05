@@ -19,7 +19,7 @@ from ..agent.memory import RISK_ORDER, Ledger
 from ..config import settings
 from ..events import AgentStep, Event, RunStatus, WindowReport
 from ..ws import ConnectionManager
-from . import ingest, windowing
+from . import ingest, interpret, windowing
 from .interpret import SYSTEM_TR, TASK_TR, interpret_window
 
 THUMB_DIR = "_thumbs"       # media/ altında; /media mount'u üzerinden servis edilir
@@ -65,6 +65,44 @@ class RunRecorder:
 
     def close(self) -> None:
         self._fh.close()
+
+
+async def review_if_closed(rec: "RunRecorder", ledger: Ledger, path: Path,
+                           profile: list[float], update, model: str) -> None:
+    """Olay KAPANDIĞINDA tüm aralığı tek bağlamda yeniden okur ve kartı düzeltir.
+
+    Sınırlar ancak olay kapanınca bilinir — asıl kazanç bu: 30 sn'lik pencereler
+    tespit için ucuz kalır, anlatı ise bütünü gören tek çağrıdan gelir. Yalnız
+    ÇOK PENCEREYE yayılmış olaylarda çalışır (tek pencerelik olayda zaten bütün
+    görülmüştü) ve maliyeti gerçek olay başına bir çağrıdır.
+    """
+    if not settings.incident_review or update.phase != "sonuclandi":
+        return
+    inc = ledger.incidents.get(update.incident_id)
+    if inc is None:
+        return
+    span = max(0.0, inc.last_seen - inc.first_seen)
+    if span < settings.window_seconds:      # tek pencerelik olay → ikinci geçiş gereksiz
+        return
+    start = max(0.0, inc.first_seen - 5.0)
+    end = inc.last_seen + 5.0
+    frames = min(16, max(8, int(span // 12)))
+    await rec.emit(AgentStep(node="oversight", status="start",
+                             detail=f"olay geneli 2. geçiş {start:.0f}-{end:.0f} sn "
+                                    f"({frames} kare)"))
+    try:
+        keyframes = windowing.select_keyframes(profile, start, end, frames)
+        review = await interpret.review_incident(
+            path, (start, end), keyframes, inc.notes, model=model)
+        revised = ledger.apply_review(update.incident_id, review)
+        if revised is not None:
+            await rec.emit(revised)
+        await rec.emit(AgentStep(node="oversight", status="end",
+                                 detail=f"{review.get('anomaly_type','?')} / "
+                                        f"{review.get('risk','?')} olarak bütünlendi"))
+    except Exception as exc:                 # 2. geçiş bir EK'tir, koşuyu düşürmez
+        await rec.emit(AgentStep(node="oversight", status="error",
+                                 detail=str(exc)[:160]))
 
 
 async def run_video(
@@ -124,6 +162,8 @@ async def run_video(
                 for update in ledger.ingest(WindowReport(
                         window_start=start, window_end=end, summary="")):
                     await rec.emit(update)
+                    # Olay burada da kapanabilir → 2. geçiş bu yolda da çalışmalı
+                    await review_if_closed(rec, ledger, path, profile, update, model)
             else:
                 await rec.emit(AgentStep(
                     node="interpret", status="start",
@@ -137,6 +177,8 @@ async def run_video(
                         path, (start, end), keyframes,
                         model=model, system_prompt=system_prompt,
                         task_prompt=task_prompt,
+                        # Süregelen olayın bağlamı bir sonraki pencereye taşınır
+                        context=ledger.continuity_hint() if settings.carry_context else "",
                     )
                 except asyncio.CancelledError:
                     raise
@@ -171,6 +213,7 @@ async def run_video(
                                                  f"{int(start)}")
                 for update in ledger.ingest(report, thumb):
                     await rec.emit(update)
+                    await review_if_closed(rec, ledger, path, profile, update, model)
                 await rec.emit(AgentStep(
                     node="ledger", status="end",
                     detail=f"{len(ledger.incidents)} olay defterde",
@@ -182,6 +225,7 @@ async def run_video(
 
         for update in ledger.finalize():       # video biterken açık kalan olayı kapat
             await rec.emit(update)
+            await review_if_closed(rec, ledger, path, profile, update, model)
         ctx.finished = True
         # Koşunun nihai kararı operatöre görünür olmalı — sınıf + risk tek satırda
         await rec.emit(RunStatus(run_id=run_id, state="done", progress=1.0,

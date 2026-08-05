@@ -3,7 +3,7 @@
 import json
 
 from dortgoz.pipeline.interpret import (
-    _to_report, repair_truncated_json, report_schema, tier_schema)
+    _to_report, repair_truncated_json, report_schema, review_schema, tier_schema)
 
 
 def test_report_schema_is_flat_and_strict():
@@ -87,3 +87,59 @@ def test_to_report_flags_length_finish_even_if_valid():
 
 def test_repair_returns_none_for_hopeless_input():
     assert repair_truncated_json('{"summary": "yarım') is None
+
+
+# ---- süreklilik ipucu + olay geneli 2. geçiş (2026-08-05) ----
+
+def test_continuity_hint_empty_when_no_open_incident():
+    from dortgoz.agent.memory import Ledger
+    assert Ledger().continuity_hint() == ""
+
+
+def test_continuity_hint_carries_state_and_guards_anchoring():
+    from dortgoz.agent.memory import Ledger
+    from dortgoz.events import WindowEvent, WindowReport
+    led = Ledger()
+    led.ingest(WindowReport(window_start=0, window_end=30, anomaly_type="kavga",
+                            summary="kavga",
+                            events=[WindowEvent(t=12.0, desc="İki kişi kavga ediyor",
+                                                severity_hint="yuksek")]))
+    hint = led.continuity_hint()
+    assert "SÜREGELEN OLAY" in hint and "12. saniyede" in hint
+    # çapa etkisine karşı çıkış yolu AÇIKÇA verilmeli
+    assert "BİTTİYSE" in hint and "uydurma" in hint
+
+
+def test_review_schema_uses_taxonomy_from_events_module():
+    from dortgoz.events import WindowReport as WR
+    s = review_schema()
+    assert s["properties"]["anomaly_type"]["enum"] == \
+        WR.model_json_schema()["properties"]["anomaly_type"]["enum"]
+    assert set(s["required"]) >= {"baslangic", "zirve", "sonuc", "risk"}
+
+
+def test_apply_review_rewrites_incident():
+    from dortgoz.agent.memory import Ledger
+    from dortgoz.events import WindowEvent, WindowReport
+    led = Ledger()
+    ups = led.ingest(WindowReport(window_start=0, window_end=30, anomaly_type="bilinmeyen",
+                                  summary="?",
+                                  events=[WindowEvent(t=5.0, desc="itişme",
+                                                      severity_hint="orta")]))
+    iid = ups[0].incident_id
+    rev = led.apply_review(iid, {"baslangic": "Grup toplandı", "zirve": "Kişi yere düşürüldü",
+                                 "sonuc": "Grup dağıldı", "zirve_t": 42.0,
+                                 "anomaly_type": "saldiri", "risk": "yuksek",
+                                 "belirsizlikler": ["yaralı mı belirsiz"]})
+    assert rev.anomaly_type == "saldiri" and rev.risk == "yuksek"
+    assert rev.t == 42.0 and "olay geneli" in rev.detail
+    assert led.incidents[iid].anomaly_type == "saldiri"
+
+
+def test_review_detail_trims_at_sentence_boundary():
+    from dortgoz.agent.memory import _trim
+    long = ("Olay başladı. " * 120)            # >1200 ch
+    out = _trim(long)
+    assert len(out) <= 1210
+    assert out.endswith(". …")                 # kelime ortasında değil, cümle sonunda
+    assert _trim("kısa metin") == "kısa metin"

@@ -78,6 +78,42 @@ class Ledger:
     def serious(self, report: WindowReport) -> list[WindowEvent]:
         return [e for e in report.events if _rank(e.severity_hint) >= ALARM_FLOOR]
 
+    def continuity_hint(self) -> str:
+        """Süregelen olayı bir sonraki pencereye taşıyan kısa bağlam metni.
+
+        Pencereler bağımsız yorumlandığı için uzun bir olayın ortasındaki pencere
+        "olağan" diyip olayı kapatabiliyordu (ölçüldü 2026-08-05: 270 sn'lik tek
+        saldırı defterde İKİ olaya bölündü). Bu ipucu bağlamı taşır.
+        ⚠ Çapa etkisine karşı: bittiyse bittiğini söylemesi AÇIKÇA isteniyor —
+        yoksa model olay bitse de raporlamayı sürdürür.
+        """
+        inc = self.open_incident
+        if inc is None:
+            return ""
+        return (
+            f"SÜREGELEN OLAY (önceki pencerelerden): {inc.title} — "
+            f"{inc.first_seen:.0f}. saniyede başladı, şu ana dek {inc.risk} risk. "
+            "Bu pencerede DEVAM EDİYORSA ilgili gözlemleri yine listele "
+            "(aynı olayın devamıdır). BİTTİYSE ya da artık görünmüyorsa bunu "
+            "açıkça yaz ve olağan olarak işaretle — süren olay yokken olay "
+            "uydurma."
+        )
+
+    def apply_review(self, incident_id: str, review: dict) -> IncidentUpdate | None:
+        """Olay-geneli ikinci geçişin sonucunu deftere işler (bütünlüklü karar)."""
+        inc = self.incidents.get(incident_id)
+        if inc is None:
+            return None
+        inc.anomaly_type = review.get("anomaly_type", inc.anomaly_type)
+        if review.get("risk") in RISK_ORDER:
+            inc.risk = review["risk"]
+        inc.title = _title_text(review.get("zirve", inc.title))
+        detail = (f"⟳ olay geneli: {review.get('baslangic','')} "
+                  f"→ {review.get('zirve','')} → {review.get('sonuc','')}").strip()
+        for u in review.get("belirsizlikler", [])[:2]:
+            detail += f"  ? {u}"
+        return _update(inc, review.get("zirve_t", inc.first_seen), _trim(detail))
+
     # ---- güncelleme ----
 
     def ingest(self, report: WindowReport, thumbnail: str | None = None
@@ -145,8 +181,21 @@ def _classify(report: WindowReport) -> AnomalyType:
 
 def _title(event: WindowEvent) -> str:
     """Olay başlığı — en ciddi gözlemin ilk cümlesi, kısaltılmış."""
-    head = event.desc.split(".")[0].strip()
+    return _title_text(event.desc)
+
+
+def _title_text(text: str) -> str:
+    head = text.split(".")[0].strip()
     return head if len(head) <= 70 else head[:67] + "…"
+
+
+def _trim(text: str, limit: int = 1200) -> str:
+    """Uzun anlatıyı CÜMLE sınırında keser — kelime ortasında kesmek okunmaz
+    ('...grubun hala ki' diye bitiyordu, 2026-08-05)."""
+    if len(text) <= limit:
+        return text
+    cut = text.rfind(".", 0, limit)
+    return (text[:cut + 1] if cut > limit // 2 else text[:limit].rstrip()) + " …"
 
 
 def _update(inc: Incident, t: float, detail: str) -> IncidentUpdate:

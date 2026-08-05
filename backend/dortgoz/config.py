@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     # İki kademeli üretim (Cerberus deseni): olağan pencere tek cümle üretir,
     # tam rapor yalnız `dikkat` dalında. DORTGOZ_TWO_TIER=0 → eski tek şema (ablation)
     two_tier: bool = True
+    # Süregelen olayın bağlamını sonraki pencereye taşı (olay bölünmesini önler)
+    carry_context: bool = True
+    # Olay kapanınca tüm aralığı tek bağlamda yeniden oku (bütünlüklü anlatı)
+    incident_review: bool = True
 
     # Yollar
     media_dir: Path = Path(__file__).resolve().parents[2] / "media"
