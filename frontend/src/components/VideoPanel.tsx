@@ -47,21 +47,26 @@ export default function VideoPanel({
           </span>
         )}
       </div>
-      <div className="relative flex-1 bg-black flex items-center justify-center">
-        {video ? (
-          <video
-            key={video}
-            ref={videoRef}
-            src={`/media/${video}`}
-            controls
-            className="max-h-full max-w-full"
-          />
-        ) : (
-          <span className="text-xs text-zinc-600">
-            Koşu başlatın — üst çubuktan bir klip seçip “Başlat”a basın.
-          </span>
-        )}
-        <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none" />
+      {/* Oynatıcı KARE kutuya oturur: gözetim kaynakları 4:3'e yakın, geniş
+          panelde serbest bırakılınca yatayda dağılıp dikeyde boşluk bırakıyordu. */}
+      <div className="flex-1 min-h-0 flex items-center justify-center p-2">
+        <div className="relative aspect-square h-full max-w-full bg-black rounded
+                        overflow-hidden flex items-center justify-center">
+          {video ? (
+            <video
+              key={video}
+              ref={videoRef}
+              src={`/media/${video}`}
+              controls
+              className="max-h-full max-w-full object-contain"
+            />
+          ) : (
+            <span className="text-xs text-zinc-600 px-4 text-center">
+              Koşu başlatın — üst çubuktan bir klip seçip “Başlat”a basın.
+            </span>
+          )}
+          <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none" />
+        </div>
       </div>
     </div>
   );

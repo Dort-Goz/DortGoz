@@ -174,3 +174,12 @@ def test_ledger_grace_zero_is_old_behaviour():
                             events=[WindowEvent(t=5, desc="x", severity_hint="orta")]))
     out = led.ingest(WindowReport(window_start=30, window_end=60, summary=""))
     assert out and out[0].phase == "sonuclandi"
+
+
+def test_title_strips_leading_timestamps():
+    """Kart başlığı NE olduğunu söylemeli, NE ZAMAN olduğunu değil (saat solda yazıyor)."""
+    from dortgoz.agent.memory import _title_text
+    assert _title_text("t=1147s ile t=1200s arasında zirve yaptı") == "Zirve yaptı"
+    assert _title_text("t=1102s civarında, merdiven kenarında duran kişi düştü") \
+        == "Merdiven kenarında duran kişi düştü"
+    assert _title_text("İki kişi kavga ediyor") == "İki kişi kavga ediyor"

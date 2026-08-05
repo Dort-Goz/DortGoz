@@ -60,3 +60,31 @@ def test_interpret_config_mock(monkeypatch):
         assert cfg["default_model"] in cfg["models"]
         assert "{start}" in cfg["task_prompt"] and "{end}" in cfg["task_prompt"]
         assert len(cfg["system_prompt"]) > 50
+
+
+def test_broadcast_survives_a_stalled_client():
+    """Askıda kalan tek istemci yayını (dolayısıyla koşuyu) kilitlememeli."""
+    import asyncio
+    from dortgoz.events import ChatMessage, Event
+    from dortgoz.ws import ConnectionManager
+
+    class Stalled:                      # asla tamamlanmayan send_text
+        async def send_text(self, _):
+            await asyncio.sleep(3600)
+
+    class Good:
+        def __init__(self): self.got = []
+        async def send_text(self, d): self.got.append(d)
+
+    mgr = ConnectionManager()
+    mgr.SEND_TIMEOUT = 0.05             # testi hızlandır
+    stalled, good = Stalled(), Good()
+    mgr._connections.update({stalled, good})
+
+    async def run():
+        await asyncio.wait_for(
+            mgr.broadcast(Event.wrap(ChatMessage(role="agent", text="x"))), timeout=5)
+
+    asyncio.run(run())
+    assert good.got, "sağlıklı istemci mesajı almalı"
+    assert stalled not in mgr._connections, "askıda kalan istemci düşürülmeli"

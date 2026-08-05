@@ -23,18 +23,35 @@ class ConnectionManager:
     def disconnect(self, ws: WebSocket) -> None:
         self._connections.discard(ws)
 
+    # Yavaş/ölü bir istemci koşuyu DURDURMAMALI: gönderimler sırayla ve zaman
+    # aşımsız yapılırken, TCP tamponu dolmuş TEK bir istemci (uyuyan dizüstü,
+    # temiz kapanmayan sekme) `emit`i süresiz askıda bırakıp tüm analizi
+    # kilitleyebiliyordu — 2026-08-05'te 38 sızıntı bağlantıyla canlı görüldü.
+    SEND_TIMEOUT = 5.0
+
     async def broadcast(self, event: Event) -> None:
         self._seq += 1
         event.seq = self._seq
+        if not self._connections:
+            return
         data = event.model_dump_json()
-        dead = []
-        for ws in self._connections:
+
+        async def send(ws: WebSocket) -> bool:
+            """True = gönderildi. Zaman aşımı/hata → False (istemci düşürülür)."""
             try:
-                await ws.send_text(data)
+                await asyncio.wait_for(ws.send_text(data), timeout=self.SEND_TIMEOUT)
             except Exception:
-                dead.append(ws)
-        for ws in dead:
-            self.disconnect(ws)
+                return False
+            return True
+
+        # Eşzamanlı gönderim: bir istemcinin gecikmesi diğerlerini bekletmesin.
+        # Sonuçlar bağlantı listesiyle EŞLEŞTİRİLİR (tip kontrolüne güvenilmez).
+        conns = list(self._connections)
+        results = await asyncio.gather(*(send(ws) for ws in conns),
+                                       return_exceptions=True)
+        for ws, ok in zip(conns, results):
+            if ok is not True:
+                self.disconnect(ws)
 
 
 async def replay_jsonl(manager: ConnectionManager, path: Path, speed: float = 1.0) -> None:

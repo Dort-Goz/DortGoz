@@ -114,23 +114,33 @@ export default function Timeline({
               inc.incident_id === highlightId ? "ring-1 ring-zinc-500" : ""
             }`}
           >
-            <div className="flex items-baseline gap-2">
-              <span className="font-mono text-xs text-zinc-500">{clock(inc.t)}</span>
-              {/* Nihai sınıf kararı — operatörün ilk bakışta görmesi gereken bilgi */}
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300
-                               uppercase tracking-wide font-semibold">
-                {TYPE_TR[inc.anomaly_type] ?? inc.anomaly_type}
-              </span>
-              <span className={`ml-auto text-[10px] uppercase font-bold risk-${inc.risk}`}>
-                {inc.risk}
-              </span>
+            {/* Kanıt karesi SOLDA küçük bir rozet: tam genişlikte gösterilince
+                kart yüksekliğini üçe katlıyor ve anlatı ekrandan taşıyordu. */}
+            <div className="flex gap-2">
+              {inc.thumbnail && (
+                <img src={inc.thumbnail} alt=""
+                     className="w-14 h-14 shrink-0 rounded object-cover bg-black" />
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-2">
+                  <span className="font-mono text-xs text-zinc-500">{clock(inc.t)}</span>
+                  {/* Nihai sınıf kararı — operatörün ilk bakışta görmesi gereken bilgi */}
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300
+                                   uppercase tracking-wide font-semibold">
+                    {TYPE_TR[inc.anomaly_type] ?? inc.anomaly_type}
+                  </span>
+                  <span className={`ml-auto text-[10px] uppercase font-bold risk-${inc.risk}`}>
+                    {inc.risk}
+                  </span>
+                </div>
+                <div className="text-sm font-medium text-zinc-200 mt-0.5">{inc.title}</div>
+                <span className="text-[10px] text-zinc-500">
+                  {PHASE_TR[inc.phase] ?? inc.phase}
+                </span>
+              </div>
             </div>
-            <div className="text-sm font-medium text-zinc-200 mt-1">{inc.title}</div>
-            {inc.thumbnail && (
-              <img src={inc.thumbnail} alt="" className="mt-1.5 rounded w-full object-cover max-h-24" />
-            )}
-            <p className="text-xs text-zinc-400 mt-1">{inc.detail}</p>
-            <span className="text-[10px] text-zinc-500">{PHASE_TR[inc.phase] ?? inc.phase}</span>
+            {/* Uzun 2. geçiş anlatısı kartı şişirmesin — 3 satırda kırpılır */}
+            <p className="text-xs text-zinc-400 mt-1 line-clamp-3">{inc.detail}</p>
           </button>
         ))}
 

@@ -26,6 +26,7 @@ TODO(hafta 3): normal-durum kuralı sapmasıyla risk yeniden değerlendirme
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass, field
 
@@ -197,8 +198,22 @@ def _title(event: WindowEvent) -> str:
     return _title_text(event.desc)
 
 
+_TIME_LEAD = re.compile(
+    r"^(?:t\s*=\s*\d+(?:[.,]\d+)?\s*s?\s*(?:ile|-|–|ve)?\s*)+"
+    r"(?:t\s*=\s*\d+(?:[.,]\d+)?\s*s?\s*)?(?:arasında|civarında|itibarıyla|de|da|'de|'da)?[\s,:-]*",
+    re.IGNORECASE)
+
+
 def _title_text(text: str) -> str:
-    head = text.split(".")[0].strip()
+    """Başlık = ilk cümle, baştaki zaman ifadeleri atılmış hâli.
+
+    2. geçiş anlatısı "t=1147s ile t=1200s arasında zirve yaptı" gibi başlayınca
+    kartın başlığı NE olduğunu değil NE ZAMAN olduğunu söylüyordu; saat zaten
+    kartın solunda yazıyor (2026-08-05 arayüz geri bildirimi).
+    """
+    head = _TIME_LEAD.sub("", text.split(".")[0].strip()).strip()
+    if head:
+        head = head[0].upper() + head[1:]
     return head if len(head) <= 70 else head[:67] + "…"
 
 
