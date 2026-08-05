@@ -52,7 +52,12 @@ TIER_TR = (
     "seç. Betimlediklerinde müdahale/dikkat gerektiren (orta ve üstü şiddette) "
     "hiçbir şey yoksa `durum: \"olagan\"` de ve orada dur — olay listesi yazma. "
     "Dikkat gerektiren bir şey varsa ya da EMİN DEĞİLSEN `durum: \"dikkat\"` "
-    "seç ve tam raporu üret — kaçırılan olay yanlış alarmdan pahalıdır."
+    "seç ve tam raporu üret — kaçırılan olay yanlış alarmdan pahalıdır.\n\n"
+    "ÖZET UZUNLUĞU: Olağan pencerede özet TEK KISA CÜMLE (en çok ~15 kelime): "
+    "sadece kim ne yapıyor. Kare kare anlatma, saniye saniye zaman damgası verme, "
+    "mekânın ne olduğunu HER pencerede yeniden tarif etme — operatör mekânı zaten "
+    "biliyor, tekrar onun için gürültüdür. Sahne boşsa tek kelimeyle geç. "
+    "Ayrıntılı anlatım YALNIZ `dikkat` penceresinde gerekir."
 )
 
 # Kullanıcı istemi şablonu — {start}/{end} pencere sınırlarıyla doldurulur

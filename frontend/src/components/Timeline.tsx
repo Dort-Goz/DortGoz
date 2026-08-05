@@ -1,5 +1,85 @@
+import { useState } from "react";
 import type { IncidentUpdate, WindowReport } from "../types/events";
 import { PHASE_TR, TYPE_TR, clock } from "../lib/labels";
+
+/** Sessiz pencere: sınıf normal VE olay yok — okunacak bir şey taşımaz. */
+const quiet = (r: WindowReport) => r.anomaly_type === "normal" && r.events.length === 0;
+
+type Row = { kind: "report"; report: WindowReport }
+         | { kind: "quiet"; reports: WindowReport[] };
+
+/** Ardışık sessiz pencereleri TEK satırda toplar — olaylı pencereler boğulmasın.
+ *  Saatlik kayıtta 100+ "sahne sakin" satırı operatör için gürültüdür. */
+function groupRows(reports: WindowReport[]): Row[] {
+  const rows: Row[] = [];
+  for (const r of reports) {
+    const last = rows[rows.length - 1];
+    if (quiet(r)) {
+      if (last?.kind === "quiet") last.reports.push(r);
+      else rows.push({ kind: "quiet", reports: [r] });
+    } else {
+      rows.push({ kind: "report", report: r });
+    }
+  }
+  return rows;
+}
+
+function ReportRow({ r }: { r: WindowReport }) {
+  return (
+    <div className="px-1 py-1.5">
+      <div className="flex items-baseline gap-2">
+        <span className="font-mono text-[10px] text-zinc-600">
+          {clock(r.window_start)}–{clock(r.window_end)}
+        </span>
+        <span className={`text-[10px] ${
+          r.anomaly_type === "normal" ? "text-zinc-600" : "text-amber-400/80"
+        }`}>
+          {TYPE_TR[r.anomaly_type] ?? r.anomaly_type}
+        </span>
+      </div>
+      <p className="text-xs text-zinc-400">{r.summary}</p>
+      {r.uncertainties.length > 0 && (
+        <p className="text-[10px] text-amber-500/70 mt-0.5">? {r.uncertainties[0]}</p>
+      )}
+    </div>
+  );
+}
+
+/** Sessiz aralık: varsayılan kapalı, tek satır. Tıklayınca pencereler açılır —
+ *  bilgi SİLİNMİYOR, yalnız katlanıyor (denetlenebilirlik korunur). */
+function QuietGroup({ reports }: { reports: WindowReport[] }) {
+  const [open, setOpen] = useState(false);
+  const first = reports[0], last = reports[reports.length - 1];
+  return (
+    <div className="px-1 py-1">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-baseline gap-2 text-left hover:bg-zinc-800/40 rounded px-1"
+      >
+        <span className="font-mono text-[10px] text-zinc-600">
+          {clock(first.window_start)}–{clock(last.window_end)}
+        </span>
+        <span className="text-[10px] text-zinc-600">olağan</span>
+        <span className="text-[10px] text-zinc-700">
+          {reports.length} pencere{reports.length > 1 ? ", olay yok" : ""}
+        </span>
+        <span className="ml-auto text-[10px] text-zinc-700">{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <div className="pl-2 border-l border-zinc-800 ml-1 mt-1">
+          {reports.map((r) => (
+            <div key={r.window_start} className="py-0.5">
+              <span className="font-mono text-[10px] text-zinc-700 mr-2">
+                {clock(r.window_start)}
+              </span>
+              <span className="text-[11px] text-zinc-500">{r.summary}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Timeline({
   incidents, reports, highlightId, onSelect,
@@ -61,24 +141,11 @@ export default function Timeline({
             <div className="text-[10px] uppercase tracking-wide text-zinc-600 mb-1 px-1">
               Pencere raporları
             </div>
-            {reports.map((r) => (
-              <div key={r.window_start} className="px-1 py-1.5">
-                <div className="flex items-baseline gap-2">
-                  <span className="font-mono text-[10px] text-zinc-600">
-                    {clock(r.window_start)}–{clock(r.window_end)}
-                  </span>
-                  <span className={`text-[10px] ${
-                    r.anomaly_type === "normal" ? "text-zinc-600" : "text-amber-400/80"
-                  }`}>
-                    {TYPE_TR[r.anomaly_type] ?? r.anomaly_type}
-                  </span>
-                </div>
-                <p className="text-xs text-zinc-400">{r.summary}</p>
-                {r.uncertainties.length > 0 && (
-                  <p className="text-[10px] text-amber-500/70 mt-0.5">? {r.uncertainties[0]}</p>
-                )}
-              </div>
-            ))}
+            {groupRows(reports).map((row) =>
+              row.kind === "report"
+                ? <ReportRow key={row.report.window_start} r={row.report} />
+                : <QuietGroup key={`q${row.reports[0].window_start}`} reports={row.reports} />
+            )}
           </div>
         )}
       </div>
