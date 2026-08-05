@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     motion_gate_adaptive: bool = True
     motion_gate: float = 0.004   # uyarlanabilir mod kapalıysa sabit eşik / taban
     interpret_max_tokens: int = 700
+    # İki kademeli üretim (Cerberus deseni): olağan pencere tek cümle üretir,
+    # tam rapor yalnız `dikkat` dalında. DORTGOZ_TWO_TIER=0 → eski tek şema (ablation)
+    two_tier: bool = True
 
     # Yollar
     media_dir: Path = Path(__file__).resolve().parents[2] / "media"

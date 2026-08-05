@@ -44,6 +44,17 @@ SYSTEM_TR = (
     "yalnız gerçekten müdahale gerektiren durumlar için kullan."
 )
 
+# İki kademeli çıktının sözleşme paragrafı — şemaya (tier_schema) bağlı olduğu
+# için SYSTEM_TR'den AYRI tutulur ve etkin sistem istemine mekanik eklenir:
+# deney paneli sistem istemini değiştirse de `durum` dalı açıklamasız kalmaz.
+TIER_TR = (
+    "ÇIKTI KADEMESİ: Önce `summary` alanında gördüğünü betimle, SONRA `durum` "
+    "seç. Betimlediklerinde müdahale/dikkat gerektiren (orta ve üstü şiddette) "
+    "hiçbir şey yoksa `durum: \"olagan\"` de ve orada dur — olay listesi yazma. "
+    "Dikkat gerektiren bir şey varsa ya da EMİN DEĞİLSEN `durum: \"dikkat\"` "
+    "seç ve tam raporu üret — kaçırılan olay yanlış alarmdan pahalıdır."
+)
+
 # Kullanıcı istemi şablonu — {start}/{end} pencere sınırlarıyla doldurulur
 # (düz replace; deney panelinden gelen serbest metinde kaçış derdi olmasın diye
 # str.format kullanılmıyor).
@@ -91,6 +102,43 @@ def report_schema() -> dict[str, Any]:
     schema["additionalProperties"] = False
     schema.pop("title", None)
     return schema
+
+
+def tier_schema() -> dict[str, Any]:
+    """İki kademeli şema (Cerberus deseni) — üretim token'ı ölçülen darboğaz.
+
+    Alan SIRASI kasıtlı: her iki dal da `summary` ile AÇILIR, `durum` ondan
+    sonra gelir — model önce gözlemler, kademeye gözlemden sonra karar verir.
+    (İlk sürüm `durum`u ilk token yapmıştı; canlı probda sınırdaki bir `orta`
+    olayı olağana yutuldu — betimleme zinciri kırılınca geri çağırma düşüyor.)
+    Tasarruf olay/uncertainty yapısının atlanmasından gelir, gözlemden değil.
+    """
+    full = report_schema()
+    rest = {k: v for k, v in full["properties"].items() if k != "summary"}
+    return {"oneOf": [
+        {"type": "object",
+         "properties": {"summary": {"type": "string"}, "durum": {"enum": ["olagan"]}},
+         "required": ["summary", "durum"], "additionalProperties": False},
+        {"type": "object",
+         "properties": {"summary": {"type": "string"},
+                        "durum": {"enum": ["dikkat"]}, **rest},
+         "required": ["summary", "durum",
+                      *[f for f in full["required"] if f != "summary"]],
+         "additionalProperties": False},
+    ]}
+
+
+def _to_report(start: float, end: float, raw: str) -> WindowReport:
+    """Model JSON'ını WindowReport'a çevirir; iki kademeli `durum` dalını düzler.
+
+    Tel sözleşmesi (events.py) DEĞİŞMEZ: `olagan` dalı normal/boş-olaylı
+    WindowReport'a iner — defter ve arayüz kademelerden habersiz kalır.
+    """
+    data = json.loads(raw)
+    if data.pop("durum", None) == "olagan":
+        return WindowReport(window_start=start, window_end=end,
+                            summary=data.get("summary", ""))
+    return WindowReport(window_start=start, window_end=end, **data)
 
 
 def _image_part(jpeg: bytes) -> dict[str, Any]:
@@ -200,17 +248,22 @@ async def interpret_window(
         task += f"\n\nAlgı katmanı verisi:\n{meta}"
     content.append({"type": "text", "text": task})
 
+    system = system_prompt or SYSTEM_TR
+    if settings.two_tier:
+        system = f"{system}\n\n{TIER_TR}"
+
     client = main_client()
     resp = await client.chat.completions.create(
         model=model or settings.main_model,
-        messages=[{"role": "system", "content": system_prompt or SYSTEM_TR},
+        messages=[{"role": "system", "content": system},
                   {"role": "user", "content": content}],
         max_tokens=settings.interpret_max_tokens,
         temperature=0,
         response_format={
             "type": "json_schema",
             "json_schema": {"name": "window_report", "strict": True,
-                            "schema": report_schema()},
+                            "schema": tier_schema() if settings.two_tier
+                                      else report_schema()},
         },
         extra_body={
             # mmproj + MTP birlikte iken istek başına şart (yoksa çökme)
@@ -220,4 +273,4 @@ async def interpret_window(
     )
     raw = resp.choices[0].message.content or "{}"
     # GBNF üretim anında garanti eder; Pydantic ikinci savunma katmanı (A6)
-    return WindowReport(window_start=start, window_end=end, **json.loads(raw))
+    return _to_report(start, end, raw)
