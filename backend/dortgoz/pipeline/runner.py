@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 
 from .. import session
+from ..agent.llm import context_size
 from ..agent.memory import RISK_ORDER, Ledger
 from ..config import settings
 from ..events import AgentStep, Event, RunStatus, WindowReport
@@ -67,6 +68,33 @@ class RunRecorder:
         self._fh.close()
 
 
+def perf_text(call: dict, n_ctx: int | None) -> str:
+    """`… · 742/98304 tok (%0,8) · PP 2843 / gen 130 t/s` — izleme satırının kuyruğu.
+
+    Bağlam doluluğu operatöre "taşmaya ne kadar var" der (uzun olay 2. geçişi ve
+    çok kareli istemler burada görünür); PP/gen hızları da yavaşlamayı (ör. GTT
+    taşması) koşu sırasında fark ettirir. n_ctx okunamazsa (erişim kapısı /props
+    açmaz) yüzde atlanır, token sayıları yine gösterilir.
+
+    ⚠ Buradaki **PP, config.yaml etiketindeki PP ile AYNI ŞEY DEĞİL**: bu ölçüme
+    kare KODLAMA süresi de giriyor (6 kare ≈ 1,5 sn sabit ek yük) ve prompt token
+    sayısı görece küçük olduğu için oran düşük çıkar (ölçüldü: 65 t/s, etiket
+    2013). Regresyon sanma — etiketle kıyaslanacak sayı `benchsuite`in METİN
+    ölçümüdür; buradaki değer pencere başına GERÇEK maliyeti gösterir.
+    """
+    if not call:
+        return ""
+    pt, ct = call.get("prompt_tokens"), call.get("completion_tokens")
+    bits = []
+    if pt is not None:
+        fill = f" (%{100 * pt / n_ctx:.1f})" if n_ctx else ""
+        bits.append(f"{pt}+{ct or 0}/{n_ctx or '?'} tok{fill}")
+    pp, gen = call.get("pp_tps"), call.get("gen_tps")
+    if pp or gen:
+        bits.append(f"PP {pp or 0:.0f} / gen {gen or 0:.0f} t/s")
+    return " · " + " · ".join(bits) if bits else ""
+
+
 async def review_if_closed(rec: "RunRecorder", ledger: Ledger, path: Path,
                            profile: list[float], update, model: str) -> None:
     """Olay KAPANDIĞINDA tüm aralığı tek bağlamda yeniden okur ve kartı düzeltir.
@@ -92,14 +120,17 @@ async def review_if_closed(rec: "RunRecorder", ledger: Ledger, path: Path,
                                     f"({frames} kare)"))
     try:
         keyframes = windowing.select_keyframes(profile, start, end, frames)
+        call: dict = {}
         review = await interpret.review_incident(
-            path, (start, end), keyframes, inc.notes, model=model)
+            path, (start, end), keyframes, inc.notes, model=model, stats=call)
         revised = ledger.apply_review(update.incident_id, review)
         if revised is not None:
             await rec.emit(revised)
-        await rec.emit(AgentStep(node="oversight", status="end",
-                                 detail=f"{review.get('anomaly_type','?')} / "
-                                        f"{review.get('risk','?')} olarak bütünlendi"))
+        await rec.emit(AgentStep(
+            node="oversight", status="end",
+            detail=f"{review.get('anomaly_type','?')} / {review.get('risk','?')} "
+                   f"olarak bütünlendi" + perf_text(call, await context_size(
+                       model or settings.main_model))))
     except Exception as exc:                 # 2. geçiş bir EK'tir, koşuyu düşürmez
         await rec.emit(AgentStep(node="oversight", status="error",
                                  detail=str(exc)[:160]))
@@ -168,6 +199,7 @@ async def run_video(
         else:
             wins = windowing.windows(duration, settings.window_seconds)
 
+        n_ctx = await context_size(effective_model)   # bağlam doluluğu için (bir kez)
         prev_end = 0.0
         for idx, (start, end) in enumerate(wins):
             if settings.dynamic_windows:
@@ -203,6 +235,7 @@ async def run_video(
                 keyframes = windowing.select_keyframes(
                     profile, start, end, settings.keyframes_per_window
                 )
+                call: dict = {}
                 try:
                     report = await interpret_window(
                         path, (start, end), keyframes,
@@ -210,6 +243,7 @@ async def run_video(
                         task_prompt=task_prompt,
                         # Süregelen olayın bağlamı bir sonraki pencereye taşınır
                         context=hint,
+                        stats=call,
                     )
                 except asyncio.CancelledError:
                     raise
@@ -233,7 +267,8 @@ async def run_video(
                     node="interpret", status="end",
                     detail=f"{len(report.events)} olay · {report.anomaly_type} · şiddet {sev}"
                            + (f" · {len(report.uncertainties)} belirsizlik"
-                              if report.uncertainties else ""),
+                              if report.uncertainties else "")
+                           + perf_text(call, n_ctx),
                 ))
 
                 # Defter: ciddi olayları yaşam döngüsüyle olaya dönüştürür.

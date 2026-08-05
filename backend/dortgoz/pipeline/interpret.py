@@ -25,7 +25,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from ..agent.llm import main_client
+from ..agent.llm import call_stats, main_client
 from ..config import settings
 from ..events import WindowReport
 from .ingest import grab_frame
@@ -123,6 +123,7 @@ async def review_incident(
     notes: list[str],
     *,
     model: str = "",
+    stats: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Kapanmış bir olayın TÜM aralığını tek bağlamda yeniden okur."""
     start, end = span
@@ -154,6 +155,8 @@ async def review_incident(
         extra_body={"speculative.n_max": 0,
                     "chat_template_kwargs": {"enable_thinking": False}},
     )
+    if stats is not None:
+        stats.update(call_stats(resp))
     raw = resp.choices[0].message.content or "{}"
     try:
         return json.loads(raw)
@@ -395,6 +398,7 @@ async def interpret_window(
     system_prompt: str = "",
     task_prompt: str = "",
     context: str = "",
+    stats: dict[str, Any] | None = None,
 ) -> WindowReport:
     """Bir pencereyi tek VLM çağrısıyla yorumlar; şema-geçerli WindowReport döner.
 
@@ -439,6 +443,8 @@ async def interpret_window(
             "chat_template_kwargs": {"enable_thinking": False},
         },
     )
+    if stats is not None:                    # token sayıları + PP/gen hızları
+        stats.update(call_stats(resp))
     raw = resp.choices[0].message.content or "{}"
     # GBNF üretim anında garanti eder; Pydantic ikinci savunma katmanı (A6).
     # finish_reason "length" = çıktı bütçeye sığmadı → kesilmiş olabilir.
