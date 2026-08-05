@@ -152,6 +152,7 @@ async def review_incident(
         response_format={"type": "json_schema",
                          "json_schema": {"name": "incident_review", "strict": True,
                                          "schema": review_schema()}},
+        # Görüntü isteği → spekülasyon kapalı (hız; bkz. interpret_window notu)
         extra_body={"speculative.n_max": 0,
                     "chat_template_kwargs": {"enable_thinking": False}},
     )
@@ -438,7 +439,12 @@ async def interpret_window(
                                       else report_schema()},
         },
         extra_body={
-            # mmproj + MTP birlikte iken istek başına şart (yoksa çökme)
+            # Görüntü isteklerinde spekülasyonu KAPAT — çökme için değil HIZ için:
+            # MTP taslakları görü token'larında tutmuyor (ölçüm 2026-08-06,
+            # thinkingcap-27b-vision: korumasız 41 t/s vs korumalı 52 t/s).
+            # ⚠ METİN yolunda (agent/graph.py sohbeti) GÖNDERİLMEZ — orada MTP
+            # 36 → 75 t/s kazandırıyor. Eski "mmproj+MTP çöker" notu b10234'te
+            # ARTIK GEÇERLİ DEĞİL (korumasız görüntü isteği sorunsuz çalıştı).
             "speculative.n_max": 0,
             "chat_template_kwargs": {"enable_thinking": False},
         },
