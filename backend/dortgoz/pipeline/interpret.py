@@ -44,6 +44,15 @@ SYSTEM_TR = (
     "yalnız gerçekten müdahale gerektiren durumlar için kullan."
 )
 
+# Kullanıcı istemi şablonu — {start}/{end} pencere sınırlarıyla doldurulur
+# (düz replace; deney panelinden gelen serbest metinde kaçış derdi olmasın diye
+# str.format kullanılmıyor).
+TASK_TR = (
+    "Yukarıdaki kareler {start}-{end} sn penceresine aittir. "
+    "Pencereyi özetle ve dikkat gerektiren olayları zaman damgasıyla listele. "
+    "Zaman damgaları kareler üzerinde yazan saniyelerle tutarlı olmalı."
+)
+
 
 def _inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
     """`$ref`/`$defs` içeren Pydantic şemasını düz şemaya çevirir.
@@ -168,27 +177,33 @@ async def interpret_window(
     window: tuple[float, float],
     keyframes: list[float],
     meta: str = "",
+    *,
+    model: str = "",
+    system_prompt: str = "",
+    task_prompt: str = "",
 ) -> WindowReport:
-    """Bir pencereyi tek VLM çağrısıyla yorumlar; şema-geçerli WindowReport döner."""
+    """Bir pencereyi tek VLM çağrısıyla yorumlar; şema-geçerli WindowReport döner.
+
+    `model`/`system_prompt`/`task_prompt` boşsa varsayılanlara düşer — deney
+    paneli (arayüz) bunları koşu başına geçirir, şablonda {start}/{end} korunur.
+    """
     start, end = window
     content: list[dict[str, Any]] = []
     for t in keyframes:
         content.append({"type": "text", "text": f"[t={t:.1f}s]"})
         content.append(_image_part(await grab_frame(video, t)))
 
-    task = (
-        f"Yukarıdaki kareler {start:.0f}-{end:.0f} sn penceresine aittir. "
-        "Pencereyi özetle ve dikkat gerektiren olayları zaman damgasıyla listele. "
-        "Zaman damgaları kareler üzerinde yazan saniyelerle tutarlı olmalı."
-    )
+    task = ((task_prompt or TASK_TR)
+            .replace("{start}", f"{start:.0f}")
+            .replace("{end}", f"{end:.0f}"))
     if meta:
         task += f"\n\nAlgı katmanı verisi:\n{meta}"
     content.append({"type": "text", "text": task})
 
     client = main_client()
     resp = await client.chat.completions.create(
-        model=settings.main_model,
-        messages=[{"role": "system", "content": SYSTEM_TR},
+        model=model or settings.main_model,
+        messages=[{"role": "system", "content": system_prompt or SYSTEM_TR},
                   {"role": "user", "content": content}],
         max_tokens=settings.interpret_max_tokens,
         temperature=0,

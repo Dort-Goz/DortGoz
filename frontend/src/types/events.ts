@@ -113,4 +113,8 @@ export interface OperatorMessage {
   request_id?: string;
   approved?: boolean;
   video?: string;
+  /** start_run deney seçenekleri — boş/undefined = varsayılan (bkz. events.py) */
+  model?: string;
+  system_prompt?: string;
+  task_prompt?: string;
 }

@@ -20,7 +20,7 @@ from ..config import settings
 from ..events import AgentStep, Event, RunStatus, WindowReport
 from ..ws import ConnectionManager
 from . import ingest, windowing
-from .interpret import interpret_window
+from .interpret import SYSTEM_TR, TASK_TR, interpret_window
 
 THUMB_DIR = "_thumbs"       # media/ altında; /media mount'u üzerinden servis edilir
 
@@ -67,15 +67,38 @@ class RunRecorder:
         self._fh.close()
 
 
-async def run_video(manager: ConnectionManager, video: str, run_id: str) -> None:
-    """Bir videoyu işler; iptal edilirse (stop_run) durumu temiz bırakır."""
+async def run_video(
+    manager: ConnectionManager,
+    video: str,
+    run_id: str,
+    *,
+    model: str = "",
+    system_prompt: str = "",
+    task_prompt: str = "",
+) -> None:
+    """Bir videoyu işler; iptal edilirse (stop_run) durumu temiz bırakır.
+
+    Deney seçenekleri (model/istemler) boşsa varsayılan; her koşunun etkin
+    yapılandırması `runs/<id>.meta.json`'a yazılır — hangi istem hangi çıktıyı
+    üretti sorusu (ablation/kanıt disiplini) her zaman cevaplanabilir kalır.
+    """
     rec = RunRecorder(manager, run_id)
     ctx = session.start(run_id, video)      # sohbet analiz sonrası buradan devam eder
     ledger = ctx.ledger
+    effective_model = model or settings.main_model
+    (settings.runs_dir / f"{run_id}.meta.json").write_text(json.dumps({
+        "video": video,
+        "model": effective_model,
+        "system_prompt": system_prompt or SYSTEM_TR,
+        "task_prompt": task_prompt or TASK_TR,
+        "customized": bool(model or system_prompt or task_prompt),
+    }, ensure_ascii=False, indent=1), encoding="utf-8")
     try:
         path = resolve_media(video)
 
-        await rec.emit(RunStatus(run_id=run_id, state="processing", detail=video))
+        custom = " · özel istem" if (system_prompt or task_prompt) else ""
+        await rec.emit(RunStatus(run_id=run_id, state="processing",
+                                 detail=f"{video} · {effective_model}{custom}"))
         await rec.emit(AgentStep(node="perceive", status="start", detail="hareket profili"))
         duration = await ingest.probe_duration(path)
         ctx.duration = duration
@@ -109,7 +132,10 @@ async def run_video(manager: ConnectionManager, video: str, run_id: str) -> None
                 keyframes = windowing.select_keyframes(
                     profile, start, end, settings.keyframes_per_window
                 )
-                report = await interpret_window(path, (start, end), keyframes)
+                report = await interpret_window(
+                    path, (start, end), keyframes,
+                    model=model, system_prompt=system_prompt, task_prompt=task_prompt,
+                )
                 ctx.reports.append(report)
                 await rec.emit(report)
                 await rec.emit(AgentStep(

@@ -153,3 +153,8 @@ class OperatorMessage(BaseModel):
     request_id: str = ""              # actuator_response için
     approved: bool = False
     video: str = ""                   # start_run için /media altı yol
+    # start_run deney seçenekleri (boş = varsayılan): model model sunucusu profil adı,
+    # istemler interpret.py şablonlarının yerine geçer ({start}/{end} korunur)
+    model: str = ""
+    system_prompt: str = ""
+    task_prompt: str = ""

@@ -49,6 +49,34 @@ async def get_run(run_id: str) -> list[dict]:
     return load_run(run_id)
 
 
+@app.get("/api/interpret_config")
+async def interpret_config() -> dict:
+    """Deney paneli verisi: seçilebilir modeller + varsayılan istemler.
+
+    Model listesi model sunucusu `/v1/models`'ten canlı çekilir (erişim kapısı da
+    bu yolu açık tutar); sunucuya ulaşılamazsa veya mock moddaysak liste
+    varsayılan modelden ibaret kalır — panel yine çalışır.
+    """
+    from .pipeline.interpret import SYSTEM_TR, TASK_TR
+
+    models = [settings.main_model]
+    if not settings.mock:
+        try:
+            from .agent.llm import main_client
+            page = await asyncio.wait_for(main_client().models.list(), timeout=5)
+            ids = [m.id for m in page.data]
+            if ids:
+                models = ([settings.main_model] if settings.main_model not in ids else []) + ids
+        except Exception:
+            pass    # liste süsleme; varsayılanla devam
+    return {
+        "default_model": settings.main_model,
+        "models": models,
+        "system_prompt": SYSTEM_TR,
+        "task_prompt": TASK_TR,
+    }
+
+
 @app.get("/api/videos")
 async def list_videos() -> list[str]:
     """`/media` altındaki işlenebilir videolar — start_run bunlardan birini alır."""
@@ -103,16 +131,17 @@ async def handle_operator_message(msg: OperatorMessage) -> None:
             detail="Operatör kararı",
         )))
     elif msg.kind == "start_run":
-        await start_run(msg.video)
+        await start_run(msg)
     elif msg.kind == "stop_run":
         await stop_run()
 
 
-async def start_run(video: str) -> None:
+async def start_run(msg: OperatorMessage) -> None:
     """Video işleme hattını arka plan görevi olarak başlatır.
 
     HTTP/WS isteği içinde koşmaz (A4: uzun analiz istek döngüsünü bloklamamalı);
-    ilerleme RunStatus, ara sonuçlar WindowReport olarak akar.
+    ilerleme RunStatus, ara sonuçlar WindowReport olarak akar. Deney seçenekleri
+    (model/istem override'ları) koşuya aynen taşınır.
     """
     global _run_task
     if _run_task and not _run_task.done():
@@ -123,8 +152,11 @@ async def start_run(video: str) -> None:
 
     from .pipeline.runner import run_video      # geç import: mock modda gerekmez
 
-    run_id = f"{Path(video).stem}-{uuid.uuid4().hex[:6]}"
-    _run_task = asyncio.create_task(run_video(manager, video, run_id))
+    run_id = f"{Path(msg.video).stem}-{uuid.uuid4().hex[:6]}"
+    _run_task = asyncio.create_task(run_video(
+        manager, msg.video, run_id,
+        model=msg.model, system_prompt=msg.system_prompt, task_prompt=msg.task_prompt,
+    ))
 
 
 async def stop_run() -> None:

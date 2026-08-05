@@ -47,3 +47,16 @@ def test_websocket_chat_roundtrip(monkeypatch):
                         got_agent_reply = True
                         break
             assert got_operator_echo and got_agent_reply
+
+
+def test_interpret_config_mock(monkeypatch):
+    """Deney paneli verisi mock modda da (model sunucusu'sız) çalışmalı."""
+    from dortgoz.config import settings
+    monkeypatch.setattr(settings, "mock", True)
+    with TestClient(app) as client:
+        r = client.get("/api/interpret_config")
+        assert r.status_code == 200
+        cfg = r.json()
+        assert cfg["default_model"] in cfg["models"]
+        assert "{start}" in cfg["task_prompt"] and "{end}" in cfg["task_prompt"]
+        assert len(cfg["system_prompt"]) > 50
