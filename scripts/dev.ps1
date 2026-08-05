@@ -1,7 +1,15 @@
 [CmdletBinding()]
-param()
+param(
+    [switch]$Mock
+)
 
 $ErrorActionPreference = "Stop"
+
+# Winget/Bun/uv kurulumlarından sonra açık kalan PowerShell, güncel kullanıcı
+# PATH'ini miras almaz. Launcher her açılışta kayıtlı PATH'i yeniden yükler.
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+$machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+$env:PATH = "$userPath;$machinePath;$env:PATH"
 
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $BackendDir = Join-Path $Root "backend"
@@ -42,6 +50,9 @@ $bunPath = Resolve-Executable -Name "bun" -Fallbacks @(
     (Join-Path $env:USERPROFILE ".bun\bin\bun.exe")
 )
 
+$null = Resolve-Executable -Name "ffmpeg"
+$null = Resolve-Executable -Name "ffprobe"
+
 if (-not (Test-Path -LiteralPath $BackendDir)) {
     throw "Backend klasörü bulunamadı: $BackendDir"
 }
@@ -50,24 +61,30 @@ if (-not (Test-Path -LiteralPath $FrontendDir)) {
     throw "Frontend klasörü bulunamadı: $FrontendDir"
 }
 
-$backendJob = Start-Job -Name "dortgoz-backend" -ArgumentList $BackendDir, $uvPath -ScriptBlock {
-    param($WorkingDirectory, $UvExecutable)
+$backendJob = Start-Job -Name "dortgoz-backend" -ArgumentList $BackendDir, $uvPath, $Mock.IsPresent -ScriptBlock {
+    param($WorkingDirectory, $UvExecutable, $UseMock)
 
     Set-Location $WorkingDirectory
-    $env:DORTGOZ_MOCK = "1"
-    & $UvExecutable run uvicorn dortgoz.main:app --reload --port 8000
+    if ($UseMock) {
+        $env:DORTGOZ_MOCK = "1"
+    } else {
+        Remove-Item Env:DORTGOZ_MOCK -ErrorAction SilentlyContinue
+    }
+    # Windows'ta uvicorn --reload SelectorEventLoop kullanır; asyncio subprocess
+    # (ffmpeg/ffprobe) desteklenmediği için video hattı NotImplementedError ile düşer.
+    & $UvExecutable run uvicorn dortgoz.main:app --host 0.0.0.0 --port 8000
 }
 
 $frontendJob = Start-Job -Name "dortgoz-frontend" -ArgumentList $FrontendDir, $bunPath -ScriptBlock {
     param($WorkingDirectory, $BunExecutable)
 
     Set-Location $WorkingDirectory
-    & $BunExecutable run dev
+    & $BunExecutable run dev -- --host 0.0.0.0
 }
 
 $jobs = @($backendJob, $frontendJob)
 
-Write-Host "Dörtgöz geliştirme sunucuları başlatıldı." -ForegroundColor Green
+Write-Host "Dörtgöz geliştirme sunucuları başlatıldı ($(if ($Mock) { 'mock' } else { 'gerçek' }) mod)." -ForegroundColor Green
 Write-Host "Backend:  http://localhost:8000/health"
 Write-Host "Frontend: http://localhost:5173"
 Write-Host "Durdurmak için Ctrl+C kullanın."

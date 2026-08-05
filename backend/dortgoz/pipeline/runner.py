@@ -263,9 +263,10 @@ async def run_video(
                                  detail="operatör durdurdu"))
         raise
     except Exception as exc:                       # hattın hatası operatöre görünür olmalı
-        await rec.emit(AgentStep(node="interpret", status="error", detail=str(exc)[:300]))
-        await rec.emit(RunStatus(run_id=run_id, state="error", video=video,
-                                 detail=str(exc)[:300]))
+        # Hata metni exception TÜRÜNÜ de taşır (boş mesajlı hatalar görünür kalsın)
+        detail = f"{type(exc).__name__}: {exc}"[:300]
+        await rec.emit(AgentStep(node="interpret", status="error", detail=detail))
+        await rec.emit(RunStatus(run_id=run_id, state="error", video=video, detail=detail))
     finally:
         rec.close()
 
