@@ -25,7 +25,13 @@ makineden çıkmaz (bkz. datasets_S3.md veri politikası).
     python scripts/make_long_feed.py --minutes 20 --cameras 4     # kamera duvarı
     python scripts/make_long_feed.py --list                       # uzun kayıt envanteri
 
-Kaynak kopya: ~/datasets/Dort_Goz/UCF_Crimes (yerel, repoya girmez).
+UCF-Crime kopyasının YERİ AYARLANABİLİR (herkesin diski farklı) — öncelik sırası:
+    1. `--ucf /yol/UCF_Crimes`
+    2. `DORTGOZ_UCF_DIR` ortam değişkeni
+    3. kök dizindeki `.env` içindeki `DORTGOZ_UCF_DIR` (backend ile aynı dosya)
+    4. bilinen varsayılan yollar
+`UCF_Crimes` de `UCF_Crimes/Videos` de verilebilir; ikisi de kabul edilir.
+Klipler kopyalanmaz, yalnız okunur — veri seti diskinde kalır (repoya girmez).
 Atıf: Sultani et al., CVPR 2018.
 """
 
@@ -33,13 +39,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import subprocess
 import tempfile
 from pathlib import Path
 
-UCF = Path("~/datasets/Dort_Goz/UCF_Crimes/Videos")
-MEDIA = Path(__file__).resolve().parents[1] / "media"
+ROOT = Path(__file__).resolve().parents[1]
+MEDIA = ROOT / "media"
+ENV_KEY = "DORTGOZ_UCF_DIR"
+# Son çare varsayılanlar — hiçbiri yoksa betik ne ayarlanacağını söyleyip çıkar
+DEFAULT_UCF = [
+    Path("~/datasets/Dort_Goz/UCF_Crimes"),
+    Path.home() / "Datasets/UCF_Crimes",
+]
+UCF = Path()      # resolve_ucf() ile doldurulur (main/--ucf/env/.env)
 NORMAL_DIRS = ["Testing_Normal_Videos_Anomaly", "Training_Normal_Videos_Anomaly"]
 # Kapsam: A1 sınıf listesine karşılık gelen UCF dizinleri (Shoplifting/Stealing
 # dahil değil — bench'te 0/2 yakalama, gömülü olayın görünürlüğü tartışmalı)
@@ -47,6 +61,60 @@ ANOMALY_DIRS = ["Fighting", "Assault", "Abuse", "Explosion", "Arson",
                 "RoadAccidents", "Vandalism", "Burglary", "Robbery"]
 
 WIDTH, HEIGHT, FPS = 320, 240, 15   # UCF anaakımı; ~80 prompt token/kare
+
+
+def _env_file_value(key: str) -> str | None:
+    """Kökteki `.env`'den tek anahtar okur (betik stdlib-only; pydantic yok)."""
+    env = ROOT / ".env"
+    if not env.is_file():
+        return None
+    for line in env.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line.startswith(f"{key}=") and not line.startswith("#"):
+            return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return None
+
+
+def resolve_ucf(cli: Path | None) -> Path:
+    """Veri seti kökünü çözer ve `Videos/` dizinini döndürür.
+
+    `UCF_Crimes` ya da `UCF_Crimes/Videos` verilebilir — ikisi de kabul edilir,
+    böylece kimse hangi seviyenin isteneceğini hatırlamak zorunda kalmaz.
+    """
+    explicit = [(Path(src).expanduser(), label) for src, label in (
+        (cli, "--ucf"), (os.environ.get(ENV_KEY), ENV_KEY),
+        (_env_file_value(ENV_KEY), f".env:{ENV_KEY}")) if src]
+
+    def try_base(base: Path) -> Path | None:
+        for path in (base / "Videos", base):
+            if (path / "Training_Normal_Videos_Anomaly").is_dir():
+                return path
+        return None
+
+    # Açıkça verilen yol YANLIŞSA sessizce varsayılana düşme — yazım hatası
+    # başka bir makinede fark edilmeden yanlış veri setiyle çalışmaya yol açar
+    if explicit:
+        base, label = explicit[0]
+        found = try_base(base)
+        if found:
+            return found
+        raise SystemExit(
+            f"{label} ile verilen yol UCF-Crime kopyası değil: {base}\n"
+            "Beklenen içerik: <yol>/Videos/Training_Normal_Videos_Anomaly/")
+
+    for base in DEFAULT_UCF:
+        if (found := try_base(base)):
+            return found
+
+    tried = "\n  ".join(str(c) for c in DEFAULT_UCF)
+    raise SystemExit(
+        "UCF-Crime kopyası bulunamadı. Denenen varsayılan yollar:\n  " + tried +
+        f"\n\nVeri setinin yerini bildir (biri yeterli):\n"
+        f"  scripts/make_long_feed.py --ucf /disk/yolu/UCF_Crimes\n"
+        f"  {ENV_KEY}=/disk/yolu/UCF_Crimes  (ortam değişkeni)\n"
+        f"  .env dosyasına: {ENV_KEY}=/disk/yolu/UCF_Crimes\n"
+        "Beklenen içerik: <yol>/Videos/Training_Normal_Videos_Anomaly/"
+    )
 
 
 def duration(path: Path) -> float:
@@ -166,8 +234,14 @@ def main() -> None:
                     help="olay gömme — saf sürekli ölü hava (akış/kuyruk testi)")
     ap.add_argument("--list", action="store_true",
                     help="yerel uzun sürekli kayıt envanterini göster ve çık")
+    ap.add_argument("--ucf", type=Path,
+                    help=f"UCF-Crime kopyasının yolu (yoksa {ENV_KEY} / .env / varsayılan)")
     ap.add_argument("--out", type=Path, help="tek kamera için çıktı yolu")
     args = ap.parse_args()
+
+    global UCF
+    UCF = resolve_ucf(args.ucf)
+    print(f"veri seti: {UCF}")
 
     if args.list:
         for path, dur in long_normals(600.0):
