@@ -64,10 +64,17 @@ class Entity:
 class Ledger:
     """Pencere raporlarını olaylara dönüştürür ve yaşam döngüsünü yürütür."""
 
-    def __init__(self) -> None:
+    def __init__(self, grace_windows: int = 1) -> None:
         self.incidents: dict[str, Incident] = {}
         self.entities: dict[int, Entity] = {}
         self._open_id: str | None = None      # süregelen olay (varsa)
+        # Tek sessiz pencere olayı KAPATMASIN: uzun bir olayın ortasındaki
+        # sınırdaki pencere ("kalabalık masanın etrafında toplanmış") kimi koşuda
+        # ciddi olay üretmiyor ve olay ikiye bölünüyordu — süreklilik ipucu bunu
+        # azalttı ama koşu varyansı yüzünden tamamen engellemedi (v2 birleşti,
+        # v3 yine bölündü). Yapısal çözüm: N sessiz pencere tolere edilir.
+        self._grace = grace_windows
+        self._quiet = 0
 
     # ---- sorgu ----
 
@@ -121,9 +128,14 @@ class Ledger:
         """Bir pencere raporunu deftere işler; yayınlanacak güncellemeleri döndürür."""
         events = self.serious(report)
         if not events:
-            # Ciddi olay yok → süregelen olay varsa burada sonuçlanır
-            return self._close() if self._open_id else []
+            if not self._open_id:
+                return []
+            self._quiet += 1
+            if self._quiet > self._grace:
+                return self._close()
+            return []                     # tolerans içinde: olay açık kalır
 
+        self._quiet = 0
         peak = max(events, key=lambda e: _rank(e.severity_hint))
         current = self.open_incident
         if current is None:
@@ -169,6 +181,7 @@ class Ledger:
     def _close(self) -> list[IncidentUpdate]:
         inc = self.incidents[self._open_id]        # type: ignore[index]
         self._open_id = None
+        self._quiet = 0
         inc.phase = "sonuclandi"
         detail = f"{len(inc.notes)} gözlem · {inc.first_seen:.0f}-{inc.last_seen:.0f} sn"
         return [_update(inc, inc.last_seen, detail)]

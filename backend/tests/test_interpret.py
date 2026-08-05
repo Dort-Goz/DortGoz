@@ -143,3 +143,34 @@ def test_review_detail_trims_at_sentence_boundary():
     assert len(out) <= 1210
     assert out.endswith(". …")                 # kelime ortasında değil, cümle sonunda
     assert _trim("kısa metin") == "kısa metin"
+
+
+def test_ledger_grace_keeps_incident_open_across_one_quiet_window():
+    """Tek sessiz pencere olayı kapatmamalı (uzun olay bölünmesi, 2026-08-05)."""
+    from dortgoz.agent.memory import Ledger
+    from dortgoz.events import WindowEvent, WindowReport
+    def rep(t, sev=None):
+        return WindowReport(window_start=t, window_end=t + 30, summary="",
+                            events=[] if sev is None else
+                            [WindowEvent(t=t + 5, desc="olay", severity_hint=sev)])
+    led = Ledger(grace_windows=1)
+    led.ingest(rep(0, "orta"))
+    assert led.open_incident is not None
+    assert led.ingest(rep(30)) == []               # sessiz pencere → tolere
+    assert led.open_incident is not None           # olay HÂLÂ açık
+    ups = led.ingest(rep(60, "orta"))              # olay geri döndü
+    assert ups and ups[0].phase == "gelisiyor"
+    assert len({u.incident_id for u in ups}) == 1  # aynı olay, yenisi değil
+    led.ingest(rep(90))                            # 1. sessiz
+    closed = led.ingest(rep(120))                  # 2. sessiz → kapanır
+    assert closed and closed[0].phase == "sonuclandi"
+
+
+def test_ledger_grace_zero_is_old_behaviour():
+    from dortgoz.agent.memory import Ledger
+    from dortgoz.events import WindowEvent, WindowReport
+    led = Ledger(grace_windows=0)
+    led.ingest(WindowReport(window_start=0, window_end=30, summary="",
+                            events=[WindowEvent(t=5, desc="x", severity_hint="orta")]))
+    out = led.ingest(WindowReport(window_start=30, window_end=60, summary=""))
+    assert out and out[0].phase == "sonuclandi"

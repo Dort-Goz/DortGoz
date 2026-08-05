@@ -33,7 +33,11 @@ def test_incident_opens_then_develops_then_closes():
     assert [u.phase for u in b] == ["gelisiyor"]
     assert b[0].incident_id == inc_id          # aynı olayın devamı
 
-    c = led.ingest(report(60, (65, "Ortam sakin", "dusuk")))
+    # 2026-08-05: tek sessiz pencere artık KAPATMAZ (grace) — olayın ortasındaki
+    # sınırdaki bir pencere uzun olayları ikiye bölüyordu. Kapanış için gerçek
+    # bir boşluk (grace+1 sessiz pencere) gerekir.
+    assert led.ingest(report(60, (65, "Ortam sakin", "dusuk"))) == []
+    c = led.ingest(report(90, (95, "Ortam sakin", "dusuk")))
     assert [u.phase for u in c] == ["sonuclandi"]
     assert c[0].incident_id == inc_id
 
@@ -49,11 +53,16 @@ def test_risk_escalates_but_never_downgrades():
 
 
 def test_gap_splits_into_two_incidents():
-    """Araya olaysız pencere girerse ikinci olay AYRI kayıt olmalı."""
+    """GERÇEK boşluk (grace'i aşan sessizlik) ikinci olayı AYRI kayıt yapmalı.
+
+    2026-08-05: tolerans eklendikten sonra tek sessiz pencere bölmez; ayrı olay
+    için grace+1 sessiz pencere gerekir (bkz. test_ledger_grace_* testleri).
+    """
     led = Ledger()
     first = led.ingest(report(0, (10, "Kavga", "orta")))[0]
-    led.ingest(report(30))                     # olaysız pencere → kapanış
-    second = led.ingest(report(60, (70, "Hırsızlık", "yuksek")))[0]
+    led.ingest(report(30))                     # 1. sessiz — tolere edilir
+    led.ingest(report(60))                     # 2. sessiz → kapanış
+    second = led.ingest(report(90, (100, "Hırsızlık", "yuksek")))[0]
     assert second.incident_id != first.incident_id
     assert second.phase == "basladi"
     assert len(led.incidents) == 2

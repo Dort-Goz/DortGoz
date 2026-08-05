@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .agent.memory import Incident, Ledger
+from .config import settings
 from .events import WindowReport
 
 TYPE_TR: dict[str, str] = {
@@ -37,7 +38,8 @@ class RunContext:
     duration: float = 0.0
     finished: bool = False
     reports: list[WindowReport] = field(default_factory=list)
-    ledger: Ledger = field(default_factory=Ledger)
+    ledger: Ledger = field(
+        default_factory=lambda: Ledger(settings.incident_grace_windows))
 
     @property
     def incidents(self) -> list[Incident]:

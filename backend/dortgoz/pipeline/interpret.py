@@ -36,9 +36,16 @@ SYSTEM_TR = (
     "Gördüklerini Türkçe, kısa ve operasyonel dille raporla. Yalnızca karelerde "
     "GÖRDÜĞÜNÜ yaz; emin olmadığın çıkarımları 'uncertainties' alanına koy. "
     "Olay yoksa 'events' boş kalsın — olay uydurma.\n\n"
-    "`anomaly_type` pencerenin baskın olay sınıfıdır. Dikkat gerektiren bir durum "
-    "yoksa `normal` yaz. Bir şey oluyor ama listedeki sınıflardan hiçbirine "
-    "oturmuyorsa `bilinmeyen` yaz — zorlama sınıflandırma yapma.\n\n"
+    # ⚠ Burada SINIF SÖZLÜĞÜ denendi ve GERİ ALINDI (2026-08-05): dar tanımlar
+    # ("hirsizlik = mal alıp götürme" gibi) sınıflandırmayı düzeltmedi ama ALARM
+    # kararına sızdı — hiçbir sınıfa tam oturmayan gerçek bir olay (gece kapalı
+    # dükkân önünde motosikletle gelip hızla ayrılan iki kişi) 4/4 koşuda
+    # `normal`e düştü, yani tek Vandalism yakalaması kayboldu. Sınıf hatasını
+    # şema alan SIRASI çözüyor (aşağıdaki report_schema notu), istem değil.
+    "`anomaly_type` pencerenin baskın olay sınıfıdır ve olayları yazdıktan "
+    "SONRA seçilir. Dikkat gerektiren bir durum yoksa `normal` yaz. Bir şey "
+    "oluyor ama listedeki sınıflardan hiçbirine oturmuyorsa `bilinmeyen` yaz "
+    "— zorlama sınıflandırma yapma.\n\n"
     "`severity_hint` ölçeği: `dusuk` = olağan hareketlilik (yürüyen insan, park "
     "eden araç, sahne/ışık değişimi) — bunlar ALARM DEĞİLDİR; `orta` ve üstünü "
     "yalnız gerçekten müdahale gerektiren durumlar için kullan."
@@ -189,8 +196,13 @@ def report_schema() -> dict[str, Any]:
     props = schema.get("properties", {})
     for field in ("type", "window_start", "window_end"):
         props.pop(field, None)
-    schema["required"] = [f for f in ("anomaly_type", "summary", "events", "uncertainties")
-                          if f in props]
+    # ⚠ ALAN SIRASI ÜRETİM SIRASIDIR (GBNF şemayı sırayla dilbilgisine çevirir).
+    # `anomaly_type` en SONA alındı: sınıf, olaylar SAYILDIKTAN sonra seçilsin.
+    # Önceki sırada (sınıf ikinci alan) model tek cümlelik özetten sonra sınıfa
+    # bağlanıyordu ve kalabalığın müdahalesine `yangin` diyebiliyordu (2026-08-05).
+    order = ("summary", "events", "uncertainties", "anomaly_type")
+    schema["properties"] = {k: props[k] for k in order if k in props}
+    schema["required"] = [f for f in order if f in props]
     schema["additionalProperties"] = False
     schema.pop("title", None)
     return schema

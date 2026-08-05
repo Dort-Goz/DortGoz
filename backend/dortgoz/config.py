@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     carry_context: bool = True
     # Olay kapanınca tüm aralığı tek bağlamda yeniden oku (bütünlüklü anlatı)
     incident_review: bool = True
+    # Olayı kapatmadan önce tolere edilen sessiz pencere sayısı (0 = eski davranış)
+    incident_grace_windows: int = 1
 
     # Yollar
     media_dir: Path = Path(__file__).resolve().parents[2] / "media"
