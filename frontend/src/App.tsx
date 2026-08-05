@@ -178,11 +178,14 @@ export default function App() {
       )}
 
       {/* Ana ızgara */}
-      <div className="flex-1 grid grid-cols-3 grid-rows-2 gap-2 min-h-0">
+      {/* 6 sütun: video 1:1 içerik taşıdığı için DAR bir sütuna oturur (2/6);
+          artan genişlik zaman çizelgesine gider (4/6) — orada okunacak metin var.
+          Alt sıra üçe eşit bölünür. */}
+      <div className="flex-1 grid grid-cols-6 grid-rows-2 gap-2 min-h-0">
         <div className="col-span-2 row-span-1 min-h-0">
           <VideoPanel highlight={state.highlight} seekTo={state.seekTo} video={state.video} />
         </div>
-        <div className="min-h-0">
+        <div className="col-span-4 min-h-0">
           <Timeline
             incidents={state.incidents}
             reports={state.reports}
@@ -190,13 +193,13 @@ export default function App() {
             onSelect={(incident) => dispatch({ kind: "select_incident", incident })}
           />
         </div>
-        <div className="min-h-0">
+        <div className="col-span-2 min-h-0">
           <AgentTrace entries={state.trace} />
         </div>
-        <div className="min-h-0">
+        <div className="col-span-2 min-h-0">
           <ChatPanel messages={state.chat} onSend={send.chat} />
         </div>
-        <div className="min-h-0">
+        <div className="col-span-2 min-h-0">
           <ActionLog
             requests={state.actuatorRequests}
             results={state.actuatorResults}
