@@ -26,7 +26,11 @@ class Settings(BaseSettings):
     # (sabit küresel eşik farklı kameralara hizmet edemiyordu — 2026-08-03 ölçümü)
     motion_gate_adaptive: bool = True
     motion_gate: float = 0.004   # uyarlanabilir mod kapalıysa sabit eşik / taban
-    interpret_max_tokens: int = 700
+    # 2026-08-05: 700 → 1400. Olay yoğun pencerede 700 JSON'ı ortadan kesiyordu
+    # (bir koşu 19. dakikada bu yüzden düştü). İki kademeli üretimde olağan
+    # pencere zaten erken duruyor, yani yüksek tavanın maliyeti YALNIZ gerçek
+    # olaylı pencerelerde ödenir — kesilme riskini almaya değmez.
+    interpret_max_tokens: int = 1400
     # İki kademeli üretim (Cerberus deseni): olağan pencere tek cümle üretir,
     # tam rapor yalnız `dikkat` dalında. DORTGOZ_TWO_TIER=0 → eski tek şema (ablation)
     two_tier: bool = True

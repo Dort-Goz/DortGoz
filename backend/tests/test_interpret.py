@@ -2,7 +2,8 @@
 
 import json
 
-from dortgoz.pipeline.interpret import _to_report, report_schema, tier_schema
+from dortgoz.pipeline.interpret import (
+    _to_report, repair_truncated_json, report_schema, tier_schema)
 
 
 def test_report_schema_is_flat_and_strict():
@@ -51,3 +52,38 @@ def test_to_report_single_tier_backcompat():
                       "uncertainties": []})
     r = _to_report(0.0, 30.0, raw)
     assert r.anomaly_type == "normal" and r.summary == "s"
+
+
+# ---- kesilmiş çıktı kurtarma (2026-08-05: bir koşu 19. dakikada bu yüzden düştü) ----
+
+def test_repair_truncated_event_list():
+    """Olay listesi ortasında kesilen JSON, son TAM olaya kadar kurtarılmalı."""
+    raw = ('{"summary": "İki kişi tartışıyor", "durum": "dikkat", '
+           '"anomaly_type": "kavga", "uncertainties": [], "events": ['
+           '{"t": 5.0, "desc": "itişme", "severity_hint": "orta"}, '
+           '{"t": 9.0, "desc": "yumruk atıl')
+    fixed = repair_truncated_json(raw)
+    data = json.loads(fixed)          # geçerli JSON üretmeli
+    assert len(data["events"]) == 1   # yarım olay atıldı
+    assert data["events"][0]["desc"] == "itişme"
+    assert data["anomaly_type"] == "kavga"
+
+
+def test_to_report_recovers_and_flags_truncation():
+    raw = ('{"summary": "kalabalık", "durum": "dikkat", "anomaly_type": "kavga", '
+           '"uncertainties": [], "events": ['
+           '{"t": 3.0, "desc": "koşuşturma", "severity_hint": "orta"}, '
+           '{"t": 7.0, "desc": "yar')
+    r = _to_report(0.0, 30.0, raw)
+    assert len(r.events) == 1
+    assert any("kesildi" in u for u in r.uncertainties)   # operatör görmeli
+
+
+def test_to_report_flags_length_finish_even_if_valid():
+    raw = '{"summary": "s", "durum": "olagan"}'
+    r = _to_report(0.0, 30.0, raw, truncated=True)
+    assert any("token sınırı" in u for u in r.uncertainties)
+
+
+def test_repair_returns_none_for_hopeless_input():
+    assert repair_truncated_json('{"summary": "yarım') is None

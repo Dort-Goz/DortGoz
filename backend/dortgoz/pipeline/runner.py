@@ -132,10 +132,27 @@ async def run_video(
                 keyframes = windowing.select_keyframes(
                     profile, start, end, settings.keyframes_per_window
                 )
-                report = await interpret_window(
-                    path, (start, end), keyframes,
-                    model=model, system_prompt=system_prompt, task_prompt=task_prompt,
-                )
+                try:
+                    report = await interpret_window(
+                        path, (start, end), keyframes,
+                        model=model, system_prompt=system_prompt,
+                        task_prompt=task_prompt,
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    # TEK pencere hatası koşuyu ÖLDÜRMEZ: saatlik kayıtlarda
+                    # 19. dakikadaki bir ayrıştırma hatası tüm analizi çöpe
+                    # atıyordu (2026-08-05). Pencere atlanır, koşu sürer.
+                    await rec.emit(AgentStep(
+                        node="interpret", status="error",
+                        detail=f"{start:.0f}-{end:.0f} sn atlandı: {str(exc)[:160]}",
+                    ))
+                    await rec.emit(RunStatus(
+                        run_id=run_id, state="processing",
+                        progress=(idx + 1) / len(wins),
+                    ))
+                    continue
                 ctx.reports.append(report)
                 await rec.emit(report)
                 await rec.emit(AgentStep(

@@ -128,17 +128,78 @@ def tier_schema() -> dict[str, Any]:
     ]}
 
 
-def _to_report(start: float, end: float, raw: str) -> WindowReport:
+def repair_truncated_json(raw: str) -> str | None:
+    """Token sınırında kesilmiş JSON'ı son TAM öğeye kadar kurtarır.
+
+    GBNF üretim anında geçerli bir ÖNEK garanti eder ama bitmiş olmayı garanti
+    etmez: olay sayısı çoksa çıktı `max_tokens`'ta ortadan kesilir ve
+    `json.loads` patlar. Yarım kalan öğeyi atıp açık yapıları kapatarak
+    pencereyi tümden kaybetmek yerine olayların tamamlanmış kısmını kurtarırız.
+    """
+    stack: list[str] = []
+    in_str = esc = False
+    cut: int | None = None
+    cut_stack: list[str] = []
+    for i, ch in enumerate(raw):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+                # dize bittiği an güvenli nokta DEĞİL: ardından ':' gelebilir
+        elif ch == '"':
+            in_str = True
+        elif ch in "[{":
+            stack.append("]" if ch == "[" else "}")
+        elif ch in "]}":
+            if stack:
+                stack.pop()
+            cut, cut_stack = i + 1, list(stack)   # kapanan yapı = tamamlanmış öğe
+        elif ch == ",":
+            # Virgül YALNIZ öğe sınırındaysa güvenli: dizi içindeyken (bir sonraki
+            # öğeye geçiş) ya da en dış nesnenin alanları arasında. Yarım kalan bir
+            # olay nesnesinin İÇİNDEKİ virgülden kesmek geçerli JSON üretir ama
+            # şemayı ihlal eder (zorunlu alanları eksik olay) — o yüzden hariç.
+            if stack and (stack[-1] == "]" or len(stack) == 1):
+                cut, cut_stack = i, list(stack)
+    if cut is None or not cut_stack:
+        return None
+    return raw[:cut] + "".join(reversed(cut_stack))
+
+
+def _to_report(start: float, end: float, raw: str,
+               truncated: bool = False) -> WindowReport:
     """Model JSON'ını WindowReport'a çevirir; iki kademeli `durum` dalını düzler.
 
     Tel sözleşmesi (events.py) DEĞİŞMEZ: `olagan` dalı normal/boş-olaylı
     WindowReport'a iner — defter ve arayüz kademelerden habersiz kalır.
     """
-    data = json.loads(raw)
+    note = None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        fixed = repair_truncated_json(raw)
+        if fixed is None:
+            raise
+        data = json.loads(fixed)          # kurtarma da başarısızsa hata yükselsin
+        note = ("⚠ model çıktısı token sınırında kesildi — olay listesi "
+                "eksik olabilir (kurtarılan kısım raporlandı)")
+    if truncated and note is None:
+        note = "⚠ model çıktısı token sınırına dayandı — liste eksik olabilir"
+
     if data.pop("durum", None) == "olagan":
-        return WindowReport(window_start=start, window_end=end,
-                            summary=data.get("summary", ""))
-    return WindowReport(window_start=start, window_end=end, **data)
+        report = WindowReport(window_start=start, window_end=end,
+                              summary=data.get("summary", ""))
+    else:
+        data.setdefault("events", [])
+        data.setdefault("uncertainties", [])
+        report = WindowReport(window_start=start, window_end=end, **data)
+    if note:
+        # Kesilme operatörden GİZLENMEZ: belirsizlik alanı tam da bunun için var
+        report.uncertainties.append(note)
+    return report
 
 
 def _image_part(jpeg: bytes) -> dict[str, Any]:
@@ -272,5 +333,7 @@ async def interpret_window(
         },
     )
     raw = resp.choices[0].message.content or "{}"
-    # GBNF üretim anında garanti eder; Pydantic ikinci savunma katmanı (A6)
-    return _to_report(start, end, raw)
+    # GBNF üretim anında garanti eder; Pydantic ikinci savunma katmanı (A6).
+    # finish_reason "length" = çıktı bütçeye sığmadı → kesilmiş olabilir.
+    return _to_report(start, end, raw,
+                      truncated=resp.choices[0].finish_reason == "length")
