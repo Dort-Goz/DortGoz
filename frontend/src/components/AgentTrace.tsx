@@ -8,9 +8,12 @@ import type { TraceEntry } from "../state";
  *  ledger ▶/✔) ve saatlik kayıtta bunların yüzlercesi "0 olay" diyordu; gerçek
  *  bulgular arada kayboluyordu. Bu yüzden:
  *   1) ▶başlangıç/✔bitiş çiftleri TEK satıra indirgenir (sonuç neyse o yazılır),
- *   2) bilgi taşımayan `ledger` satırları atılır ("0 olay defterde"),
+ *   2) eski anlamsız `ledger` sayaç satırları atılır (backend artık
+ *      NE DEĞİŞTİĞİNİ yazıyor: açıldı/genişledi/kapandı + tolerans),
  *   3) ardışık olaysız pencereler katlanır — tıklayınca açılır.
  *  Hata satırları ve olay üreten satırlar HER ZAMAN görünür kalır.
+ *  ⚠ Bu kip bilgi ATAR; akışı hata ayıklamak için **detay** düğmesi ham
+ *  akışı (sıra no + ▶/✔ ayrı, hiçbir satır gizli değil) gösterir.
  */
 
 type StepRow = { kind: "step"; seq: number; node: string; status: string; detail: string };
@@ -86,12 +89,56 @@ function QuietRow({ rows }: { rows: { seq: number; detail: string }[] }) {
 
 export default function AgentTrace({ entries }: { entries: TraceEntry[] }) {
   const endRef = useRef<HTMLDivElement>(null);
+  // "detay" = hata ayıklama kipi: hiçbir satır gizlenmez/katlanmaz, ▶/✔ ayrı
+  // durur. Varsayılan kipin okunabilirliği için bilgi ATILIYOR — akışı gerçekten
+  // izlemek gerektiğinde (hangi pencere, neden, defter ne karar verdi) bu açılır.
+  const [verbose, setVerbose] = useState(false);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [entries.length]);
   const rows = build(entries);
 
   return (
     <div className="panel h-full">
-      <div className="panel-title">Ajan İzleme</div>
+      <div className="panel-title flex items-center gap-2">
+        Ajan İzleme
+        <button
+          onClick={() => setVerbose((v) => !v)}
+          title="Ham akış: hiçbir satır gizlenmez (hata ayıklama)"
+          className={`ml-auto normal-case font-normal rounded px-1.5 py-0.5 border text-[10px] ${
+            verbose ? "border-amber-700 text-amber-300 bg-amber-950/40"
+                    : "border-zinc-700 text-zinc-500 hover:border-zinc-500"
+          }`}
+        >
+          {verbose ? "detay ●" : "detay"}
+        </button>
+      </div>
+      {verbose && (
+        <div className="flex-1 overflow-y-auto p-2 font-mono text-[11px] space-y-0.5">
+          {entries.map((e) => (
+            <div key={e.seq} className="leading-relaxed">
+              <span className="text-zinc-700 mr-1">{String(e.seq).padStart(4, "0")}</span>
+              {e.kind === "step" && e.step && (
+                <>
+                  <span className={e.step.status === "error" ? "text-red-400"
+                                 : e.step.status === "start" ? "text-zinc-500"
+                                 : "text-emerald-400"}>
+                    {e.step.status === "start" ? "▶" : e.step.status === "end" ? "✔" : "✖"}
+                  </span>{" "}
+                  <span className="text-sky-400">{e.step.node}</span>
+                  {e.step.detail && <span className="text-zinc-400"> — {e.step.detail}</span>}
+                </>
+              )}
+              {e.kind === "tool" && e.tool && (
+                <>
+                  <span className="text-amber-400">⚙ {e.tool.tool}</span>
+                  <span className="text-zinc-500">({JSON.stringify(e.tool.args)})</span>
+                </>
+              )}
+            </div>
+          ))}
+          <div ref={endRef} />
+        </div>
+      )}
+      {!verbose && (
       <div className="flex-1 overflow-y-auto p-2 font-mono text-xs space-y-0.5">
         {rows.map((r) =>
           r.kind === "quiet" ? (
@@ -120,6 +167,7 @@ export default function AgentTrace({ entries }: { entries: TraceEntry[] }) {
         )}
         <div ref={endRef} />
       </div>
+      )}
     </div>
   );
 }

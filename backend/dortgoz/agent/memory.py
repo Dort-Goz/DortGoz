@@ -83,6 +83,15 @@ class Ledger:
     def open_incident(self) -> Incident | None:
         return self.incidents.get(self._open_id) if self._open_id else None
 
+    @property
+    def quiet_streak(self) -> int:
+        """Üst üste kaç sessiz pencere geçti (izleme/hata ayıklama için)."""
+        return self._quiet
+
+    @property
+    def grace(self) -> int:
+        return self._grace
+
     def serious(self, report: WindowReport) -> list[WindowEvent]:
         return [e for e in report.events if _rank(e.severity_hint) >= ALARM_FLOOR]
 

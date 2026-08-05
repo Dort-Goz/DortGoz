@@ -193,9 +193,12 @@ async def run_video(
                     # Olay burada da kapanabilir → 2. geçiş bu yolda da çalışmalı
                     await review_if_closed(rec, ledger, path, profile, update, model)
             else:
+                hint = ledger.continuity_hint() if settings.carry_context else ""
                 await rec.emit(AgentStep(
                     node="interpret", status="start",
-                    detail=f"{start:.0f}-{end:.0f} sn (etkinlik {peak:.3f})",
+                    detail=f"{start:.0f}-{end:.0f} sn ({end - start:.0f} sn, "
+                           f"etkinlik {peak:.3f} ≥ eşik {gate:.4f})"
+                           + (" · süregelen olay bağlamı verildi" if hint else ""),
                 ))
                 keyframes = windowing.select_keyframes(
                     profile, start, end, settings.keyframes_per_window
@@ -206,7 +209,7 @@ async def run_video(
                         model=model, system_prompt=system_prompt,
                         task_prompt=task_prompt,
                         # Süregelen olayın bağlamı bir sonraki pencereye taşınır
-                        context=ledger.continuity_hint() if settings.carry_context else "",
+                        context=hint,
                     )
                 except asyncio.CancelledError:
                     raise
@@ -225,27 +228,44 @@ async def run_video(
                     continue
                 ctx.reports.append(report)
                 await rec.emit(report)
+                sev = ",".join(sorted({e.severity_hint for e in report.events})) or "—"
                 await rec.emit(AgentStep(
                     node="interpret", status="end",
-                    detail=f"{len(report.events)} olay",
+                    detail=f"{len(report.events)} olay · {report.anomaly_type} · şiddet {sev}"
+                           + (f" · {len(report.uncertainties)} belirsizlik"
+                              if report.uncertainties else ""),
                 ))
 
-                # Defter: ciddi olayları yaşam döngüsüyle olaya dönüştürür
-                await rec.emit(AgentStep(node="ledger", status="start"))
+                # Defter: ciddi olayları yaşam döngüsüyle olaya dönüştürür.
+                # İzleme satırı NE DEĞİŞTİĞİNİ yazar (eski "N olay defterde"
+                # sayacı hata ayıklamada işe yaramıyordu): açıldı/genişledi/
+                # kapandı + tolerans sayacı, yani defterin kararı görünür olur.
                 serious = ledger.serious(report)
+                was_open = ledger.open_incident
                 thumb = None
-                if serious and ledger.open_incident is None:
+                if serious and was_open is None:
                     # Şiddet sıralaması RISK_ORDER'dan gelir — sözcük sırası değil
                     peak = max(serious, key=lambda e: RISK_ORDER.index(e.severity_hint))
                     thumb = await save_thumbnail(path, peak.t, run_id,
                                                  f"{int(start)}")
-                for update in ledger.ingest(report, thumb):
+                updates = ledger.ingest(report, thumb)
+                for update in updates:
                     await rec.emit(update)
                     await review_if_closed(rec, ledger, path, profile, update, model)
-                await rec.emit(AgentStep(
-                    node="ledger", status="end",
-                    detail=f"{len(ledger.incidents)} olay defterde",
-                ))
+                if updates:
+                    u = updates[-1]
+                    note = {"basladi": "olay AÇILDI", "gelisiyor": "olay genişledi",
+                            "sonuclandi": "olay KAPANDI"}.get(u.phase, u.phase)
+                    detail = (f"{note} #{u.incident_id} · {u.anomaly_type}/{u.risk} "
+                              f"({len(serious)} ciddi gözlem)")
+                elif was_open is not None:
+                    # Sessiz pencere ama olay tolerans sayesinde açık kaldı
+                    detail = (f"olay #{was_open.incident_id} açık tutuldu "
+                              f"(tolerans {ledger.quiet_streak}/{ledger.grace})")
+                else:
+                    detail = ""            # anlatacak bir şey yok → satır üretme
+                if detail:
+                    await rec.emit(AgentStep(node="ledger", status="end", detail=detail))
             await rec.emit(RunStatus(
                 run_id=run_id, state="processing", video=video,
                 progress=(idx + 1) / len(wins),
