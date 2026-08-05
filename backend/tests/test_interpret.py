@@ -183,3 +183,42 @@ def test_title_strips_leading_timestamps():
     assert _title_text("t=1102s civarında, merdiven kenarında duran kişi düştü") \
         == "Merdiven kenarında duran kişi düştü"
     assert _title_text("İki kişi kavga ediyor") == "İki kişi kavga ediyor"
+
+
+# ---- etkinliğe hizalı pencereleme (2026-08-05) ----
+
+def _prof(vals, step=1.0):
+    from dortgoz.pipeline.ingest import MotionSample
+    return [MotionSample(t=i * step, changed=v, fg=0.0, mad=v) for i, v in enumerate(vals)]
+
+
+def test_activity_windows_skip_dead_footage_and_anchor_on_onset():
+    from dortgoz.pipeline.windowing import activity_windows
+    prof = _prof([0.0] * 10 + [0.5] * 5 + [0.0] * 20 + [0.6] * 3 + [0.0] * 10)
+    w = activity_windows(prof, duration=48, gate=0.1, preroll=3.0)
+    assert len(w) == 2                     # iki ayrı etkinlik, iki pencere
+    assert 6.0 <= w[0][0] <= 8.0           # 10. sn'deki olay, preroll ile ~7'de açılır
+    assert w[0][1] < w[1][0]               # aradaki ölü bölge HİÇ pencere olmadı
+    covered = sum(b - a for a, b in w)
+    assert covered < 48 * 0.6              # süre çoğunlukla atlandı
+
+
+def test_activity_windows_do_not_split_on_short_pause():
+    """Kısa duraklama olayı bölmemeli (quiet_tail)."""
+    from dortgoz.pipeline.windowing import activity_windows
+    w = activity_windows(_prof([0.5] * 5 + [0.0] * 3 + [0.5] * 5),
+                         duration=13, gate=0.1, quiet_tail=6.0)
+    assert len(w) == 1
+
+
+def test_activity_windows_cap_long_activity():
+    from dortgoz.pipeline.windowing import activity_windows
+    w = activity_windows(_prof([0.5] * 120), duration=120, gate=0.1, max_len=45)
+    assert len(w) >= 3
+    assert all(b - a <= 46 for a, b in w)
+
+
+def test_activity_windows_empty_profile_is_safe():
+    from dortgoz.pipeline.windowing import activity_windows
+    assert activity_windows([], duration=10, gate=0.1) == []
+    assert activity_windows(_prof([0.0] * 20), duration=20, gate=0.1) == []

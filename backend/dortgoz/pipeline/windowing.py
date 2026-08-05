@@ -35,6 +35,61 @@ def windows(duration: float, length: float = WINDOW_SECONDS) -> list[tuple[float
     return out
 
 
+def activity_windows(
+    profile: list[MotionSample],
+    duration: float,
+    gate: float,
+    *,
+    min_len: float = 8.0,
+    max_len: float = 45.0,
+    preroll: float = 3.0,
+    quiet_tail: float = 6.0,
+) -> list[tuple[float, float]]:
+    """Pencereleri SABİT IZGARAYA değil, ETKİNLİĞİN KENDİSİNE hizalar.
+
+    Sabit 30 sn'lik ızgarada 25. saniyede başlayan bir olay ikiye bölünüyor:
+    ilk pencerenin 25 saniyesi boş koridor, olayın açılışı sonraki pencereye
+    kayıyor — hem kareler boşa gidiyor hem olayın başlangıcı bağlamsız kalıyor.
+    Burada profil örnek örnek taranır: ölü bölge ATLANIR (VLM hiç çağrılmaz),
+    pencere etkinliğin başladığı yerde açılır ve etkinlik `quiet_tail` kadar
+    sürekli sustuğunda kapanır.
+
+    - `preroll`  : olayın açılışı kırpılmasın diye başlangıçtan biraz öncesi
+    - `quiet_tail`: bu kadar sessizlik pencereyi bitirir (kısa duraklamalar bölmez)
+    - `min_len`  : tek saniyelik kıpırtı bile yeterli bağlamla okunsun
+    - `max_len`  : uzun olay parça parça okunsun (kare yoğunluğu ve token sınırı)
+
+    Profil çözünürlüğü `base_fps` kadardır (1 fps → ±1 sn hassasiyet).
+    """
+    if duration <= 0 or not profile:
+        return []
+    step = profile[1].t - profile[0].t if len(profile) > 1 else 1.0
+    step = step if step > 0 else 1.0
+
+    out: list[tuple[float, float]] = []
+    start: float | None = None
+    quiet_for = 0.0
+    for s in profile:
+        active = s.activity >= gate
+        if start is None:
+            if active:
+                start = max(0.0, s.t - preroll)
+                quiet_for = 0.0
+            continue
+        quiet_for = 0.0 if active else quiet_for + step
+        too_long = s.t - start >= max_len
+        if quiet_for >= quiet_tail or too_long:
+            # Sessizlikle bitiyorsa kuyruğun tamamını pencereye katma
+            end = s.t - (quiet_for - step) if quiet_for >= quiet_tail else s.t
+            end = min(duration, max(end, start + min_len))
+            out.append((start, end))
+            start = None if quiet_for >= quiet_tail else max(0.0, s.t)
+            quiet_for = 0.0
+    if start is not None:
+        out.append((start, min(duration, max(start + min_len, profile[-1].t + step))))
+    return out
+
+
 def window_motion(profile: list[MotionSample], start: float, end: float) -> float:
     """Pencerenin tepe etkinlik puanı — eleme kararı buna bakar."""
     scores = [s.activity for s in profile if start <= s.t < end]

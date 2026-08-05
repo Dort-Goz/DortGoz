@@ -149,10 +149,38 @@ async def run_video(
                    f"taban {ingest.noise_floor(profile):.4f} → eşik {gate:.4f}",
         ))
 
-        wins = windowing.windows(duration, settings.window_seconds)
+        if settings.dynamic_windows:
+            # Pencereler ETKİNLİĞE hizalanır: ölü bölge hiç pencere olmaz,
+            # pencere olayın başladığı yerde açılır (sabit ızgara olayı bölüyordu)
+            wins = windowing.activity_windows(
+                profile, duration, gate,
+                min_len=settings.window_min_seconds,
+                max_len=settings.window_seconds,
+                preroll=settings.window_preroll,
+                quiet_tail=settings.window_quiet_tail,
+            )
+            await rec.emit(AgentStep(
+                node="perceive", status="end",
+                detail=f"etkinliğe hizalı {len(wins)} pencere "
+                       f"({sum(b - a for a, b in wins):.0f} sn işlenecek, "
+                       f"{duration - sum(b - a for a, b in wins):.0f} sn ölü bölge atlanıyor)",
+            ))
+        else:
+            wins = windowing.windows(duration, settings.window_seconds)
+
+        prev_end = 0.0
         for idx, (start, end) in enumerate(wins):
+            if settings.dynamic_windows:
+                # Pencereler arası boşluk = sürekli sessizlik → defter olayı kapatmalı
+                if start - prev_end > 0:
+                    for _ in range(settings.incident_grace_windows + 1):
+                        for update in ledger.ingest(WindowReport(
+                                window_start=prev_end, window_end=start, summary="")):
+                            await rec.emit(update)
+                            await review_if_closed(rec, ledger, path, profile, update, model)
+                prev_end = end
             peak = windowing.window_motion(profile, start, end)
-            if peak < gate:
+            if not settings.dynamic_windows and peak < gate:
                 # Sert eleme yalnız burada: hareketsiz pencere VLM'e hiç gitmez
                 await rec.emit(AgentStep(
                     node="interpret", status="end",

@@ -20,7 +20,16 @@ class Settings(BaseSettings):
 
     # İşleme hattı
     base_fps: float = 1.0        # hareket profili tarama hızı
-    window_seconds: float = 30.0
+    window_seconds: float = 30.0        # dinamik modda ÜST sınır
+    # Pencereler sabit ızgara yerine ETKİNLİĞE hizalansın (ölü bölge atlanır,
+    # pencere olayın başladığı yerde açılır). ⚠ VARSAYILAN KAPALI — 2026-08-05
+    # ölçümü: kazanç yok, hassasiyet düşüyor (bkz. project-state günlüğü).
+    # Mekanizma doğru; darboğaz onu süren ETKİNLİK SİNYALİ (dedektör/SigLIP
+    # kapısı geldiğinde yeniden ölç). DORTGOZ_DYNAMIC_WINDOWS=1 ile aç.
+    dynamic_windows: bool = False
+    window_min_seconds: float = 8.0     # tek saniyelik kıpırtı da bağlamıyla okunsun
+    window_preroll: float = 3.0         # olayın açılışı kırpılmasın
+    window_quiet_tail: float = 6.0      # bu kadar sessizlik pencereyi bitirir
     keyframes_per_window: int = 6
     # Eleme eşiği: uyarlanabilir mod kameranın kendi gürültü tabanından türetir
     # (sabit küresel eşik farklı kameralara hizmet edemiyordu — 2026-08-03 ölçümü)
