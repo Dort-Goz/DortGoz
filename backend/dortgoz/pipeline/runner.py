@@ -277,14 +277,14 @@ async def run_video(
                         if esc.events:
                             report = esc
                         await rec.emit(AgentStep(
-                            node="interpret", status="done",
+                            node="interpret", status="end",
                             detail=(f"tırmandırma {start:.0f}-{end:.0f} sn: "
                                     f"P(dikkat)={call['durum_p']:.2f} → "
                                     f"{len(esc.events)} olay"),
                         ))
                     except Exception as exc:
                         await rec.emit(AgentStep(
-                            node="interpret", status="done",
+                            node="interpret", status="end",
                             detail=(f"tırmandırma başarısız, taban karar "
                                     f"korundu: {str(exc)[:120]}"),
                         ))
