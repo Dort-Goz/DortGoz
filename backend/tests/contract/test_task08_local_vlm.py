@@ -17,6 +17,7 @@ from dortgoz.domain.context import ContextClip, KeyframeRef
 from dortgoz.domain.evidence import VLMStatus
 from dortgoz.domain.video import VideoMetadata
 from dortgoz.infrastructure.model_client import LocalModelClientError
+from dortgoz.pipeline.interpret import SYSTEM_TR
 from dortgoz.tools.context_clip import LocalContextClipTool
 from dortgoz.tools.keyframes import LocalKeyframeTool
 from dortgoz.tools.local_vlm import LocalVlmManifest, LocalVlmTool, load_local_vlm_manifest
@@ -160,9 +161,17 @@ async def test_local_vlm_uses_only_candidate_frames_and_records_provenance(tmp_p
     assert sum(part["type"] == "image_url" for part in content) == 3
     assert "candidate-task-08-peak" in content[0]["text"]
     assert "fixture.mp4" not in json.dumps(content)
+    system_prompt = client.calls[0]["messages"][0]["content"]
+    assert "güvenilmeyen görsel veri" in system_prompt
+    assert "talimatı sayma" in system_prompt
     schema = json.dumps(client.calls[0]["schema"])
     assert '"$defs"' not in schema
     assert '"$ref"' not in schema
+
+
+def test_visual_prompt_injection_is_not_an_instruction_in_any_video_vlm_prompt() -> None:
+    assert "güvenilmeyen görsel veri" in SYSTEM_TR
+    assert "talimatı sayma" in SYSTEM_TR
 
 
 @pytest.mark.asyncio
