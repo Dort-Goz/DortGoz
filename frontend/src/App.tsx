@@ -7,6 +7,11 @@ import AgentTrace from "./components/AgentTrace";
 import ChatPanel from "./components/ChatPanel";
 import ActionLog from "./components/ActionLog";
 import ExperimentPanel, { type InterpretConfig } from "./components/ExperimentPanel";
+import UploadPanel from "./components/UploadPanel";
+import EventDetail from "./components/EventDetail";
+import QueryPanel from "./components/QueryPanel";
+import { getAnalysis, getEvents, getReport, startAnalysis } from "./lib/api";
+import type { AnalysisProgress, VerifiedEvent, VideoMetadata } from "./types/domain";
 import { consoleReducer, initialState } from "./state";
 
 const EXPERIMENT_KEY = "dortgoz.experiment";
@@ -22,6 +27,13 @@ export default function App() {
   const [model, setModel] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [taskPrompt, setTaskPrompt] = useState("");
+  const [uploadedVideo, setUploadedVideo] = useState<VideoMetadata | null>(null);
+  const [analysisId, setAnalysisId] = useState<string | null>(null);
+  const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress | null>(null);
+  const [canonicalEvents, setCanonicalEvents] = useState<VerifiedEvent[]>([]);
+  const [canonicalError, setCanonicalError] = useState<string | null>(null);
+  const [canonicalSeek, setCanonicalSeek] = useState<number | null>(null);
+  const [report, setReport] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     const socket = new DortgozSocket((e: Event) => dispatch({ kind: "event", event: e }));
@@ -92,6 +104,53 @@ export default function App() {
 
   const stopRun = useCallback(() => socketRef.current?.send({ kind: "stop_run" }), []);
 
+  const refreshCanonicalEvents = useCallback(async () => {
+    if (!analysisId) return;
+    setCanonicalEvents(await getEvents(analysisId));
+  }, [analysisId]);
+
+  useEffect(() => {
+    if (!analysisId) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const progress = await getAnalysis(analysisId);
+        if (cancelled) return;
+        setAnalysisProgress(progress);
+        if (["completed", "review_required", "failed"].includes(progress.status)) {
+          setCanonicalEvents(await getEvents(analysisId));
+        }
+      } catch (reason) {
+        if (!cancelled) setCanonicalError(reason instanceof Error ? reason.message : "Analiz durumu alınamadı.");
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 1000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [analysisId]);
+
+  const startCanonical = useCallback(async () => {
+    if (!uploadedVideo) return;
+    setCanonicalError(null); setCanonicalEvents([]); setAnalysisProgress(null);
+    dispatch({ kind: "run_started", video: uploadedVideo.stored_filename });
+    try { setAnalysisId((await startAnalysis(uploadedVideo.video_id)).analysis_id); }
+    catch (reason) { setCanonicalError(reason instanceof Error ? reason.message : "Analiz başlatılamadı."); }
+  }, [uploadedVideo]);
+
+  const showReport = useCallback(async () => {
+    if (!analysisId) return;
+    try { setCanonicalError(null); setReport(await getReport(analysisId)); }
+    catch (reason) { setCanonicalError(reason instanceof Error ? reason.message : "Rapor alınamadı."); }
+  }, [analysisId]);
+
+  const downloadReport = useCallback(() => {
+    if (!report) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
+    const anchor = document.createElement("a");
+    anchor.href = url; anchor.download = `${analysisId ?? "dortgoz"}-report.json`; anchor.click();
+    URL.revokeObjectURL(url);
+  }, [analysisId, report]);
+
   return (
     <div className="h-screen flex flex-col gap-2 p-2">
       {/* Üst çubuk */}
@@ -118,6 +177,10 @@ export default function App() {
               )}
             </button>
           )}
+          <UploadPanel onUploaded={(video) => {
+            setUploadedVideo(video); setSelected(video.stored_filename); setAnalysisId(null);
+            setCanonicalEvents([]); setCanonicalError(null);
+          }} />
           <select
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
@@ -137,6 +200,10 @@ export default function App() {
           >
             {busy ? "Durdur" : "Başlat"}
           </button>
+          <button onClick={() => void startCanonical()} disabled={!uploadedVideo || analysisProgress?.status === "running" || analysisProgress?.status === "queued"} className="rounded px-3 py-1 font-medium bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-40">
+            REST analiz
+          </button>
+          <button onClick={() => void showReport()} disabled={!analysisId} className="rounded px-2 py-1 border border-zinc-700 text-xs disabled:opacity-40">JSON rapor</button>
           {run && (
             <>
               <div className="w-32 h-1.5 rounded bg-zinc-800 overflow-hidden">
@@ -149,6 +216,8 @@ export default function App() {
               {run.detail && <span className="text-zinc-500">{run.detail}</span>}
             </>
           )}
+          {analysisProgress && <span className="text-xs text-amber-300">REST: {analysisProgress.status} %{Math.round(analysisProgress.progress * 100)}</span>}
+          {canonicalError && <span className="text-xs text-red-300">{canonicalError}</span>}
         </div>
       </header>
 
@@ -176,6 +245,7 @@ export default function App() {
           {run.detail}
         </div>
       )}
+      {report && <div className="shrink-0 rounded-lg border border-zinc-800 bg-zinc-900 p-2 max-h-40 overflow-auto relative"><div className="absolute right-2 top-1 flex gap-2 text-xs text-zinc-500"><button onClick={downloadReport}>indir</button><button onClick={() => setReport(null)}>kapat</button></div><pre className="text-[10px] text-zinc-400 whitespace-pre-wrap">{JSON.stringify(report, null, 2)}</pre></div>}
 
       {/* Ana ızgara */}
       {/* 6 sütun: video 1:1 içerik taşıdığı için DAR bir sütuna oturur (2/6);
@@ -183,7 +253,7 @@ export default function App() {
           Alt sıra üçe eşit bölünür. */}
       <div className="flex-1 grid grid-cols-6 grid-rows-2 gap-2 min-h-0">
         <div className="col-span-2 row-span-1 min-h-0">
-          <VideoPanel highlight={state.highlight} seekTo={state.seekTo} video={state.video} />
+          <VideoPanel highlight={state.highlight} seekTo={canonicalSeek ?? state.seekTo} video={state.video} />
         </div>
         <div className="col-span-4 min-h-0">
           <Timeline
@@ -197,14 +267,10 @@ export default function App() {
           <AgentTrace entries={state.trace} />
         </div>
         <div className="col-span-2 min-h-0">
-          <ChatPanel messages={state.chat} onSend={send.chat} />
+          {analysisId ? <QueryPanel analysisId={analysisId} /> : <ChatPanel messages={state.chat} onSend={send.chat} />}
         </div>
         <div className="col-span-2 min-h-0">
-          <ActionLog
-            requests={state.actuatorRequests}
-            results={state.actuatorResults}
-            onRespond={send.actuator}
-          />
+          {analysisId ? <EventDetail events={canonicalEvents} onSeek={setCanonicalSeek} onReviewed={() => void refreshCanonicalEvents()} /> : <ActionLog requests={state.actuatorRequests} results={state.actuatorResults} onRespond={send.actuator} />}
         </div>
       </div>
     </div>
