@@ -19,6 +19,8 @@ REQUIRED_REPOSITORY_FILES = (
     "models/MANIFEST.json",
     "THIRD_PARTY_NOTICES.md",
     "docs/OFFLINE_INSTALL.md",
+    "docs/SETUP.md",
+    "scripts/preflight.py",
 )
 FORBIDDEN_RUNTIME_URLS = ("api.openai.com", "openai.azure.com", "api.anthropic.com")
 

@@ -1,28 +1,42 @@
 #!/usr/bin/env bash
 # Backend + vite dev sunucusunu birlikte başlatır.
 #
-#   ./scripts/dev.sh          gerçek mod — modelleri .env'deki uca bağlanır
-#   ./scripts/dev.sh mock     mock mod   — GPU/model gerekmez, örnek akış oynatılır
+#   ./scripts/dev.sh          mock mod   — GPU/model gerekmez, örnek akış oynatılır
+#   ./scripts/dev.sh real     gerçek mod — .env'deki yerel model ucuna bağlanır
 #
 # Konsol: http://localhost:5173   (API/WS 8000'e proxy'lenir)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-MODE="${1:-real}"
+MODE="${1:-mock}"
 
-for tool in uv bun ffmpeg; do
+case "$MODE" in
+  mock|real) ;;
+  *) echo "Kullanım: ./scripts/dev.sh [mock|real]"; exit 2 ;;
+esac
+
+for tool in uv bun; do
   command -v "$tool" >/dev/null || { echo "eksik: $tool"; exit 1; }
 done
 
+if [ "$MODE" = "real" ]; then
+  for tool in ffmpeg ffprobe; do
+    command -v "$tool" >/dev/null || { echo "eksik: $tool"; exit 1; }
+  done
+fi
+
 if [ "$MODE" = "real" ] && [ ! -f "$ROOT/.env" ]; then
-  echo "HATA: .env yok. 'cp .env.example .env' ve uç adresini doldur"
-  echo "      (adres ekip içi elden paylaşılır)"
-  echo "      Modelsiz denemek için: ./scripts/dev.sh mock"
+  echo "HATA: .env yok. 'cp .env.example .env' ve yerel model ayarlarını doldur"
+  echo "      Modelsiz denemek için: ./scripts/dev.sh"
   exit 1
 fi
 
 echo "→ bağımlılıklar"
-(cd "$ROOT/backend" && uv sync -q)
-[ -d "$ROOT/frontend/node_modules" ] || (cd "$ROOT/frontend" && bun install)
+(cd "$ROOT/backend" && uv sync --locked -q)
+[ -d "$ROOT/frontend/node_modules" ] || (cd "$ROOT/frontend" && bun install --frozen-lockfile)
+
+if [ "$MODE" = "real" ]; then
+  (cd "$ROOT/backend" && uv run python ../scripts/preflight.py --root .. --mode real --check-tools)
+fi
 
 if [ "$MODE" = "real" ]; then
   count=$(find "$ROOT/media" -maxdepth 1 -name '*.mp4' 2>/dev/null | wc -l)
@@ -37,7 +51,7 @@ trap 'kill 0' EXIT
 if [ "$MODE" = "mock" ]; then
   (cd "$ROOT/backend" && DORTGOZ_MOCK=1 uv run uvicorn dortgoz.main:app --reload --port 8000) &
 else
-  (cd "$ROOT/backend" && uv run uvicorn dortgoz.main:app --reload --port 8000) &
+  (cd "$ROOT/backend" && DORTGOZ_MOCK=0 uv run uvicorn dortgoz.main:app --reload --port 8000) &
 fi
 (cd "$ROOT/frontend" && bun run dev) &
 wait

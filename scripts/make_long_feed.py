@@ -29,7 +29,7 @@ UCF-Crime kopyasının YERİ AYARLANABİLİR (herkesin diski farklı) — öncel
     1. `--ucf /yol/UCF_Crimes`
     2. `DORTGOZ_UCF_DIR` ortam değişkeni
     3. kök dizindeki `.env` içindeki `DORTGOZ_UCF_DIR` (backend ile aynı dosya)
-    4. bilinen varsayılan yollar
+    4. aksi halde açık hata (veri seti yolu tahmin edilmez)
 `UCF_Crimes` de `UCF_Crimes/Videos` de verilebilir; ikisi de kabul edilir.
 Klipler kopyalanmaz, yalnız okunur — veri seti diskinde kalır (repoya girmez).
 Atıf: Sultani et al., CVPR 2018.
@@ -48,11 +48,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MEDIA = ROOT / "media"
 ENV_KEY = "DORTGOZ_UCF_DIR"
-# Son çare varsayılanlar — hiçbiri yoksa betik ne ayarlanacağını söyleyip çıkar
-DEFAULT_UCF = [
-    Path("~/datasets/Dort_Goz/UCF_Crimes"),
-    Path.home() / "Datasets/UCF_Crimes",
-]
 UCF = Path()      # resolve_ucf() ile doldurulur (main/--ucf/env/.env)
 NORMAL_DIRS = ["Testing_Normal_Videos_Anomaly", "Training_Normal_Videos_Anomaly"]
 # Kapsam: A1 sınıf listesine karşılık gelen UCF dizinleri (Shoplifting/Stealing
@@ -102,14 +97,8 @@ def resolve_ucf(cli: Path | None) -> Path:
             f"{label} ile verilen yol UCF-Crime kopyası değil: {base}\n"
             "Beklenen içerik: <yol>/Videos/Training_Normal_Videos_Anomaly/")
 
-    for base in DEFAULT_UCF:
-        if (found := try_base(base)):
-            return found
-
-    tried = "\n  ".join(str(c) for c in DEFAULT_UCF)
     raise SystemExit(
-        "UCF-Crime kopyası bulunamadı. Denenen varsayılan yollar:\n  " + tried +
-        f"\n\nVeri setinin yerini bildir (biri yeterli):\n"
+        "UCF-Crime kopyası için yol ayarlanmadı.\n\nVeri setinin yerini bildir (biri yeterli):\n"
         f"  scripts/make_long_feed.py --ucf /disk/yolu/UCF_Crimes\n"
         f"  {ENV_KEY}=/disk/yolu/UCF_Crimes  (ortam değişkeni)\n"
         f"  .env dosyasına: {ENV_KEY}=/disk/yolu/UCF_Crimes\n"

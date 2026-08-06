@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [switch]$Mock
+    [switch]$Mock,
+    [switch]$Real
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,6 +15,13 @@ $env:PATH = "$userPath;$machinePath;$env:PATH"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $BackendDir = Join-Path $Root "backend"
 $FrontendDir = Join-Path $Root "frontend"
+
+if ($Mock -and $Real) {
+    throw "-Mock ve -Real birlikte kullanılamaz."
+}
+
+# Yeni klonda model/FFmpeg olmadan ilk açılışın çalışması için varsayılan mock'tur.
+$UseMock = -not $Real.IsPresent
 
 function Resolve-Executable {
     param(
@@ -36,6 +44,30 @@ function Resolve-Executable {
     throw "$Name bulunamadı. PATH'e ekleyin veya aracı kurun."
 }
 
+function Invoke-NativeChecked {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Description,
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$Command
+    )
+
+    # PowerShell 7, bazı araçların normal ilerleme bilgisini stderr'den ErrorRecord
+    # olarak geçirir. Native aracın gerçek başarısızlık sinyali exit code'dur.
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        & $Command 2>&1 | ForEach-Object { Write-Host $_ }
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+    if ($exitCode -ne 0) {
+        throw "$Description başarısız oldu (çıkış kodu: $exitCode)."
+    }
+}
+
 $uvFallbacks = @(
     (Join-Path $env:USERPROFILE "AppData\Local\uv\uv.exe")
 )
@@ -50,9 +82,6 @@ $bunPath = Resolve-Executable -Name "bun" -Fallbacks @(
     (Join-Path $env:USERPROFILE ".bun\bin\bun.exe")
 )
 
-$null = Resolve-Executable -Name "ffmpeg"
-$null = Resolve-Executable -Name "ffprobe"
-
 if (-not (Test-Path -LiteralPath $BackendDir)) {
     throw "Backend klasörü bulunamadı: $BackendDir"
 }
@@ -61,14 +90,50 @@ if (-not (Test-Path -LiteralPath $FrontendDir)) {
     throw "Frontend klasörü bulunamadı: $FrontendDir"
 }
 
-$backendJob = Start-Job -Name "dortgoz-backend" -ArgumentList $BackendDir, $uvPath, $Mock.IsPresent -ScriptBlock {
+if (-not $UseMock) {
+    $null = Resolve-Executable -Name "ffmpeg"
+    $null = Resolve-Executable -Name "ffprobe"
+    if (-not (Test-Path -LiteralPath (Join-Path $Root ".env"))) {
+        throw "Gerçek mod için .env yok. .env.example dosyasını kopyalayıp yerel model ayarlarını doldurun."
+    }
+}
+
+Push-Location $BackendDir
+try {
+    Invoke-NativeChecked -Description "uv bağımlılık senkronizasyonu" -Command {
+        & $uvPath sync --locked
+    }
+    if (-not $UseMock) {
+        Invoke-NativeChecked -Description "gerçek mod preflight denetimi" -Command {
+            & $uvPath run python ..\scripts\preflight.py --root .. --mode real --check-tools
+        }
+    }
+}
+finally {
+    Pop-Location
+}
+
+if (-not (Test-Path -LiteralPath (Join-Path $FrontendDir "node_modules"))) {
+    Push-Location $FrontendDir
+    try {
+        Invoke-NativeChecked -Description "Bun bağımlılık kurulumu" -Command {
+            & $bunPath install --frozen-lockfile
+        }
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+$backendJob = Start-Job -Name "dortgoz-backend" -ArgumentList $BackendDir, $uvPath, $UseMock -ScriptBlock {
     param($WorkingDirectory, $UvExecutable, $UseMock)
 
+    $ErrorActionPreference = "Continue"
     Set-Location $WorkingDirectory
     if ($UseMock) {
         $env:DORTGOZ_MOCK = "1"
     } else {
-        Remove-Item Env:DORTGOZ_MOCK -ErrorAction SilentlyContinue
+        $env:DORTGOZ_MOCK = "0"
     }
     # Windows'ta uvicorn --reload SelectorEventLoop kullanır; asyncio subprocess
     # (ffmpeg/ffprobe) desteklenmediği için video hattı NotImplementedError ile düşer.
@@ -78,13 +143,14 @@ $backendJob = Start-Job -Name "dortgoz-backend" -ArgumentList $BackendDir, $uvPa
 $frontendJob = Start-Job -Name "dortgoz-frontend" -ArgumentList $FrontendDir, $bunPath -ScriptBlock {
     param($WorkingDirectory, $BunExecutable)
 
+    $ErrorActionPreference = "Continue"
     Set-Location $WorkingDirectory
     & $BunExecutable run dev -- --host 0.0.0.0
 }
 
 $jobs = @($backendJob, $frontendJob)
 
-Write-Host "Dörtgöz geliştirme sunucuları başlatıldı ($(if ($Mock) { 'mock' } else { 'gerçek' }) mod)." -ForegroundColor Green
+Write-Host "Dörtgöz geliştirme sunucuları başlatıldı ($(if ($UseMock) { 'mock' } else { 'gerçek' }) mod)." -ForegroundColor Green
 Write-Host "Backend:  http://localhost:8000/health"
 Write-Host "Frontend: http://localhost:5173"
 Write-Host "Durdurmak için Ctrl+C kullanın."

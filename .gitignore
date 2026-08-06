@@ -15,6 +15,10 @@ media/*
 runs/
 cache/
 models/candidate/local/
+models/vlm/manifest.local.json
+models/**/*.gguf
+models/**/*.safetensors
+models/**/*.bin
 *.jsonl
 !backend/dortgoz/mock/sample_events.jsonl
 !bench/results/*.jsonl
