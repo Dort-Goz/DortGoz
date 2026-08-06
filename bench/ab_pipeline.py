@@ -47,6 +47,12 @@ def clip_class(path: Path) -> str:
 # interpret_window'a parametre olarak gider — TIER_TR eki orada korunur.
 SYSTEM_OVERRIDE = ""
 
+# --parallel N: aynı anda N klip. ⚠ N>1'de glance_s/deep_s duvar saatidir ve
+# sunucu kuyruğu beklemesini İÇERİR — birim maliyet ölçümü için N=1 kullanın;
+# N>1 yalnız toplam süreyi kısaltmak için (-np 2 profilinde ~2×, -np 1'de
+# CPU kare çekimi GPU üretimiyle örtüştüğü kadar).
+PARALLEL = 1
+
 
 async def measure_clip(path: Path) -> dict:
     duration = await ingest.probe_duration(path)
@@ -88,6 +94,7 @@ def current_config() -> dict:
         # İstem varyantı koşunun kimliğinin parçası — hangi istem hangi sayıyı
         # üretti sorusu her zaman cevaplanabilir olmalı (deney paneli ilkesi)
         "system_prompt_override": SYSTEM_OVERRIDE,
+        "parallel": PARALLEL,
     }
 
 
@@ -126,6 +133,10 @@ async def collect(clips: list[Path], out: Path) -> None:
             raise SystemExit(
                 f"{out} kaydı farklı bir istem varyantıyla başlamış — "
                 "aynı dosyaya karıştırılmaz (yeni --out ver)")
+        if prev["config"].get("parallel", 1) != PARALLEL:
+            raise SystemExit(
+                f"{out} kaydı parallel={prev['config'].get('parallel', 1)} ile "
+                "başlamış — zaman ölçüm tabanı karışmaz (yeni --out ver)")
         done = {c["clip"] for c in prev["clips"] if "error" not in c}
         if done:
             print(f"devam: {len(done)} klip önceki koşudan tamam, atlanıyor")
@@ -136,20 +147,29 @@ async def collect(clips: list[Path], out: Path) -> None:
 
     t_start = time.time()
     todo = [p for p in clips if p.name not in done]
-    for i, path in enumerate(todo, 1):
-        print(f"[{i}/{len(todo)}] {path.name} ...", end="", flush=True)
-        try:
-            rec = await measure_clip(path)
-            live = [w for w in rec["windows"] if not w["gated"]]
-            print(f" {len(rec['windows'])} pencere, "
-                  f"{sum(w.get('n_events', 0) for w in live)} olay, "
-                  f"p(YES)={[round(w['glance_p'], 2) for w in live]}"
-                  f"  [geçen {time.time() - t_start:.0f} sn]")
-        except Exception as exc:
-            print(f" HATA: {exc}")
-            rec = {"clip": path.name, "error": str(exc)}
-        with out.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    sem = asyncio.Semaphore(PARALLEL)
+    write_lock = asyncio.Lock()
+    finished = 0
+
+    async def one(path: Path) -> None:
+        nonlocal finished
+        async with sem:
+            try:
+                rec = await measure_clip(path)
+                live = [w for w in rec["windows"] if not w["gated"]]
+                note = (f"{len(rec['windows'])} pencere, "
+                        f"{sum(w.get('n_events', 0) for w in live)} olay, "
+                        f"p(YES)={[round(w['glance_p'], 2) for w in live]}")
+            except Exception as exc:
+                rec, note = {"clip": path.name, "error": str(exc)}, f"HATA: {exc}"
+            async with write_lock:
+                finished += 1
+                print(f"[{finished}/{len(todo)}] {path.name} ... {note}"
+                      f"  [geçen {time.time() - t_start:.0f} sn]", flush=True)
+                with out.open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+    await asyncio.gather(*(one(p) for p in todo))
 
 
 # ---- çözümleme ----
@@ -191,6 +211,9 @@ def analyze(data: dict) -> str:
     lines = [
         f"# A2 iki kollu kıyaslama",
         "",
+        *(["- ⚠ parallel>1 koşusu: GPU-sn sütunları duvar saatidir, sunucu "
+           "kuyruğu beklemesi içerir — birim maliyet için parallel=1 koşusu esas"]
+          if data["config"].get("parallel", 1) > 1 else []),
         f"- Klip: {len(clips)} ({len(anomaly)} anomali, {len(normal)} normal)",
         f"- Görüntü süresi: {footage:.1f} dk · işlenen pencere: {len(live)}"
         f" (eleme sonrası; {sum(len(c['windows']) for c in clips) - len(live)} pencere hareket kapısında düştü)",
@@ -280,11 +303,14 @@ def main() -> None:
                     help="istem A/B: SYSTEM_TR yerine bu dosyanın içeriği")
     ap.add_argument("--clips", type=Path,
                     help="dosyadaki klipleri koş (satırda bir ad; UCF ağacında çözülür)")
+    ap.add_argument("--parallel", type=int, default=1,
+                    help="aynı anda N klip (⚠ N>1'de süreler kuyruk beklemesi içerir)")
     args = ap.parse_args()
 
+    global SYSTEM_OVERRIDE, PARALLEL
     if args.sysprompt:
-        global SYSTEM_OVERRIDE
         SYSTEM_OVERRIDE = args.sysprompt.read_text(encoding="utf-8").strip()
+    PARALLEL = max(1, args.parallel)
 
     if args.analyze:
         print(analyze(load_results(args.analyze)))

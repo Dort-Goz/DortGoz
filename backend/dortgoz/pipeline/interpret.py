@@ -19,6 +19,7 @@ TODO(hafta 2): dedektör metaverisi + hareket bölgesi görsel işaretleri istem
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import math
@@ -127,10 +128,7 @@ async def review_incident(
 ) -> dict[str, Any]:
     """Kapanmış bir olayın TÜM aralığını tek bağlamda yeniden okur."""
     start, end = span
-    content: list[dict[str, Any]] = []
-    for t in keyframes:
-        content.append({"type": "text", "text": f"[t={t:.1f}s]"})
-        content.append(_image_part(await grab_frame(video, t)))
+    content = await _frame_parts(video, keyframes)
     task = (
         f"Yukarıdaki kareler {start:.0f}-{end:.0f} sn arasındaki TEK bir olayın "
         f"tamamını kapsıyor ({end - start:.0f} sn). Olayı bütün olarak değerlendir: "
@@ -315,6 +313,21 @@ def _image_part(jpeg: bytes) -> dict[str, Any]:
     return {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
 
 
+async def _frame_parts(video: Path, keyframes: list[float]) -> list[dict[str, Any]]:
+    """Kareleri EŞZAMANLI çeker, zaman damgası + görüntü çifti olarak dizer.
+
+    Sıralı ffmpeg çağrıları pencere başına ~0,5-1 sn CPU beklemesiydi ve GPU bu
+    sürede boş kalıyordu (2026-08-06 ölçümü, tam bölme koşusu). Kareler kısa
+    ömürlü bağımsız süreçler — 6-16'lık pencere için sınırlama gerekmez.
+    """
+    jpegs = await asyncio.gather(*(grab_frame(video, t) for t in keyframes))
+    parts: list[dict[str, Any]] = []
+    for t, jpeg in zip(keyframes, jpegs):
+        parts.append({"type": "text", "text": f"[t={t:.1f}s]"})
+        parts.append(_image_part(jpeg))
+    return parts
+
+
 # ---- [3] UCUZ BAKIŞ (A2 kolu iii) ----
 
 GLANCE_SYSTEM_EN = (
@@ -345,10 +358,7 @@ async def glance_window(
     onu düşürürdü. Eşik çağıran tarafta, recall'a göre ayarlanır.
     """
     start, end = window
-    content: list[dict[str, Any]] = []
-    for t in keyframes:
-        content.append({"type": "text", "text": f"[t={t:.1f}s]"})
-        content.append(_image_part(await grab_frame(video, t)))
+    content = await _frame_parts(video, keyframes)
     question = GLANCE_QUESTION
     if meta:
         question += f"\n\nDetector data:\n{meta}"
@@ -407,10 +417,7 @@ async def interpret_window(
     paneli (arayüz) bunları koşu başına geçirir, şablonda {start}/{end} korunur.
     """
     start, end = window
-    content: list[dict[str, Any]] = []
-    for t in keyframes:
-        content.append({"type": "text", "text": f"[t={t:.1f}s]"})
-        content.append(_image_part(await grab_frame(video, t)))
+    content = await _frame_parts(video, keyframes)
 
     task = ((task_prompt or TASK_TR)
             .replace("{start}", f"{start:.0f}")
