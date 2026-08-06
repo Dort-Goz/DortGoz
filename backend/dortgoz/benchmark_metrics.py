@@ -84,10 +84,45 @@ def candidate_metrics(records: list[dict[str, Any]], *, tiou_threshold: float = 
     }
 
 
+def vlm_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Etiketli VLM doğrulama artifact'ından karar/kanıt/zaman KPI'ları."""
+
+    tp = fp = fn = 0
+    peak_errors: list[float] = []
+    latencies: list[float] = []
+    for record in records:
+        expected = bool(record.get("expected_positive"))
+        predicted = record.get("predicted_status") == "confirmed"
+        if predicted and expected:
+            tp += 1
+        elif predicted:
+            fp += 1
+        elif expected:
+            fn += 1
+        if record.get("expected_peak_time") is not None and record.get("predicted_peak_time") is not None:
+            peak_errors.append(abs(float(record["expected_peak_time"]) - float(record["predicted_peak_time"])))
+        if record.get("duration_ms") is not None:
+            latencies.append(float(record["duration_ms"]))
+    precision = tp / (tp + fp) if tp + fp else 0.0
+    recall = tp / (tp + fn) if tp + fn else 0.0
+    return {
+        "record_count": len(records), "true_positive": tp, "false_positive": fp, "false_negative": fn,
+        "precision": precision, "recall": recall, "f1": 2 * precision * recall / (precision + recall) if precision + recall else 0.0,
+        "peak_mae_seconds": sum(peak_errors) / len(peak_errors) if peak_errors else None,
+        "mean_latency_ms": sum(latencies) / len(latencies) if latencies else None,
+        "valid_json_rate": _rate(records, "schema_valid"), "evidence_valid_rate": _rate(records, "evidence_valid"),
+        "unsupported_critical_claim_rate": _rate(records, "unsupported_critical_claim"),
+    }
+
+
 def _tiou(left: tuple[float, float], right: tuple[float, float]) -> float:
     overlap = max(0.0, min(left[1], right[1]) - max(left[0], right[0]))
     union = max(left[1], right[1]) - min(left[0], right[0])
     return overlap / union if union else 0.0
 
 
-__all__ = ["agent_metrics", "candidate_metrics", "evidence_metrics"]
+def _rate(records: list[dict[str, Any]], key: str) -> float:
+    return sum(bool(record.get(key)) for record in records) / len(records) if records else 0.0
+
+
+__all__ = ["agent_metrics", "candidate_metrics", "evidence_metrics", "vlm_metrics"]

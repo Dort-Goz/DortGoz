@@ -1,4 +1,9 @@
-from dortgoz.benchmark_metrics import agent_metrics, candidate_metrics, evidence_metrics
+from dortgoz.benchmark_metrics import (
+    agent_metrics,
+    candidate_metrics,
+    evidence_metrics,
+    vlm_metrics,
+)
 
 
 def test_agent_metrics_counts_routes_tools_and_recovery() -> None:
@@ -32,3 +37,15 @@ def test_candidate_metrics_reports_recall_fn_tiou_and_vlm_ratio() -> None:
     assert result["false_negative_intervals"] == 1
     assert result["mean_tiou"] == 1.0
     assert result["vlm_time_ratio"] == 0.2
+
+
+def test_vlm_metrics_reports_decision_time_evidence_and_latency() -> None:
+    result = vlm_metrics([
+        {"expected_positive": True, "predicted_status": "confirmed", "expected_peak_time": 10, "predicted_peak_time": 12, "schema_valid": True, "evidence_valid": True, "duration_ms": 100},
+        {"expected_positive": False, "predicted_status": "confirmed", "schema_valid": True, "evidence_valid": False, "unsupported_critical_claim": True, "duration_ms": 300},
+        {"expected_positive": True, "predicted_status": "rejected", "schema_valid": False, "evidence_valid": False},
+    ])
+    assert (result["precision"], result["recall"], result["f1"]) == (0.5, 0.5, 0.5)
+    assert result["peak_mae_seconds"] == 2
+    assert result["mean_latency_ms"] == 200
+    assert result["unsupported_critical_claim_rate"] == 1 / 3
