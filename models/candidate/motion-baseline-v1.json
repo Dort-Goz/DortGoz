@@ -1,0 +1,8 @@
+{
+  "model_id": "motion-baseline-v1",
+  "version": "1.0.0",
+  "activity_scale": 4.0,
+  "interaction_scale": 5.0,
+  "feature_schema": ["changed", "fg", "mad", "activity"],
+  "license": "MIT"
+}

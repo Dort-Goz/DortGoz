@@ -8,19 +8,46 @@ yeniden oynatılır — GPU/model olmadan uçtan uca arayüz geliştirme.
 from __future__ import annotations
 
 import asyncio
+import uuid
 from pathlib import Path
 
-import uuid
-
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from .api.errors import (
+    domain_exception_handler,
+    http_exception_handler,
+    validation_exception_handler,
+)
+from .api.router import router as api_router
 from .config import settings
+from .domain.video import VideoIngestError
 from .events import ActuatorResult, ChatMessage, Event, OperatorMessage, RunStatus
+from .repositories.errors import (
+    RepositoryConflictError,
+    RepositoryDuplicateError,
+    RepositoryError,
+    RepositoryNotFoundError,
+)
 from .ws import ConnectionManager, replay_jsonl
 
 app = FastAPI(title="Dörtgöz", version="0.1.0")
 manager = ConnectionManager()
+
+app.include_router(api_router)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+for _error_type in (
+    VideoIngestError,
+    RepositoryError,
+    RepositoryNotFoundError,
+    RepositoryDuplicateError,
+    RepositoryConflictError,
+):
+    app.add_exception_handler(_error_type, domain_exception_handler)
+app.add_exception_handler(Exception, domain_exception_handler)
 
 MOCK_EVENTS = Path(__file__).parent / "mock" / "sample_events.jsonl"
 
@@ -150,7 +177,7 @@ async def start_run(msg: OperatorMessage) -> None:
         )))
         return
 
-    from .pipeline.runner import run_video      # geç import: mock modda gerekmez
+    from .pipeline.runner import run_video  # geç import: mock modda gerekmez
 
     run_id = f"{Path(msg.video).stem}-{uuid.uuid4().hex[:6]}"
     _run_task = asyncio.create_task(run_video(

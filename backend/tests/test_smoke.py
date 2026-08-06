@@ -20,8 +20,11 @@ def test_health():
 
 def test_mock_events_validate_against_contract():
     """Mock akıştaki her satır Event şemasına uymalı — sözleşme bozulursa burada kırılır."""
-    lines = [l for l in MOCK.read_text(encoding="utf-8").splitlines()
-             if l.strip() and not l.startswith("#")]
+    lines = [
+        line
+        for line in MOCK.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
     assert len(lines) >= 10
     for line in lines:
         raw = json.loads(line)
@@ -65,6 +68,7 @@ def test_interpret_config_mock(monkeypatch):
 def test_broadcast_survives_a_stalled_client():
     """Askıda kalan tek istemci yayını (dolayısıyla koşuyu) kilitlememeli."""
     import asyncio
+
     from dortgoz.events import ChatMessage, Event
     from dortgoz.ws import ConnectionManager
 

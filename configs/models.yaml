@@ -1,0 +1,13 @@
+# Yerel model manifest kayıtları. Ağırlıklar repoya alınmaz; hash ve lisans
+# kontrolü models/*/manifest.json ile birlikte tutulur.
+candidate:
+  # Varsayılan, hash'i repoda doğrulanan ölçülebilir referanstır.
+  model_id: motion-baseline-v1
+  type: motion_baseline
+  manifest: models/candidate/manifest.json
+  input_fps: 1.0
+  temporal_cnn:
+    status: training_ready_no_artifact
+    type: temporal_cnn
+    output_dir: models/candidate/local/
+    activation_env: DORTGOZ_CANDIDATE_MANIFEST_PATH

@@ -1,0 +1,11 @@
+{
+  "model_id": "motion-baseline-v1",
+  "version": "1.0.0",
+  "model_type": "motion_baseline",
+  "artifact_path": "models/candidate/motion-baseline-v1.json",
+  "artifact_sha256": "2e08133b90785380ec5a510e8defb059aa926ddf0395281b6c746bc9b90e2285",
+  "license": "MIT",
+  "input_fps": 1.0,
+  "feature_schema": ["changed", "fg", "mad", "activity"],
+  "notes": "Ölçülebilir referans; learned candidate CNN yerine geçmez."
+}

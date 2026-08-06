@@ -12,10 +12,10 @@ olarak akar — ajan konsolu bu izlerle canlanır.
 
 from __future__ import annotations
 
+from ..config import settings
 from ..events import AgentStep, ChatMessage, Event
 from ..ws import ConnectionManager
 from .llm import main_client
-from ..config import settings
 
 SYSTEM_TR = (
     "Sen Dörtgöz saha güvenliği operatör asistanısın. Video analiz hattının "

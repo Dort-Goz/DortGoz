@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -56,9 +57,46 @@ class Settings(BaseSettings):
     # klip yakalama +1 / yanlış alarm +0; kurtarılanlar GT-ilişkiliydi.
     escalate_p: float = 0.10
 
+    # Yeni kontrollü agent dikeyinin güvenlik sınırları. Bunlar policy içinde
+    # sabit yazılmaz; DORTGOZ_* ortam değişkenleriyle kontrollü değiştirilebilir.
+    video_max_bytes: int = 2 * 1024 * 1024 * 1024
+    max_agent_steps: int = 14
+    max_vlm_attempts: int = 2
+    max_context_expansions: int = 1
+    max_dense_analyses: int = 1
+    quality_min: float = 0.35
+    medium_candidate_score: float = 0.45
+    high_candidate_score: float = 0.70
+    critical_candidate_score: float = 0.85
+    cv_only_confidence: float = 0.92
+    vlm_confirm_confidence: float = 0.80
+    vlm_reject_confidence: float = 0.80
+
+    # Görev 07 candidate interval baseline. Learned model geldiğinde aynı
+    # threshold sözleşmesi validation/calibration çıktısından beslenir.
+    candidate_start_threshold: float = 0.65
+    candidate_continue_threshold: float = 0.40
+    candidate_end_patience: int = 3
+    candidate_merge_gap_seconds: float = 2.0
+    candidate_min_duration_seconds: float = 0.5
+    candidate_threshold_version: str = "candidate-thresholds-v1"
+
     # Yollar
     media_dir: Path = Path(__file__).resolve().parents[2] / "media"
     runs_dir: Path = Path(__file__).resolve().parents[2] / "runs"
+    candidate_cache_dir: Path = Path(__file__).resolve().parents[2] / "cache" / "candidate"
+    candidate_manifest_path: Path = (
+        Path(__file__).resolve().parents[2] / "models" / "candidate" / "manifest.json"
+    )
+
+    @field_validator("candidate_manifest_path", mode="after")
+    @classmethod
+    def resolve_candidate_manifest_path(cls, value: Path) -> Path:
+        """Env'den gelen göreli manifest yolunu repository köküne sabitler."""
+
+        if value.is_absolute():
+            return value.resolve()
+        return (Path(__file__).resolve().parents[2] / value).resolve()
 
     model_config = {
         "env_prefix": "DORTGOZ_",
