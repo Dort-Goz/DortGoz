@@ -54,4 +54,40 @@ def evidence_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-__all__ = ["agent_metrics", "evidence_metrics"]
+def candidate_metrics(records: list[dict[str, Any]], *, tiou_threshold: float = 0.5) -> dict[str, Any]:
+    if not 0 < tiou_threshold <= 1:
+        raise ValueError("tiou_threshold 0 ile 1 arasında olmalı")
+    ground_truth = candidates = hits = 0
+    matched_ious: list[float] = []
+    video_seconds = candidate_seconds = 0.0
+    for record in records:
+        truths = [(float(item["start_time"]), float(item["end_time"])) for item in record.get("ground_truth", [])]
+        predicted = [(float(item["start_time"]), float(item["end_time"])) for item in record.get("candidates", [])]
+        used: set[int] = set()
+        ground_truth += len(truths)
+        candidates += len(predicted)
+        video_seconds += float(record.get("duration_seconds", 0))
+        candidate_seconds += sum(end - start for start, end in predicted)
+        for truth in truths:
+            choices = [(index, _tiou(truth, prediction)) for index, prediction in enumerate(predicted) if index not in used]
+            if choices and (best := max(choices, key=lambda item: item[1]))[1] >= tiou_threshold:
+                used.add(best[0])
+                hits += 1
+                matched_ious.append(best[1])
+    return {
+        "video_count": len(records), "ground_truth_count": ground_truth, "candidate_count": candidates,
+        "true_positive_intervals": hits, "false_negative_intervals": ground_truth - hits,
+        "recall": hits / ground_truth if ground_truth else 0.0,
+        "mean_tiou": sum(matched_ious) / len(matched_ious) if matched_ious else 0.0,
+        "candidates_per_hour": candidates / (video_seconds / 3600) if video_seconds else 0.0,
+        "vlm_time_ratio": candidate_seconds / video_seconds if video_seconds else 0.0,
+    }
+
+
+def _tiou(left: tuple[float, float], right: tuple[float, float]) -> float:
+    overlap = max(0.0, min(left[1], right[1]) - max(left[0], right[0]))
+    union = max(left[1], right[1]) - min(left[0], right[0])
+    return overlap / union if union else 0.0
+
+
+__all__ = ["agent_metrics", "candidate_metrics", "evidence_metrics"]

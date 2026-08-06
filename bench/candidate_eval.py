@@ -1,0 +1,29 @@
+"""Candidate/GT interval JSONL artifact'ından recall, FN, tIoU ve VLM oranı üretir.
+
+Her satır: ``video_id``, ``duration_seconds``, ``ground_truth`` ve ``candidates``;
+interval listelerindeki her kayıt ``start_time``/``end_time`` taşır.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+
+from dortgoz.benchmark_metrics import candidate_metrics
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("artifact", type=Path)
+    parser.add_argument("--tiou", type=float, default=0.5)
+    args = parser.parse_args()
+    rows = [json.loads(line) for line in args.artifact.read_text(encoding="utf-8").splitlines() if line.strip()]
+    print(json.dumps(candidate_metrics(rows, tiou_threshold=args.tiou), ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()

@@ -1,4 +1,4 @@
-from dortgoz.benchmark_metrics import agent_metrics, evidence_metrics
+from dortgoz.benchmark_metrics import agent_metrics, candidate_metrics, evidence_metrics
 
 
 def test_agent_metrics_counts_routes_tools_and_recovery() -> None:
@@ -20,3 +20,15 @@ def test_evidence_metrics_reports_confirmation_gate() -> None:
     assert result["confirmation_rate"] == 0.5
     assert result["unsupported_critical_claims"] == 1
     assert result["valid_counts"]["schema_valid"] == 1
+
+
+def test_candidate_metrics_reports_recall_fn_tiou_and_vlm_ratio() -> None:
+    result = candidate_metrics([{
+        "duration_seconds": 100,
+        "ground_truth": [{"start_time": 10, "end_time": 20}, {"start_time": 50, "end_time": 60}],
+        "candidates": [{"start_time": 10, "end_time": 20}, {"start_time": 70, "end_time": 80}],
+    }])
+    assert result["recall"] == 0.5
+    assert result["false_negative_intervals"] == 1
+    assert result["mean_tiou"] == 1.0
+    assert result["vlm_time_ratio"] == 0.2
