@@ -93,10 +93,14 @@ export default function App() {
     socketRef.current?.send({ kind: "start_run", video: selected, ...overrides() });
   }, [selected, busy, overrides]);
 
-  // Demo: ilk N klip, KAM-1..N etiketleriyle EŞZAMANLI koşar (kapasite ~10 @1×)
+  // Demo: KAM-1..N etiketleriyle EŞZAMANLI koşar (kapasite ~10 @1×).
+  // Uzun `kamera*` kayıtları (make_long_feed üretimi) öncelikli — demo kısa
+  // kliplerle değil, gerçekçi sürekli akışlarla anlamlı.
   const startDemo = useCallback((count: number) => {
     if (busy || videos.length === 0) return;
-    const picks = Array.from({ length: count }, (_, i) => videos[i % videos.length]);
+    const long = videos.filter((v) => v.toLowerCase().startsWith("kamera"));
+    const pool = long.length >= 2 ? long : videos;
+    const picks = Array.from({ length: count }, (_, i) => pool[i % pool.length]);
     picks.forEach((video, i) => {
       const feedName = `KAM-${i + 1}`;
       dispatch({ kind: "run_started", video, feed: feedName });
