@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     window_preroll: float = 3.0         # olayın açılışı kırpılmasın
     window_quiet_tail: float = 6.0      # bu kadar sessizlik pencereyi bitirir
     keyframes_per_window: int = 6
+    # Kare tekilleştirme: seçilen karelerin 64×48 gri profilde DEĞİŞEN-PİKSEL
+    # ORANI bu eşiğin altındaysa kopya sayılıp gönderilmez (0 = kapalı).
+    # Kodlama seri ve 1 numaralı ölçek darboğazı — durağan pencere 6 yerine
+    # 2 kare gönderir. Ölçülen bant (2026-08-07): gerçekten durağan sahne
+    # 0,001-0,005 · aynı sahnede olay ≥0,010 · canlı sokak 0,12+ (elenmez).
+    keyframe_dedup: float = 0.008
     # Eleme eşiği: uyarlanabilir mod kameranın kendi gürültü tabanından türetir
     # (sabit küresel eşik farklı kameralara hizmet edemiyordu — 2026-08-03 ölçümü)
     motion_gate_adaptive: bool = True

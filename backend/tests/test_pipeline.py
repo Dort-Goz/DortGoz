@@ -223,3 +223,35 @@ async def test_gate_kills_dead_footage_but_not_real_footage(tmp_path):
 async def test_ffmpeg_error_is_typed():
     with pytest.raises(ingest.FFmpegError):
         await ingest.probe_duration(Path("/nonexistent/clip.mp4"))
+
+
+# ---- kare tekilleştirme (2026-08-07): kopya kare VLM'e gitmesin ----
+
+def _grid_sample(t, grid, activity=0.0):
+    from dortgoz.pipeline.ingest import MotionSample
+    return MotionSample(t=t, changed=activity, fg=0.0, mad=0.0, grid=grid)
+
+
+def test_dedup_collapses_static_window():
+    from dortgoz.pipeline.windowing import _dedup
+    flat = bytes([100]) * (64 * 48)
+    samples = [_grid_sample(float(t), flat) for t in range(30)]
+    times = [2.0, 7.0, 12.0, 17.0, 22.0, 27.0]
+    out = _dedup(times, samples, threshold=0.006)
+    assert out == [2.0, 27.0]          # tamamen durağan → baş + son
+
+
+def test_dedup_keeps_distinct_frames():
+    from dortgoz.pipeline.windowing import _dedup
+    samples = [_grid_sample(float(t), bytes([(t * 40) % 256]) * (64 * 48))
+               for t in range(30)]
+    times = [2.0, 7.0, 12.0, 17.0]
+    assert _dedup(times, samples, threshold=0.006) == times
+
+
+def test_dedup_survives_missing_grids():
+    from dortgoz.pipeline.windowing import _dedup
+    samples = [_grid_sample(float(t), b"") for t in range(30)]
+    times = [2.0, 7.0, 12.0]
+    # grid yoksa tekilleştirme yapılamaz → hepsi korunur (güvenli taraf)
+    assert _dedup(times, samples, threshold=0.006) == times

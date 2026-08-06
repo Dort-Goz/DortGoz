@@ -130,7 +130,53 @@ def select_keyframes(
                 break
             if all(abs(t - p) >= min_gap for p in picked):
                 picked.append(t)
-    return sorted(picked)
+    return _dedup(sorted(picked), samples)
+
+
+def _dedup(times: list[float], samples: list[MotionSample],
+           threshold: float | None = None) -> list[float]:
+    """Neredeyse özdeş kareleri seçkiden düşürür (kopya kare VLM'e gitmesin).
+
+    Kodlama ölçülen 1 numaralı ölçek darboğazı ve SERİ çalışıyor — sakin
+    pencerede 6 kopya kare göndermek saf israf. Karşılaştırma, profildeki
+    64×48 gri karelerde `PIXEL_TAU`yu aşan piksel ORANIYLA yapılır (ekstra
+    kod çözme YOK). ⚠ Ortalama mutlak fark BİLEREK kullanılmıyor — hareket
+    kapısının 2026-08-03 dersi burada da doğrulandı (2026-08-07 ölçümü):
+    global MAD gürültüyü tüm piksellere yayıyor ve canlı sokak sahnesinin
+    "sessiz" penceresi olaylı pencereden BÜYÜK fark veriyordu; değişen-piksel
+    oranı gerçekten durağan sahneyi (0,001-0,005) olaydan (≥0,010) ayırıyor.
+    Kural: kareler sırayla gezilir; öncekilerden en az `threshold` kadar
+    farklı olanlar kalır. En az 2 kare korunur (zamansal bağlam) — olay
+    içeren kare hareketle zaten farklıdır, elenmez.
+    """
+    if threshold is None:
+        from ..config import settings
+        threshold = settings.keyframe_dedup
+    if threshold <= 0 or len(times) <= 2:
+        return times
+
+    from .ingest import PIXEL_TAU
+
+    def grid_at(t: float) -> bytes:
+        return min(samples, key=lambda s: abs(s.t - t)).grid
+
+    def diff(a: bytes, b: bytes) -> float:
+        if not a or not b or len(a) != len(b):
+            return 1.0                 # grid yoksa tekilleştirme yapılamaz → tut
+        hits = sum(1 for x, y in zip(a, b)
+                   if (x - y if x > y else y - x) > PIXEL_TAU)
+        return hits / len(a)
+
+    kept: list[float] = [times[0]]
+    kept_grids = [grid_at(times[0])]
+    for t in times[1:]:
+        g = grid_at(t)
+        if all(diff(g, kg) >= threshold for kg in kept_grids):
+            kept.append(t)
+            kept_grids.append(g)
+    if len(kept) < 2:                  # tamamen durağan pencere: baş + son
+        kept = [times[0], times[-1]]
+    return kept
 
 
 def _uniform(start: float, end: float, k: int) -> list[float]:

@@ -53,6 +53,10 @@ class MotionSample:
     changed: float      # ana sinyal — PIXEL_TAU'yu aşan piksellerin oranı
     fg: float           # varlık sinyali — arka plan modeline göre ön plan oranı
     mad: float          # eski ölçüt; telemetri ve karşılaştırma için tutuluyor
+    # 64×48 gri kare — kare TEKİLLEŞTİRME için tutulur (kopya kareyi VLM'e
+    # göndermemek = pencere başına ~0,25 sn/kare SERİ kodlama tasarrufu; kodlama
+    # ölçülen 1 numaralı ölçek darboğazı). ~3 KB/örnek; 45 dk ≈ 8 MB.
+    grid: bytes = b""
 
     @property
     def activity(self) -> float:
@@ -116,7 +120,8 @@ async def motion_profile(video: Path, base_fps: float = 1.0) -> list[MotionSampl
                  if abs(a - b) > PIXEL_TAU) / _FRAME_BYTES
         background = [b + BG_ALPHA * (a - b) for a, b in zip(frame, background)]
 
-        profile.append(MotionSample(t=t, changed=changed, fg=fg, mad=mad))
+        profile.append(MotionSample(t=t, changed=changed, fg=fg, mad=mad,
+                                    grid=frame))
         prev = frame
     return profile
 
