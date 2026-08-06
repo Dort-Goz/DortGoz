@@ -15,6 +15,7 @@ media/*
 runs/
 *.jsonl
 !backend/dortgoz/mock/sample_events.jsonl
+!bench/results/*.jsonl
 
 # Local
 .env

@@ -4,13 +4,18 @@ Tek geçişte her pencere için HEM ucuz bakış (P(YES) + süre) HEM derin okum
 (rapor + süre) ölçülür. Kol B böylece herhangi bir eşik için sonradan yeniden
 kurulabilir — eşik taraması için yeniden koşmak gerekmez.
 
-    cd backend && uv run python ../bench/ab_pipeline.py            # ölç + raporla
+    cd backend && uv run python ../bench/ab_pipeline.py            # media/ klipleri
     cd backend && uv run python ../bench/ab_pipeline.py --limit 4  # hızlı deneme
-    cd backend && uv run python ../bench/ab_pipeline.py --analyze bench/results/ab_*.json
+    cd backend && uv run python ../bench/ab_pipeline.py --split test   # resmî UCF test bölmesi
+    cd backend && uv run python ../bench/ab_pipeline.py --analyze bench/results/ab_*.jsonl
 
 Etiket: klip adının sınıfı (UCF-Crime). Normal_* klipler negatif kontrol.
 Bu klip-düzeyi zayıf etikettir; zamansal IoU için UCA anotasyonları gerekir
 (açık iş #10) — o gelince aynı JSON üzerinden hesaplanabilir.
+
+Çıktı JSONL'dir ve klip klip YAZILIR: saatler süren bölme koşusu kesintiye
+uğrarsa aynı `--out` ile yeniden başlatmak kaldığı yerden devam eder
+(hatalı biten klipler yeniden denenir). Eski tek-JSON kayıtlar da okunur.
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ import argparse
 import asyncio
 import json
 import re
+import sys
 import time
 from pathlib import Path
 
@@ -26,12 +32,20 @@ from dortgoz.config import settings
 from dortgoz.pipeline import ingest, windowing
 from dortgoz.pipeline.interpret import glance_window, interpret_window
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from make_long_feed import resolve_ucf  # noqa: E402  (veri seti yolu tek konvansiyondan)
+
 RESULTS = Path(__file__).parent / "results"
 THRESHOLDS = [0.01, 0.05, 0.10, 0.20, 0.30, 0.50, 0.70, 0.90]
 
 
 def clip_class(path: Path) -> str:
     return re.sub(r"_?\d+$", "", path.stem.replace("_x264", ""))
+
+
+# İstem A/B'si: --sysprompt ile doldurulur; boş = pipeline varsayılanı.
+# interpret_window'a parametre olarak gider — TIER_TR eki orada korunur.
+SYSTEM_OVERRIDE = ""
 
 
 async def measure_clip(path: Path) -> dict:
@@ -55,7 +69,8 @@ async def measure_clip(path: Path) -> dict:
             rec["glance_s"] = time.time() - t0
 
             t0 = time.time()
-            report = await interpret_window(path, (start, end), keys)
+            report = await interpret_window(path, (start, end), keys,
+                                            system_prompt=SYSTEM_OVERRIDE)
             rec["deep_s"] = time.time() - t0
             rec["n_events"] = len(report.events)
             rec["summary"] = report.summary
@@ -64,26 +79,77 @@ async def measure_clip(path: Path) -> dict:
     return out
 
 
-async def collect(clips: list[Path]) -> dict:
-    data = {"clips": [], "config": {
+def current_config() -> dict:
+    return {
         "model": settings.main_model,
         "window_seconds": settings.window_seconds,
         "keyframes_per_window": settings.keyframes_per_window,
         "motion_gate": settings.motion_gate,
-    }}
-    for i, path in enumerate(clips, 1):
-        print(f"[{i}/{len(clips)}] {path.name} ...", end="", flush=True)
+        # İstem varyantı koşunun kimliğinin parçası — hangi istem hangi sayıyı
+        # üretti sorusu her zaman cevaplanabilir olmalı (deney paneli ilkesi)
+        "system_prompt_override": SYSTEM_OVERRIDE,
+    }
+
+
+def load_results(path: Path) -> dict:
+    """JSONL (satır satır) ya da eski tek-JSON kaydı ortak biçime okur."""
+    text = path.read_text(encoding="utf-8")
+    if path.suffix == ".json":
+        return json.loads(text)
+    data: dict = {"clips": [], "config": {}}
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        obj = json.loads(line)
+        if "clip" in obj:
+            data["clips"].append(obj)
+        else:
+            data["config"] = obj.get("config", {})
+    return data
+
+
+async def collect(clips: list[Path], out: Path) -> None:
+    """Klipleri ölçer ve her birini bittiği an `out`'a (JSONL) yazar.
+
+    `out` zaten varsa tamamlanmış klipler atlanır (hatalılar yeniden denenir) —
+    saatlik koşu kesintiden kaldığı yerden sürer. Model değişmişse durdurur:
+    tek dosyada iki modelin ölçümü karışmamalı.
+    """
+    done: set[str] = set()
+    if out.exists():
+        prev = load_results(out)
+        if prev["config"] and prev["config"]["model"] != settings.main_model:
+            raise SystemExit(
+                f"{out} kaydı {prev['config']['model']} ile başlamış, etkin model "
+                f"{settings.main_model} — aynı dosyaya karıştırılmaz (yeni --out ver)")
+        if prev["config"].get("system_prompt_override", "") != SYSTEM_OVERRIDE:
+            raise SystemExit(
+                f"{out} kaydı farklı bir istem varyantıyla başlamış — "
+                "aynı dosyaya karıştırılmaz (yeni --out ver)")
+        done = {c["clip"] for c in prev["clips"] if "error" not in c}
+        if done:
+            print(f"devam: {len(done)} klip önceki koşudan tamam, atlanıyor")
+    else:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({"config": current_config()},
+                                  ensure_ascii=False) + "\n", encoding="utf-8")
+
+    t_start = time.time()
+    todo = [p for p in clips if p.name not in done]
+    for i, path in enumerate(todo, 1):
+        print(f"[{i}/{len(todo)}] {path.name} ...", end="", flush=True)
         try:
             rec = await measure_clip(path)
-            data["clips"].append(rec)
             live = [w for w in rec["windows"] if not w["gated"]]
             print(f" {len(rec['windows'])} pencere, "
                   f"{sum(w.get('n_events', 0) for w in live)} olay, "
-                  f"p(YES)={[round(w['glance_p'], 2) for w in live]}")
+                  f"p(YES)={[round(w['glance_p'], 2) for w in live]}"
+                  f"  [geçen {time.time() - t_start:.0f} sn]")
         except Exception as exc:
             print(f" HATA: {exc}")
-            data["clips"].append({"clip": path.name, "error": str(exc)})
-    return data
+            rec = {"clip": path.name, "error": str(exc)}
+        with out.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
 # ---- çözümleme ----
@@ -204,26 +270,62 @@ def analyze(data: dict) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, help="yalnız ilk N klip")
-    ap.add_argument("--analyze", type=Path, help="kayıtlı JSON'u yeniden çözümle")
+    ap.add_argument("--analyze", type=Path, help="kayıtlı JSON/JSONL'i yeniden çözümle")
+    ap.add_argument("--split", choices=["test", "train"],
+                    help="media/ yerine resmî UCF-Crime bölmesini koş")
+    ap.add_argument("--ucf", type=Path, help="UCF-Crime kopyasının yeri (bkz. make_long_feed)")
+    ap.add_argument("--out", type=Path,
+                    help="çıktı JSONL (varsa kaldığı yerden devam eder)")
+    ap.add_argument("--sysprompt", type=Path,
+                    help="istem A/B: SYSTEM_TR yerine bu dosyanın içeriği")
+    ap.add_argument("--clips", type=Path,
+                    help="dosyadaki klipleri koş (satırda bir ad; UCF ağacında çözülür)")
     args = ap.parse_args()
 
+    if args.sysprompt:
+        global SYSTEM_OVERRIDE
+        SYSTEM_OVERRIDE = args.sysprompt.read_text(encoding="utf-8").strip()
+
     if args.analyze:
-        print(analyze(json.loads(args.analyze.read_text(encoding="utf-8"))))
+        print(analyze(load_results(args.analyze)))
         return
 
-    # Yalnız UCF-Crime klipleri (`*_x264.mp4`) — sentetik/test videoları
-    # (ör. surveillance_5min.mp4) değerlendirme setini kirletmemeli
-    clips = sorted(settings.media_dir.glob("*_x264.mp4"))[: args.limit]
-    if not clips:
-        raise SystemExit("media/ altında klip yok")
-    data = asyncio.run(collect(clips))
+    if args.clips:
+        # Hedefli alt küme (istem A/B'leri): ad → yol, UCF ağacından tek geçişte
+        videos = resolve_ucf(args.ucf)
+        index = {p.name: p for p in videos.rglob("*.mp4")}
+        names = [l.strip() for l in args.clips.read_text(encoding="utf-8").splitlines()
+                 if l.strip()]
+        missing = [n for n in names if n not in index]
+        if missing:
+            raise SystemExit(f"{len(missing)} klip UCF ağacında yok (ilk: {missing[0]})")
+        clips = [index[n] for n in names]
+    elif args.split:
+        videos = resolve_ucf(args.ucf)
+        split_file = (videos.parent / "Anomaly_Detection_splits"
+                      / f"Anomaly_{args.split.capitalize()}.txt")
+        clips = [videos / line.strip()
+                 for line in split_file.read_text(encoding="utf-8").splitlines()
+                 if line.strip()]
+        missing = [c for c in clips if not c.is_file()]
+        if missing:
+            print(f"⚠ {len(missing)} bölme klibi diskte yok, atlanıyor "
+                  f"(ilk: {missing[0].name})")
+            clips = [c for c in clips if c.is_file()]
+    else:
+        # Yalnız UCF-Crime klipleri (`*_x264.mp4`) — sentetik/test videoları
+        # (ör. surveillance_5min.mp4) değerlendirme setini kirletmemeli
+        clips = sorted(settings.media_dir.glob("*_x264.mp4"))
+        if not clips:
+            raise SystemExit("media/ altında klip yok")
+    clips = clips[: args.limit]
 
-    RESULTS.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    out = RESULTS / f"ab_{stamp}.json"
-    out.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-    report = analyze(data)
-    (RESULTS / f"ab_{stamp}.md").write_text(report, encoding="utf-8")
+    out = args.out or RESULTS / f"ab_{stamp}.jsonl"
+    asyncio.run(collect(clips, out))
+
+    report = analyze(load_results(out))
+    out.with_suffix(".md").write_text(report, encoding="utf-8")
     print(f"\nham veri: {out}\n")
     print(report)
 
