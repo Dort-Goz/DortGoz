@@ -260,6 +260,35 @@ async def run_video(
                         progress=(idx + 1) / len(wins),
                     ))
                     continue
+
+                # Sınırda kalan pencere: karar `olagan` ama modelin ham inancı
+                # dikkat dalında kayda değer kütle bırakmış → BİR düşünmeli
+                # yeniden sorgu. Taban karar ASLA kaybolmaz — düşünme, token
+                # bütçesini yiyip JSON üretmeden bitebiliyor (2026-08-06 ölçümü).
+                if (settings.escalate_p and not report.events
+                        and call.get("durum_p", 0.0) >= settings.escalate_p):
+                    try:
+                        esc = await interpret_window(
+                            path, (start, end), keyframes,
+                            model=model, system_prompt=system_prompt,
+                            task_prompt=task_prompt, context=hint,
+                            think=True,
+                        )
+                        if esc.events:
+                            report = esc
+                        await rec.emit(AgentStep(
+                            node="interpret", status="done",
+                            detail=(f"tırmandırma {start:.0f}-{end:.0f} sn: "
+                                    f"P(dikkat)={call['durum_p']:.2f} → "
+                                    f"{len(esc.events)} olay"),
+                        ))
+                    except Exception as exc:
+                        await rec.emit(AgentStep(
+                            node="interpret", status="done",
+                            detail=(f"tırmandırma başarısız, taban karar "
+                                    f"korundu: {str(exc)[:120]}"),
+                        ))
+
                 ctx.reports.append(report)
                 await rec.emit(report)
                 sev = ",".join(sorted({e.severity_hint for e in report.events})) or "—"

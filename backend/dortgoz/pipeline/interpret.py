@@ -381,6 +381,32 @@ async def glance_window(
     return _yes_probability(resp)
 
 
+def _dikkat_probability(resp) -> float | None:
+    """İki kademeli çıktıda `durum` dal token'ının ham P(dikkat) kütlesi.
+
+    Kritik ayrım: top_logprobs GRAMER MASKESİNDEN ÖNCEKİ model dağılımıdır
+    (canlı probda 'normal' %12,5 ile ikinci sıradaydı — enum'da yokken). Yani bu
+    değer modelin gerçek inancıdır: `olagan` kararı verilmiş bir pencerede
+    yüksek P(dikkat) = sınırda kalmış aday → tırmandırma/yeniden sorgu hedefi.
+    Qwen tokenizer'ı 'dikkat'ı 'd…' ile açar — önek eşleşmesi tek harfe bakar.
+    """
+    lp = resp.choices[0].logprobs
+    if not lp or not lp.content:
+        return None
+    raw = ""
+    for tk in lp.content:
+        if raw.endswith('"durum": "') or raw.endswith('"durum":"'):
+            total = dik = 0.0
+            for alt in tk.top_logprobs:
+                p = math.exp(alt.logprob)
+                total += p
+                if alt.token.strip().lower().startswith("d"):
+                    dik += p
+            return dik / total if total > 0 else None
+        raw += tk.token
+    return None
+
+
 def _yes_probability(resp) -> float:
     """İlk üretilen token'ın alternatifleri arasından YES kütlesini toplar."""
     lp = resp.choices[0].logprobs
@@ -408,13 +434,23 @@ async def interpret_window(
     model: str = "",
     system_prompt: str = "",
     task_prompt: str = "",
+    tier_prompt: str = "",
     context: str = "",
+    think: bool = False,
     stats: dict[str, Any] | None = None,
 ) -> WindowReport:
     """Bir pencereyi tek VLM çağrısıyla yorumlar; şema-geçerli WindowReport döner.
 
-    `model`/`system_prompt`/`task_prompt` boşsa varsayılanlara düşer — deney
-    paneli (arayüz) bunları koşu başına geçirir, şablonda {start}/{end} korunur.
+    `model`/`system_prompt`/`task_prompt`/`tier_prompt` boşsa varsayılanlara
+    düşer — deney paneli (arayüz) ve bench bunları koşu başına geçirir.
+    `stats` verilmişse ölçümlere ek olarak `durum_p` (dal token'ının ham
+    P(dikkat) kütlesi) yazılır — sınırda kalan pencerelerin izi/tırmandırması.
+
+    `think=True` = tırmandırma modu: düşünme açılır (llama.cpp grameri
+    </think> SONRASINA erteliyor — canlı doğrulandı 2026-08-06) ve token
+    tavanı yükselir (olaylı pencerede düşünce 2.500'ü aşabiliyor). Her
+    pencerede KULLANILMAZ (sakin pencerede 12× token ölçüldü) — yalnız
+    sınırda kalan pencerenin yeniden sorgusu ve olay-geneli 2. geçiş için.
     """
     start, end = window
     content = await _frame_parts(video, keyframes)
@@ -430,15 +466,20 @@ async def interpret_window(
 
     system = system_prompt or SYSTEM_TR
     if settings.two_tier:
-        system = f"{system}\n\n{TIER_TR}"
+        system = f"{system}\n\n{tier_prompt or TIER_TR}"
 
     client = main_client()
     resp = await client.chat.completions.create(
         model=model or settings.main_model,
         messages=[{"role": "system", "content": system},
                   {"role": "user", "content": content}],
-        max_tokens=settings.interpret_max_tokens,
+        max_tokens=(max(4000, settings.interpret_max_tokens) if think
+                    else settings.interpret_max_tokens),
         temperature=0,
+        # stats isteniyorsa dal token olasılığı da toplanır (yanıt gövdesine
+        # birkaç KB ekler, üretimi değiştirmez — grammar maskesi öncesi inanç)
+        logprobs=stats is not None,
+        top_logprobs=8 if stats is not None else None,
         response_format={
             "type": "json_schema",
             "json_schema": {"name": "window_report", "strict": True,
@@ -453,11 +494,13 @@ async def interpret_window(
             # 36 → 75 t/s kazandırıyor. Eski "mmproj+MTP çöker" notu b10234'te
             # ARTIK GEÇERLİ DEĞİL (korumasız görüntü isteği sorunsuz çalıştı).
             "speculative.n_max": 0,
-            "chat_template_kwargs": {"enable_thinking": False},
+            "chat_template_kwargs": {"enable_thinking": think},
         },
     )
     if stats is not None:                    # token sayıları + PP/gen hızları
         stats.update(call_stats(resp))
+        if settings.two_tier and (p := _dikkat_probability(resp)) is not None:
+            stats["durum_p"] = p
     raw = resp.choices[0].message.content or "{}"
     # GBNF üretim anında garanti eder; Pydantic ikinci savunma katmanı (A6).
     # finish_reason "length" = çıktı bütçeye sığmadı → kesilmiş olabilir.

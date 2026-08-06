@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     incident_review: bool = True
     # Olayı kapatmadan önce tolere edilen sessiz pencere sayısı (0 = eski davranış)
     incident_grace_windows: int = 1
+    # Sınırda pencere tırmandırması: verdikt `olagan` ama dal token'ın ham
+    # P(dikkat) kütlesi (gramer maskesi ÖNCESİ model inancı) eşiği aşarsa BİR
+    # düşünmeli yeniden sorgu yapılır. 0 = kapalı (ablation). 2026-08-06 ölçümü
+    # (71 klip alt kümesi): eşik 0,10'da pencerelerin ~%4'ü tırmanıyor,
+    # klip yakalama +1 / yanlış alarm +0; kurtarılanlar GT-ilişkiliydi.
+    escalate_p: float = 0.10
 
     # Yollar
     media_dir: Path = Path(__file__).resolve().parents[2] / "media"

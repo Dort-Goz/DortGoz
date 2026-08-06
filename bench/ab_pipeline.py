@@ -43,9 +43,15 @@ def clip_class(path: Path) -> str:
     return re.sub(r"_?\d+$", "", path.stem.replace("_x264", ""))
 
 
-# İstem A/B'si: --sysprompt ile doldurulur; boş = pipeline varsayılanı.
-# interpret_window'a parametre olarak gider — TIER_TR eki orada korunur.
+# İstem A/B'si: --sysprompt/--tierprompt ile doldurulur; boş = pipeline
+# varsayılanı. interpret_window'a parametre olarak gider.
 SYSTEM_OVERRIDE = ""
+TIER_OVERRIDE = ""
+
+# --escalate TAU: olagan verdikli ama durum_p ≥ TAU pencereyi DÜŞÜNMELİ ikinci
+# çağrıyla yeniden sorgula (tırmandırma deneyi). Her iki sonuç da kaydedilir —
+# çözümleme tırmandırmanın kazancını/maliyetini ayrı ayrı okur.
+ESCALATE_TAU = 0.0
 
 # --parallel N: aynı anda N klip. ⚠ N>1'de glance_s/deep_s duvar saatidir ve
 # sunucu kuyruğu beklemesini İÇERİR — birim maliyet ölçümü için N=1 kullanın;
@@ -75,12 +81,34 @@ async def measure_clip(path: Path) -> dict:
             rec["glance_s"] = time.time() - t0
 
             t0 = time.time()
+            stats: dict = {}
             report = await interpret_window(path, (start, end), keys,
-                                            system_prompt=SYSTEM_OVERRIDE)
+                                            system_prompt=SYSTEM_OVERRIDE,
+                                            tier_prompt=TIER_OVERRIDE,
+                                            stats=stats)
             rec["deep_s"] = time.time() - t0
             rec["n_events"] = len(report.events)
             rec["summary"] = report.summary
             rec["events"] = [e.model_dump() for e in report.events]
+            if "durum_p" in stats:      # dal token'ın ham P(dikkat) kütlesi
+                rec["durum_p"] = round(stats["durum_p"], 5)
+
+            if (ESCALATE_TAU and not rec["n_events"]
+                    and stats.get("durum_p", 0.0) >= ESCALATE_TAU):
+                # Tırmandırma TABAN KARARI ASLA KAYBETTİRMEZ: düşünme token
+                # bütçesini yiyip JSON üretmeden bitebiliyor (canlı görüldü,
+                # 6/71 klip) — hata durumunda taban sonuç geçerli kalır.
+                t0 = time.time()
+                try:
+                    esc = await interpret_window(path, (start, end), keys,
+                                                 system_prompt=SYSTEM_OVERRIDE,
+                                                 tier_prompt=TIER_OVERRIDE,
+                                                 think=True)
+                    rec["esc_summary"] = esc.summary
+                    rec["esc_events"] = [e.model_dump() for e in esc.events]
+                except Exception as exc:
+                    rec["esc_error"] = str(exc)[:200]
+                rec["esc_s"] = time.time() - t0
         out["windows"].append(rec)
     return out
 
@@ -94,7 +122,9 @@ def current_config() -> dict:
         # İstem varyantı koşunun kimliğinin parçası — hangi istem hangi sayıyı
         # üretti sorusu her zaman cevaplanabilir olmalı (deney paneli ilkesi)
         "system_prompt_override": SYSTEM_OVERRIDE,
+        "tier_prompt_override": TIER_OVERRIDE,
         "parallel": PARALLEL,
+        "escalate_tau": ESCALATE_TAU,
     }
 
 
@@ -129,7 +159,8 @@ async def collect(clips: list[Path], out: Path) -> None:
             raise SystemExit(
                 f"{out} kaydı {prev['config']['model']} ile başlamış, etkin model "
                 f"{settings.main_model} — aynı dosyaya karıştırılmaz (yeni --out ver)")
-        if prev["config"].get("system_prompt_override", "") != SYSTEM_OVERRIDE:
+        if (prev["config"].get("system_prompt_override", "") != SYSTEM_OVERRIDE
+                or prev["config"].get("tier_prompt_override", "") != TIER_OVERRIDE):
             raise SystemExit(
                 f"{out} kaydı farklı bir istem varyantıyla başlamış — "
                 "aynı dosyaya karıştırılmaz (yeni --out ver)")
@@ -301,16 +332,23 @@ def main() -> None:
                     help="çıktı JSONL (varsa kaldığı yerden devam eder)")
     ap.add_argument("--sysprompt", type=Path,
                     help="istem A/B: SYSTEM_TR yerine bu dosyanın içeriği")
+    ap.add_argument("--tierprompt", type=Path,
+                    help="istem A/B: TIER_TR yerine bu dosyanın içeriği")
+    ap.add_argument("--escalate", type=float, default=0.0, metavar="TAU",
+                    help="olagan + durum_p ≥ TAU pencereyi düşünmeli çağrıyla yeniden sorgula")
     ap.add_argument("--clips", type=Path,
                     help="dosyadaki klipleri koş (satırda bir ad; UCF ağacında çözülür)")
     ap.add_argument("--parallel", type=int, default=1,
                     help="aynı anda N klip (⚠ N>1'de süreler kuyruk beklemesi içerir)")
     args = ap.parse_args()
 
-    global SYSTEM_OVERRIDE, PARALLEL
+    global SYSTEM_OVERRIDE, TIER_OVERRIDE, PARALLEL, ESCALATE_TAU
     if args.sysprompt:
         SYSTEM_OVERRIDE = args.sysprompt.read_text(encoding="utf-8").strip()
+    if args.tierprompt:
+        TIER_OVERRIDE = args.tierprompt.read_text(encoding="utf-8").strip()
     PARALLEL = max(1, args.parallel)
+    ESCALATE_TAU = args.escalate
 
     if args.analyze:
         print(analyze(load_results(args.analyze)))
