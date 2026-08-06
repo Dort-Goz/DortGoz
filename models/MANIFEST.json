@@ -1,0 +1,36 @@
+{
+  "manifest_version": "offline-artifacts-v1",
+  "policy": {
+    "mode": "local_only",
+    "allowed_licenses": ["Apache-2.0", "MIT"],
+    "weights_in_repository": false,
+    "network_download_at_runtime": false
+  },
+  "artifacts": [
+    {
+      "component": "candidate-baseline",
+      "model_id": "motion-baseline-v1",
+      "path": "models/candidate/motion-baseline-v1.json",
+      "sha256": "2e08133b90785380ec5a510e8defb059aa926ddf0395281b6c746bc9b90e2285",
+      "license": "MIT",
+      "source": "team-authored deterministic baseline"
+    }
+  ],
+  "external_prerequisites": [
+    {
+      "component": "primary-local-vlm",
+      "required_for": "real local_vlm analysis only",
+      "status": "not_bundled",
+      "manifest_env": "DORTGOZ_VLM_MANIFEST_PATH",
+      "manifest_schema": "models/vlm/manifest.template.json",
+      "required_license": ["Apache-2.0", "MIT"],
+      "verification": "The application validates the local artifact SHA-256 before each real-profile run."
+    },
+    {
+      "component": "ffmpeg-and-ffprobe",
+      "required_for": "real video ingest only",
+      "status": "not_bundled",
+      "verification": "The final package must record an approved build, version, license, and checksum; the current GPL-enabled developer build is excluded."
+    }
+  ]
+}

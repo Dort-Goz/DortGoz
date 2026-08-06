@@ -13,6 +13,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -22,6 +23,7 @@ from .api.errors import (
     validation_exception_handler,
 )
 from .api.router import router as api_router
+from .api.router import runtime as api_runtime
 from .config import settings
 from .domain.video import VideoIngestError
 from .events import ActuatorResult, ChatMessage, Event, OperatorMessage, RunStatus
@@ -58,6 +60,58 @@ _run_task: asyncio.Task | None = None
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok", "mock": settings.mock}
+
+
+@app.get("/ready")
+async def readiness() -> JSONResponse:
+    """Yerel deployment bağımlılıklarını ayrı ayrı gösteren hazır olma kapısı.
+
+    Bu uç model endpoint'ine ağ isteği yapmaz: air-gapped ortamda yanlışlıkla dış
+    egress başlatmak yerine manifest/yapılandırma hazırlığını raporlar. Gerçek
+    profil, ilk candidate çağrısında ayrıca dosya hash'ini denetler.
+    """
+
+    storage_ready = True
+    storage_detail = "ok"
+    try:
+        settings.media_dir.mkdir(parents=True, exist_ok=True)
+        settings.runs_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        storage_ready = False
+        storage_detail = f"{type(exc).__name__}: {exc}"
+
+    event_store_path = settings.event_store_path
+    event_store = {
+        "ready": True,
+        "mode": getattr(api_runtime.repository, "persistence_mode", "memory"),
+        "path": str(event_store_path) if event_store_path is not None else None,
+    }
+    if settings.mock:
+        model = {"ready": True, "mode": "mock", "endpoint_checked": False}
+    elif settings.vlm_manifest_path is None:
+        model = {
+            "ready": False,
+            "mode": "local_vlm",
+            "detail": "DORTGOZ_VLM_MANIFEST_PATH ayarlanmadı",
+            "endpoint_checked": False,
+        }
+    else:
+        model = {
+            "ready": settings.vlm_manifest_path.is_file(),
+            "mode": "local_vlm",
+            "manifest_path": str(settings.vlm_manifest_path),
+            "endpoint_checked": False,
+        }
+    components = {
+        "storage": {"ready": storage_ready, "detail": storage_detail},
+        "event_store": event_store,
+        "model": model,
+    }
+    ready = all(component["ready"] for component in components.values())
+    return JSONResponse(
+        status_code=200 if ready else 503,
+        content={"status": "ready" if ready else "not_ready", "components": components},
+    )
 
 
 @app.get("/api/runs")

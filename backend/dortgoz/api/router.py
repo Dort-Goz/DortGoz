@@ -34,6 +34,7 @@ from ..pipeline.feature_cache import JsonFeatureCache
 from ..repositories.errors import RepositoryNotFoundError
 from ..repositories.memory import InMemoryEventRepository
 from ..repositories.procedure_index import LocalProcedureIndex
+from ..repositories.sqlite import SqliteEventRepository
 from ..services.event_service import EventMemoryService
 from ..services.ingest_service import VideoIngestService
 from ..services.mock_vertical import MockVerticalAnalysisService
@@ -60,7 +61,11 @@ class ApiRuntime:
     """Uygulama yaşamı boyunca paylaşılan local adapter'lar ve işler."""
 
     def __init__(self) -> None:
-        self.repository = InMemoryEventRepository()
+        self.repository = (
+            SqliteEventRepository(settings.event_store_path)
+            if settings.event_store_path is not None
+            else InMemoryEventRepository()
+        )
         self.events = EventMemoryService(self.repository)
         self.storage = LocalVideoStorage(
             settings.media_dir,

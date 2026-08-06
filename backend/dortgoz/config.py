@@ -96,6 +96,16 @@ class Settings(BaseSettings):
     candidate_manifest_path: Path = (
         Path(__file__).resolve().parents[2] / "models" / "candidate" / "manifest.json"
     )
+    # Varsayılan bellek adapter'ı test/mock sadeliği için süreç içidir. Docker/
+    # offline dağıtım bu yolu ayarlayarak restart sonrası SQLite kalıcılığı açar.
+    event_store_path: Path | None = None
+
+    @field_validator("vlm_manifest_path", "event_store_path", mode="before")
+    @classmethod
+    def blank_path_is_unset(cls, value: object) -> object:
+        """Compose'taki boş opsiyonel env değeri sahte ``Path('.')`` olmasın."""
+
+        return None if value is None or value == "" else value
 
     @field_validator("candidate_manifest_path", mode="after")
     @classmethod
@@ -109,6 +119,15 @@ class Settings(BaseSettings):
     @field_validator("vlm_manifest_path", mode="after")
     @classmethod
     def resolve_vlm_manifest_path(cls, value: Path | None) -> Path | None:
+        if value is None:
+            return None
+        if value.is_absolute():
+            return value.resolve()
+        return (Path(__file__).resolve().parents[2] / value).resolve()
+
+    @field_validator("event_store_path", mode="after")
+    @classmethod
+    def resolve_event_store_path(cls, value: Path | None) -> Path | None:
         if value is None:
             return None
         if value.is_absolute():

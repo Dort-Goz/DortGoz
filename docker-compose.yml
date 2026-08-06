@@ -1,0 +1,43 @@
+name: dortgoz
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: dortgoz-api:local
+    environment:
+      DORTGOZ_MOCK: "${DORTGOZ_MOCK:-1}"
+      DORTGOZ_EVENT_STORE_PATH: runs/event_memory.sqlite3
+      DORTGOZ_LLAMA_BASE_URL: "${DORTGOZ_LLAMA_BASE_URL:-http://host.docker.internal:8080/v1}"
+      DORTGOZ_API_KEY: "${DORTGOZ_API_KEY:-local}"
+      DORTGOZ_MAIN_MODEL: "${DORTGOZ_MAIN_MODEL:-qwen3.6-35b-a3b-vision}"
+      DORTGOZ_VLM_MANIFEST_PATH: "${DORTGOZ_VLM_MANIFEST_PATH:-}"
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - dortgoz-media:/app/media
+      - dortgoz-runs:/app/runs
+      - dortgoz-cache:/app/cache
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    image: dortgoz-frontend:local
+    environment:
+      DORTGOZ_API_PROXY_TARGET: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:5173:5173"
+    restart: unless-stopped
+
+volumes:
+  dortgoz-media:
+  dortgoz-runs:
+  dortgoz-cache:

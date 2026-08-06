@@ -2,6 +2,8 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 
+const apiProxyTarget = process.env.DORTGOZ_API_PROXY_TARGET ?? "http://127.0.0.1:8000";
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
@@ -10,10 +12,10 @@ export default defineConfig({
     // alıyor ve arayüz SESSİZCE boş görünüyor (video listesi boş, deney paneli
     // hiç açılmıyor, WS bağlanmıyor). Ölçüldü 2026-08-05.
     proxy: {
-      "/api": "http://127.0.0.1:8000",
-      "/health": "http://127.0.0.1:8000",
-      "/media": "http://127.0.0.1:8000",
-      "/ws": { target: "ws://127.0.0.1:8000", ws: true },
+      "/api": apiProxyTarget,
+      "/health": apiProxyTarget,
+      "/media": apiProxyTarget,
+      "/ws": { target: apiProxyTarget.replace(/^http/, "ws"), ws: true },
     },
   },
 });

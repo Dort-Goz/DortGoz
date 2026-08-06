@@ -8,10 +8,12 @@ from .errors import (
 )
 from .memory import InMemoryEventRepository
 from .protocols import EventRepository
+from .sqlite import SqliteEventRepository
 
 __all__ = [
     "EventRepository",
     "InMemoryEventRepository",
+    "SqliteEventRepository",
     "RepositoryConflictError",
     "RepositoryDuplicateError",
     "RepositoryError",
