@@ -25,7 +25,7 @@ from ..config import settings
 from ..events import AgentStep, ChatMessage, Event
 from ..ws import ConnectionManager
 from . import tools
-from .llm import main_client
+from .llm import create_chat, main_client
 
 SYSTEM_TR = (
     "Sen Dörtgöz saha güvenliği operatör asistanısın. Video analiz hattının "
@@ -110,7 +110,7 @@ def _build_graph(manager: ConnectionManager):
         kwargs: dict[str, Any] = {}
         if rounds < MAX_TOOL_ROUNDS:
             kwargs = {"tools": tools.TOOLS, "parallel_tool_calls": False}
-        resp = await client.chat.completions.create(
+        resp = await create_chat(client,
             model=settings.main_model,
             messages=state["messages"],
             max_tokens=700,

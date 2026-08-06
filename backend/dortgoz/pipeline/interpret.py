@@ -26,7 +26,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from ..agent.llm import call_stats, main_client
+from ..agent.llm import call_stats, create_chat, main_client
 from ..config import settings
 from ..events import WindowReport
 from .ingest import grab_frame
@@ -141,7 +141,7 @@ async def review_incident(
     content.append({"type": "text", "text": task})
 
     client = main_client()
-    resp = await client.chat.completions.create(
+    resp = await create_chat(client,
         model=model or settings.main_model,
         messages=[{"role": "system", "content": REVIEW_SYSTEM_TR},
                   {"role": "user", "content": content}],
@@ -365,7 +365,7 @@ async def glance_window(
     content.append({"type": "text", "text": question})
 
     client = main_client()
-    resp = await client.chat.completions.create(
+    resp = await create_chat(client,
         model=settings.main_model,
         messages=[{"role": "system", "content": GLANCE_SYSTEM_EN},
                   {"role": "user", "content": content}],
@@ -469,7 +469,7 @@ async def interpret_window(
         system = f"{system}\n\n{tier_prompt or TIER_TR}"
 
     client = main_client()
-    resp = await client.chat.completions.create(
+    resp = await create_chat(client,
         model=model or settings.main_model,
         messages=[{"role": "system", "content": system},
                   {"role": "user", "content": content}],

@@ -9,13 +9,51 @@ kullanılır; vLLM çıktısı yalnızca yönlendirme amaçlıdır, tekrar doğr
 
 from __future__ import annotations
 
-from openai import AsyncOpenAI
+import asyncio
+import random
+
+from openai import AsyncOpenAI, RateLimitError
 
 from ..config import settings
 
 
 def main_client() -> AsyncOpenAI:
     return AsyncOpenAI(base_url=settings.llama_base_url, api_key=settings.api_key)
+
+
+# ---- geri basınç: uçuş sınırı + 429'da üstel geri çekilme ----
+# Semafor döngüye bağlanır; bench (asyncio.run) ve uvicorn farklı döngüler
+# kullandığından döngü başına bir semafor tutulur.
+_sems: dict[int, asyncio.Semaphore] = {}
+
+
+def _inflight() -> asyncio.Semaphore:
+    key = id(asyncio.get_running_loop())
+    if key not in _sems:
+        _sems[key] = asyncio.Semaphore(max(1, settings.max_inflight))
+    return _sems[key]
+
+
+async def create_chat(client: AsyncOpenAI, **kwargs):
+    """`chat.completions.create` — uçuş sınırı + 429'da geri çekilip yeniden dener.
+
+    Çoklu-akış kipinde 24 koşu sunucuya sınırsız istek yığıyordu; sunucu 429
+    döndürünce pencereler ATLANIYORDU (görüntü kaybı!). Doğru davranış geri
+    basınç: aynı anda en çok `max_inflight` istek, 429'da 2s→20s üstel bekleme
+    (+seğirme) ile `llm_retries` deneme. Yine olmazsa hata yükselir — çağıran
+    (pencere yalıtımı) kararını verir.
+    """
+    delay = 2.0
+    for attempt in range(settings.llm_retries):
+        try:
+            async with _inflight():
+                return await client.chat.completions.create(**kwargs)
+        except RateLimitError:
+            if attempt == settings.llm_retries - 1:
+                raise
+            await asyncio.sleep(delay + random.uniform(0, 1))
+            delay = min(delay * 2, 20.0)
+    raise RuntimeError("erişilemez")   # döngü ya döner ya raise eder
 
 
 def triage_client() -> AsyncOpenAI:

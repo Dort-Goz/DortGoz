@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     # (71 klip alt kümesi): eşik 0,10'da pencerelerin ~%4'ü tırmanıyor,
     # klip yakalama +1 / yanlış alarm +0; kurtarılanlar GT-ilişkiliydi.
     escalate_p: float = 0.10
+    # Süreç genelinde aynı anda en çok bu kadar VLM çağrısı uçuşta olur —
+    # 24 akış sunucuya 24 istek yığınca model sunucusu 429 döndürüyor ve pencereler
+    # atlanıyordu (2026-08-06 canlı). Kendi kendini kısıtlamak + 429'da geri
+    # çekilip YENİDEN denemek doğru davranış: sistem yavaşlar, görüntü atlamaz.
+    max_inflight: int = 8
+    llm_retries: int = 6
 
     # Yollar
     media_dir: Path = Path(__file__).resolve().parents[2] / "media"
