@@ -46,6 +46,7 @@ class ProcedureAction(BaseModel):
     document_id: str = Field(min_length=1)
     section: str = Field(min_length=1)
     version: str = Field(min_length=1)
+    content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     requires_human_approval: bool = True
 
 

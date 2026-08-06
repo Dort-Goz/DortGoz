@@ -55,6 +55,7 @@ def test_local_rest_vertical_and_error_envelope(monkeypatch, tmp_path: Path) -> 
         events = client.get(f"/api/analyses/{analysis_id}/events")
         assert events.status_code == 200
         assert len(events.json()) == 3
+        assert all(event["risk"]["reasons"] and event["risk"]["rule_ids"] for event in events.json())
         event_id = events.json()[0]["event_id"]
 
         event = client.get(f"/api/events/{event_id}")

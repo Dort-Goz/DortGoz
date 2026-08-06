@@ -24,6 +24,7 @@ from ..domain.provenance import (
     AnalysisProvenance,
     HumanReview,
     ModelRunRef,
+    ProcedureSource,
     ReviewDecision,
 )
 from ..domain.video import VideoMetadata
@@ -32,9 +33,12 @@ from ..pipeline.candidate_model import CandidateScorer, load_candidate_scorer
 from ..pipeline.feature_cache import JsonFeatureCache
 from ..repositories.errors import RepositoryNotFoundError
 from ..repositories.memory import InMemoryEventRepository
+from ..repositories.procedure_index import LocalProcedureIndex
 from ..services.event_service import EventMemoryService
 from ..services.ingest_service import VideoIngestService
 from ..services.mock_vertical import MockVerticalAnalysisService
+from ..services.procedure_service import ProcedureService
+from ..services.risk_engine import RiskEngine, load_risk_ruleset
 from ..tools.local_agent import LocalVlmAgentTools
 from ..tools.local_vlm import LocalVlmManifest, load_local_vlm_manifest
 from ..tools.protocols import ToolExecutionError
@@ -69,6 +73,14 @@ class ApiRuntime:
         # Candidate profilinin feature cache'i process yeniden başlasa da korunur;
         # yalnız türetilmiş skorları taşır, ham medya veya tensor saklamaz.
         self.candidate_cache = JsonFeatureCache(settings.candidate_cache_dir)
+        project_root = settings.media_dir.parent
+        self.risk_engine = RiskEngine(load_risk_ruleset(project_root / "configs" / "risk_rules.yaml"))
+        self.procedure_service = ProcedureService(
+            LocalProcedureIndex.load(
+                project_root / "data" / "procedures",
+                project_root / "data" / "procedures" / "manifest.json",
+            )
+        )
         self.jobs: dict[str, asyncio.Task[None]] = {}
 
 
@@ -247,6 +259,12 @@ async def _run_analysis(
         )
         total = max(1, len(result.candidates))
         for index, state in enumerate(result.candidates, start=1):
+            projected = EventMemoryService._event_from_state(state)
+            risk = runtime.risk_engine.assess(projected)
+            recommendation = runtime.procedure_service.recommend(projected, risk)
+            state = state.model_copy(
+                update={"risk": risk, "procedures": recommendation.actions}
+            )
             runtime.events.persist_terminal_state(
                 state,
                 update_analysis=False,
@@ -347,6 +365,18 @@ async def query_analysis(analysis_id: str, request: QueryRequest) -> QueryRespon
         events = [event for event in events if event.event_id == request.referenced_event_id]
     event_refs = [event.event_id for event in events]
     evidence_refs = [item.evidence_id for event in events for item in event.evidence]
+    procedure_sources = list(
+        {
+            (action.document_id, action.section, action.version, action.content_hash): ProcedureSource(
+                document_id=action.document_id,
+                section=action.section,
+                version=action.version,
+                content_hash=action.content_hash,
+            )
+            for event in events
+            for action in event.actions
+        }.values()
+    )
     uncertainties = [item for event in events for item in event.uncertainties]
     labels = ", ".join(event.event_type.value for event in events)
     answer = (
@@ -357,6 +387,7 @@ async def query_analysis(analysis_id: str, request: QueryRequest) -> QueryRespon
         answer_tr=answer,
         event_refs=event_refs,
         evidence_refs=evidence_refs,
+        procedure_sources=procedure_sources,
         uncertainties=sorted(set(uncertainties)),
         tool_trace=[trace for event in events for trace in event.decision_trace],
     )
