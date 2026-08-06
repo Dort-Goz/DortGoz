@@ -152,9 +152,23 @@ def adaptive_gate(profile: list[MotionSample], k: float = 4.0,
 
 
 async def grab_frame(video: Path, t: float, width: int = 512) -> bytes:
-    """`t` anındaki tek kareyi JPEG olarak döndürür (VLM istemine gömülür)."""
-    return await _run(
-        "ffmpeg", "-v", "error", "-ss", f"{t:.3f}", "-i", str(video),
-        "-frames:v", "1", "-vf", f"scale={width}:-2",
-        "-f", "image2", "-c:v", "mjpeg", "-",
-    )
+    """`t` anındaki tek kareyi JPEG olarak döndürür (VLM istemine gömülür).
+
+    Konteyner süresi akış süresinden uzun olabiliyor (UCF-Crime'da ölçüldü:
+    RoadAccidents132 konteyner 62,34 sn / akış 62,07 sn) — son pencerenin karesi
+    akış sonunun ötesine düşünce ffmpeg hiç kare yazmadan hata veriyor. Geriye
+    adımlayarak yeniden dene; video başına birkaç yüz ms'lik sapma için yeterli.
+    """
+    last_err: FFmpegError | None = None
+    for attempt_t in (t, max(0.0, t - 1.0), max(0.0, t - 2.5)):
+        try:
+            out = await _run(
+                "ffmpeg", "-v", "error", "-ss", f"{attempt_t:.3f}", "-i", str(video),
+                "-frames:v", "1", "-vf", f"scale={width}:-2",
+                "-f", "image2", "-c:v", "mjpeg", "-",
+            )
+            if out:
+                return out
+        except FFmpegError as exc:
+            last_err = exc
+    raise last_err or FFmpegError(f"kare alınamadı: t={t:.3f} {video.name}")
