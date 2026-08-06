@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { TraceEntry } from "../state";
-import { NODE_TR, stripPerf } from "../lib/labels";
+import { NODE_TR, humanizeEnums, stripPerf } from "../lib/labels";
 
 /** Ajan izleme konsolu — düğüm geçişleri ve araç çağrıları gerekçesiyle akar.
  *  Jüri açıklanabilirlik kriterinin görünür yüzü.
@@ -163,7 +163,7 @@ export default function AgentTrace({ entries }: { entries: TraceEntry[] }) {
               </span>{" "}
               <span className="text-sky-400">{NODE_TR[r.node] ?? r.node}</span>
               {r.detail && (
-                <span className="text-zinc-400"> — {stripPerf(r.detail)}</span>
+                <span className="text-zinc-400"> — {humanizeEnums(stripPerf(r.detail))}</span>
               )}
             </div>
           ) : null

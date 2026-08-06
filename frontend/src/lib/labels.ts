@@ -38,6 +38,19 @@ export function stripPerf(detail: string): string {
     .replace(/ · \d+\+\d+ tok.*$/g, "");
 }
 
+/** Backend izleme satırları şema değerlerini ham yazar (arac_kazasi, dusuk) —
+ *  kompakt kip operatör Türkçesine çevirir; detay kipi ham kalır (makine izi). */
+const ENUM_TR: [RegExp, string][] = [
+  ...Object.entries(TYPE_TR).map(([k, v]) => [new RegExp(`\\b${k}\\b`, "g"), v] as [RegExp, string]),
+  ...Object.entries(RISK_TR).map(([k, v]) => [new RegExp(`\\b${k}\\b`, "g"), v] as [RegExp, string]),
+];
+
+export function humanizeEnums(detail: string): string {
+  let out = detail;
+  for (const [re, tr] of ENUM_TR) out = out.replace(re, tr);
+  return out;
+}
+
 export function clock(t: number) {
   const m = Math.floor(t / 60), s = Math.floor(t % 60);
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;

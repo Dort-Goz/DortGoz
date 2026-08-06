@@ -133,7 +133,7 @@ class Ledger:
         # bütünde çözülmüşse bayrak kalkar; bütünde de belirsizse kalır.
         unc = review.get("belirsizlikler", [])
         inc.needs_review = bool(unc) or inc.anomaly_type == "bilinmeyen"
-        inc.review_reason = (f"2. geçiş: {unc[0][:80]}" if unc else
+        inc.review_reason = (f"2. geçiş: {_short(unc[0])}" if unc else
                              ("olay kapalı sınıf listesine oturmadı"
                               if inc.anomaly_type == "bilinmeyen" else ""))
         # Yapılandırılmış anlatı — arayüz satır satır gösterir (ok/simge çorbası
@@ -193,7 +193,8 @@ class Ledger:
         if inc.anomaly_type == "bilinmeyen":
             reasons.append("olay kapalı sınıf listesine oturmadı")
         if report.uncertainties:
-            reasons.append(f"model belirsizlik bildirdi: {report.uncertainties[0][:80]}")
+            reasons.append("model belirsizlik bildirdi: "
+                           + _short(report.uncertainties[0]))
         if reasons and not inc.needs_review:
             inc.needs_review = True
             inc.review_reason = " · ".join(reasons[:2])
@@ -270,6 +271,15 @@ def _title_text(text: str) -> str:
     if head:
         head = head[0].upper() + head[1:]
     return head if len(head) <= 70 else head[:67] + "…"
+
+
+def _short(text: str, limit: int = 160) -> str:
+    """İnceleme gerekçesi tek satır — KELİME sınırında kes (arayüzde 'net değ'
+    diye ortadan kesiliyordu, 2026-08-06 ekran görüntüsü)."""
+    if len(text) <= limit:
+        return text
+    cut = text.rfind(" ", 0, limit)
+    return text[:cut if cut > limit // 2 else limit].rstrip() + "…"
 
 
 def _trim(text: str, limit: int = 1200) -> str:
