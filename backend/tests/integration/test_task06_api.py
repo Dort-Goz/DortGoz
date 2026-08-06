@@ -167,3 +167,20 @@ def test_framework_http_error_also_uses_error_envelope() -> None:
 
     assert missing.status_code == 404
     assert missing.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_local_vlm_profile_requires_explicit_local_manifest(monkeypatch) -> None:
+    runtime = ApiRuntime()
+    monkeypatch.setattr(api_module, "runtime", runtime)
+    monkeypatch.setattr(api_module.settings, "vlm_manifest_path", None)
+    video = metadata("00000000-0000-0000-0000-000000000024")
+    runtime.repository.create_video(video)
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/videos/{video.video_id}/analyze",
+            json={"profile": "local_vlm"},
+        )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "MODEL_UNAVAILABLE"

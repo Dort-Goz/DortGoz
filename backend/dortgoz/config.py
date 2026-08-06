@@ -81,6 +81,14 @@ class Settings(BaseSettings):
     candidate_min_duration_seconds: float = 0.5
     candidate_threshold_version: str = "candidate-thresholds-v1"
 
+    # Görev 08: gerçek VLM yalnız explicit, hash-doğrulanmış local manifest ile
+    # açılır. Mock modda bu profil isteği reddedilir.
+    vlm_manifest_path: Path | None = None
+    vlm_timeout_seconds: float = 90.0
+    vlm_context_clip_timeout_seconds: float = 90.0
+    vlm_context_before_seconds: float = 8.0
+    vlm_context_after_seconds: float = 8.0
+
     # Yollar
     media_dir: Path = Path(__file__).resolve().parents[2] / "media"
     runs_dir: Path = Path(__file__).resolve().parents[2] / "runs"
@@ -94,6 +102,15 @@ class Settings(BaseSettings):
     def resolve_candidate_manifest_path(cls, value: Path) -> Path:
         """Env'den gelen göreli manifest yolunu repository köküne sabitler."""
 
+        if value.is_absolute():
+            return value.resolve()
+        return (Path(__file__).resolve().parents[2] / value).resolve()
+
+    @field_validator("vlm_manifest_path", mode="after")
+    @classmethod
+    def resolve_vlm_manifest_path(cls, value: Path | None) -> Path | None:
+        if value is None:
+            return None
         if value.is_absolute():
             return value.resolve()
         return (Path(__file__).resolve().parents[2] / value).resolve()

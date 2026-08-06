@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from time import perf_counter
 
-from ..tools.protocols import AgentToolset
+from ..domain.evidence import EvidenceValidationResult, ValidationIssue
+from ..tools.protocols import AgentToolset, VlmSchemaError
 from .actions import AgentAction
 from .policy import RoutingConfig, decide_next_action
 from .state import EventAgentState
@@ -40,6 +41,31 @@ class EventOrchestrator:
         success = True
         try:
             next_state = await self._execute(state, decision.action)
+        except VlmSchemaError as exc:
+            success = False
+            error_code = exc.code
+            # İlk malformed/schema-invalid yanıt terminal hata değildir: policy
+            # yalnız bir strict retry'a izin verir; ikinci hata human review'a gider.
+            next_state = _replace(
+                state,
+                vlm_attempts=state.vlm_attempts + 1,
+                strict_schema_used=state.strict_schema_used
+                or decision.action == AgentAction.RETRY_VLM_STRICT,
+                validation=EvidenceValidationResult(
+                    candidate_id=state.candidate_id,
+                    schema_valid=False,
+                    timestamps_valid=False,
+                    evidence_valid=False,
+                    validation_errors=[
+                        ValidationIssue(
+                            code=exc.code,
+                            field="vlm_response",
+                            message="Yerel VLM çıktısı strict sözleşmeyle eşleşmedi.",
+                        )
+                    ],
+                    validator_version="task-08-vlm-schema-v1",
+                ),
+            )
         except Exception as exc:
             success = False
             error_code = str(getattr(exc, "code", "TOOL_EXECUTION_FAILED"))

@@ -152,6 +152,9 @@ class EventMemoryService:
                     config_version=state.config_version,
                     code_revision="task-05-v1",
                     output_hash=result.raw_response_hash,
+                    artifact_sha256=result.artifact_sha256,
+                    model_license=result.model_license,
+                    model_source=result.model_source,
                 )
             )
         return VerifiedEvent(

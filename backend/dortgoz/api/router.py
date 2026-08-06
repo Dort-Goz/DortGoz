@@ -35,6 +35,9 @@ from ..repositories.memory import InMemoryEventRepository
 from ..services.event_service import EventMemoryService
 from ..services.ingest_service import VideoIngestService
 from ..services.mock_vertical import MockVerticalAnalysisService
+from ..tools.local_agent import LocalVlmAgentTools
+from ..tools.local_vlm import LocalVlmManifest, load_local_vlm_manifest
+from ..tools.protocols import ToolExecutionError
 from ..tools.screening import LocalCandidateScreeningTool
 from .contracts import (
     AnalysisAccepted,
@@ -125,13 +128,41 @@ async def analyze_video(video_id: str, request: AnalyzeRequest) -> AnalysisAccep
     video = runtime.repository.get_video(video_id)
     if video is None:
         raise RepositoryNotFoundError(f"video bulunamadı: {video_id}")
-    if request.profile not in {"mock", "candidate"}:
+    if request.profile not in {"mock", "candidate", "local_vlm"}:
         return error_response(
             "MODEL_UNAVAILABLE",
             "Bu analiz profili local backend'de kayıtlı değil.",
             status_code=503,
             retryable=True,
         )
+    vlm_manifest: LocalVlmManifest | None = None
+    if request.profile == "local_vlm":
+        if settings.mock:
+            return error_response(
+                "MODEL_UNAVAILABLE",
+                "Gerçek local VLM profili DORTGOZ_MOCK=1 iken açılamaz.",
+                status_code=503,
+                retryable=False,
+            )
+        if settings.vlm_manifest_path is None:
+            return error_response(
+                "MODEL_UNAVAILABLE",
+                "Yerel VLM manifest yolu yapılandırılmamış.",
+                status_code=503,
+                retryable=False,
+            )
+        try:
+            vlm_manifest = await asyncio.to_thread(
+                load_local_vlm_manifest, settings.vlm_manifest_path
+            )
+        except ToolExecutionError as exc:
+            return error_response(
+                "MODEL_UNAVAILABLE",
+                str(exc),
+                status_code=503,
+                details={"reason": exc.code},
+                retryable=exc.code in {"MODEL_MANIFEST_MISSING", "MODEL_ARTIFACT_MISSING"},
+            )
 
     for record in (runtime.repository.get_analysis(analysis_id) for analysis_id in runtime.jobs):
         if record and record.status in {
@@ -153,17 +184,33 @@ async def analyze_video(video_id: str, request: AnalyzeRequest) -> AnalysisAccep
             ModelRunRef(
                 model_id=(
                     runtime.candidate_scorer.model_id
-                    if request.profile == "candidate"
+                    if request.profile in {"candidate", "local_vlm"}
                     else "mock-screening-v1"
                 ),
                 role="screening",
                 config_version=request.config_version,
                 code_revision="task-06-v1",
             )
-        ],
+        ]
+        + (
+            [
+                ModelRunRef(
+                    model_id=vlm_manifest.model_id,
+                    role="vlm",
+                    prompt_version=vlm_manifest.prompt_version,
+                    config_version=request.config_version,
+                    code_revision="task-08-v1",
+                    artifact_sha256=vlm_manifest.artifact_sha256,
+                    model_license=vlm_manifest.license,
+                    model_source=vlm_manifest.source,
+                )
+            ]
+            if vlm_manifest is not None
+            else []
+        ),
     )
     runtime.events.start_analysis(video, provenance, analysis_id=analysis_id)
-    task = asyncio.create_task(_run_analysis(analysis_id, video, request.profile))
+    task = asyncio.create_task(_run_analysis(analysis_id, video, request.profile, vlm_manifest))
     runtime.jobs[analysis_id] = task
     return AnalysisAccepted(
         analysis_id=analysis_id,
@@ -173,7 +220,12 @@ async def analyze_video(video_id: str, request: AnalyzeRequest) -> AnalysisAccep
     )
 
 
-async def _run_analysis(analysis_id: str, video: VideoMetadata, profile: str) -> None:
+async def _run_analysis(
+    analysis_id: str,
+    video: VideoMetadata,
+    profile: str,
+    vlm_manifest: LocalVlmManifest | None = None,
+) -> None:
     runtime.repository.update_analysis_status(analysis_id, AnalysisStatus.RUNNING.value, 0.05)
     try:
         screening = (
@@ -182,10 +234,15 @@ async def _run_analysis(analysis_id: str, video: VideoMetadata, profile: str) ->
                 model=runtime.candidate_scorer,
                 cache=runtime.candidate_cache,
             )
-            if profile == "candidate"
+            if profile in {"candidate", "local_vlm"}
             else None
         )
-        result = await MockVerticalAnalysisService(screening=screening).analyze(
+        tools = (
+            LocalVlmAgentTools(metadata=video, settings=settings, manifest=vlm_manifest)
+            if profile == "local_vlm" and vlm_manifest is not None
+            else None
+        )
+        result = await MockVerticalAnalysisService(screening=screening, tools=tools).analyze(
             video, analysis_id=analysis_id
         )
         total = max(1, len(result.candidates))

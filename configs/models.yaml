@@ -11,3 +11,9 @@ candidate:
     type: temporal_cnn
     output_dir: models/candidate/local/
     activation_env: DORTGOZ_CANDIDATE_MANIFEST_PATH
+
+vlm:
+  status: manifest_required_no_active_artifact
+  type: local_openai_compatible_vlm
+  manifest_template: models/vlm/manifest.template.json
+  activation_env: DORTGOZ_VLM_MANIFEST_PATH

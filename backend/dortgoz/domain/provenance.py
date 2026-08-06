@@ -37,6 +37,9 @@ class ModelRunRef(BaseModel):
     code_revision: str = Field(min_length=1)
     input_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     output_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    artifact_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    model_license: str | None = None
+    model_source: str | None = None
 
 
 class AnalysisProvenance(BaseModel):

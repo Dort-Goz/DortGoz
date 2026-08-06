@@ -152,10 +152,10 @@ def decide_next_action(
         )
 
     if validation is not None:
-        if validation.unsupported_critical_claim:
+        if validation.unsupported_critical_claim or not validation.critical_evidence_sufficient:
             return _decision(
                 AgentAction.REQUEST_HUMAN_REVIEW,
-                "Kanıtsız kritik iddia otomatik kararda kullanılamaz.",
+                "Kritik iddia yeterli evidence olmadan otomatik kararda kullanılamaz.",
                 "P13",
                 priority=10,
             )

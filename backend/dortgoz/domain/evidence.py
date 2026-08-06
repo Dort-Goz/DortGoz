@@ -57,6 +57,10 @@ class VLMResult(BaseModel):
     evidence: list[EvidenceClaim] = Field(default_factory=list)
     uncertainties: list[str] = Field(default_factory=list)
     model_id: str = Field(min_length=1)
+    model_version: str | None = None
+    artifact_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    model_license: str | None = None
+    model_source: str | None = None
     prompt_version: str = Field(min_length=1)
     attempt: int = Field(ge=1, le=2)
     raw_response_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -118,6 +122,7 @@ class EvidenceValidationResult(BaseModel):
     evidence_valid: bool
     language_valid: bool = True
     unsupported_critical_claim: bool = False
+    critical_evidence_sufficient: bool = True
     validation_errors: list[ValidationIssue] = Field(default_factory=list)
     validated_evidence: list[EvidenceItem] = Field(default_factory=list)
     validator_version: str = Field(min_length=1)
@@ -130,5 +135,6 @@ class EvidenceValidationResult(BaseModel):
             and self.evidence_valid
             and self.language_valid
             and not self.unsupported_critical_claim
+            and self.critical_evidence_sufficient
             and bool(self.validated_evidence)
         )

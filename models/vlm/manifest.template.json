@@ -1,0 +1,10 @@
+{
+  "model_id": "replace-with-local-vlm-id",
+  "model_version": "replace-with-exact-version",
+  "artifact_path": "C:/absolute/local/path/to/model.gguf",
+  "artifact_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "license": "Apache-2.0",
+  "source": "team-managed local model artifact",
+  "prompt_version": "candidate-vlm-v1",
+  "max_tokens": 900
+}
