@@ -24,6 +24,11 @@ TYPE_TR: dict[str, str] = {
     "normal": "olağan", "bilinmeyen": "sınıflandırılamayan anomali",
 }
 
+# Şema değerleri ASCII (dusuk/yuksek) — operatöre dönük metin Türkçesini kullanır
+RISK_TR: dict[str, str] = {
+    "dusuk": "düşük", "orta": "orta", "yuksek": "yüksek", "kritik": "kritik",
+}
+
 
 def _clock(t: float) -> str:
     return f"{int(t) // 60:02d}:{int(t) % 60:02d}"
@@ -52,8 +57,10 @@ class RunContext:
             return "Kayıtta müdahale gerektiren bir olay tespit edilmedi."
         worst = max(incidents, key=lambda i: ["dusuk", "orta", "yuksek", "kritik"].index(i.risk))
         kind = TYPE_TR.get(worst.anomaly_type, worst.anomaly_type)
+        review = sum(1 for i in incidents if i.needs_review)
         return (f"{len(incidents)} olay tespit edildi; en ciddisi {_clock(worst.first_seen)} "
-                f"itibarıyla {kind} ({worst.risk} risk).")
+                f"itibarıyla {kind} ({RISK_TR.get(worst.risk, worst.risk)} risk)."
+                + (f" {review} olay insan incelemesi istiyor." if review else ""))
 
     def briefing(self) -> str:
         """Sistem istemine gömülen tam koşu bağlamı."""

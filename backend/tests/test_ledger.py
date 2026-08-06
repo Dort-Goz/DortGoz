@@ -89,3 +89,55 @@ def test_title_is_truncated_first_sentence():
     assert len(up.title) <= 70
     assert up.title.endswith("…")
     assert "İkinci cümle" not in up.title
+
+
+# ---- insan incelemesi bayrağı (needs_review) ----
+
+def _serious_report(start=0.0, cls="kavga", uncertainties=None):
+    from dortgoz.events import WindowEvent, WindowReport
+    return WindowReport(
+        window_start=start, window_end=start + 30, anomaly_type=cls,
+        summary="özet",
+        events=[WindowEvent(t=start + 5, desc="ciddi olay", severity_hint="orta")],
+        uncertainties=uncertainties or [],
+    )
+
+
+def test_review_flag_from_uncertain_source():
+    from dortgoz.agent.memory import Ledger
+    led = Ledger()
+    ups = led.ingest(_serious_report(), uncertain="tırmandırmayla kurtarıldı")
+    assert ups[0].needs_review is True
+    assert "tırmandırma" in ups[0].review_reason
+
+
+def test_review_flag_from_unknown_class_and_uncertainties():
+    from dortgoz.agent.memory import Ledger
+    led = Ledger()
+    ups = led.ingest(_serious_report(cls="normal", uncertainties=["yüz seçilemiyor"]))
+    # ciddi olay + normal sınıfı → bilinmeyen'e düşer → bayrak
+    assert ups[0].anomaly_type == "bilinmeyen"
+    assert ups[0].needs_review is True
+
+
+def test_confident_incident_not_flagged():
+    from dortgoz.agent.memory import Ledger
+    led = Ledger()
+    ups = led.ingest(_serious_report())
+    assert ups[0].needs_review is False and ups[0].review_reason == ""
+
+
+def test_review_pass_clears_or_keeps_flag():
+    from dortgoz.agent.memory import Ledger
+    led = Ledger()
+    iid = led.ingest(_serious_report(), uncertain="sınırda")[0].incident_id
+    # bütünü gören geçiş emin → bayrak kalkar
+    up = led.apply_review(iid, {"anomaly_type": "kavga", "risk": "yuksek",
+                                "zirve": "Kavga zirvesi", "zirve_t": 6.0,
+                                "baslangic": "b", "sonuc": "s", "belirsizlikler": []})
+    assert up.needs_review is False
+    # bütünde de belirsizse kalır
+    up = led.apply_review(iid, {"anomaly_type": "kavga", "risk": "yuksek",
+                                "zirve": "Kavga", "zirve_t": 6.0, "baslangic": "b",
+                                "sonuc": "s", "belirsizlikler": ["kim başlattı belirsiz"]})
+    assert up.needs_review is True and "2. geçiş" in up.review_reason

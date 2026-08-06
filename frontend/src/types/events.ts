@@ -57,6 +57,9 @@ export interface IncidentUpdate {
   detail: string;
   thumbnail?: string | null;
   boxes: BoundingBox[];
+  /** Model emin değil → insan incelemesi istiyor; gerekçesi gösterilir. */
+  needs_review?: boolean;
+  review_reason?: string;
 }
 
 export interface ActuatorRequest {

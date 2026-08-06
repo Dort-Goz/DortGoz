@@ -82,6 +82,10 @@ class IncidentUpdate(BaseModel):
     detail: str = ""
     thumbnail: str | None = None      # /media altında kare yolu
     boxes: list[BoundingBox] = []
+    # Model EMİN DEĞİL → insan incelemesi istiyor (Bengisu tasarımındaki
+    # operator_review_required durumu). Gerekçesi operatöre gösterilir.
+    needs_review: bool = False
+    review_reason: str = ""
 
 
 class ActuatorRequest(BaseModel):

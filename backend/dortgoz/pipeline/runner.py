@@ -110,8 +110,10 @@ async def review_if_closed(rec: "RunRecorder", ledger: Ledger, path: Path,
     if inc is None:
         return
     span = max(0.0, inc.last_seen - inc.first_seen)
-    if span < settings.window_seconds:      # tek pencerelik olay → ikinci geçiş gereksiz
-        return
+    # Tek pencerelik olaylar da geçer: "bütün zaten görülmüştü" varsayımı canlıda
+    # çürüdü (2026-08-06, Stealing095 ×3: araca girip çalma tutarlı biçimde
+    # arac_kazasi sınıflandı) — 2. geçiş 6 yerine ≥8 kareyle ve sınıfı yeniden
+    # karar veren istemle bakar; sınıf düzeltme ölçülmüş tek mekanizmamız bu.
     start = max(0.0, inc.first_seen - 5.0)
     end = inc.last_seen + 5.0
     frames = min(16, max(8, int(span // 12)))
@@ -265,6 +267,7 @@ async def run_video(
                 # dikkat dalında kayda değer kütle bırakmış → BİR düşünmeli
                 # yeniden sorgu. Taban karar ASLA kaybolmaz — düşünme, token
                 # bütçesini yiyip JSON üretmeden bitebiliyor (2026-08-06 ölçümü).
+                escalated = ""
                 if (settings.escalate_p and not report.events
                         and call.get("durum_p", 0.0) >= settings.escalate_p):
                     try:
@@ -276,6 +279,11 @@ async def run_video(
                         )
                         if esc.events:
                             report = esc
+                            # Tırmandırmayla kurtarılan pencere tanımı gereği
+                            # SINIRDA — olay insan incelemesine işaretlenir
+                            escalated = (f"sınırda pencereden tırmandırmayla "
+                                         f"kurtarıldı (P(dikkat)="
+                                         f"{call['durum_p']:.2f})")
                         await rec.emit(AgentStep(
                             node="interpret", status="end",
                             detail=(f"tırmandırma {start:.0f}-{end:.0f} sn: "
@@ -297,6 +305,10 @@ async def run_video(
                     detail=f"{len(report.events)} olay · {report.anomaly_type} · şiddet {sev}"
                            + (f" · {len(report.uncertainties)} belirsizlik"
                               if report.uncertainties else "")
+                           # Ham dal inancı — kaçırma ayıklamada kritik: 0,002 =
+                           # model emin (kare açlığı), 0,3 = gri bant (tırmanmalı)
+                           + (f" · P(dikkat)={call['durum_p']:.3f}"
+                              if "durum_p" in call else "")
                            + perf_text(call, n_ctx),
                 ))
 
@@ -312,7 +324,7 @@ async def run_video(
                     peak = max(serious, key=lambda e: RISK_ORDER.index(e.severity_hint))
                     thumb = await save_thumbnail(path, peak.t, run_id,
                                                  f"{int(start)}")
-                updates = ledger.ingest(report, thumb)
+                updates = ledger.ingest(report, thumb, uncertain=escalated)
                 for update in updates:
                     await rec.emit(update)
                     await review_if_closed(rec, ledger, path, profile, update, model)

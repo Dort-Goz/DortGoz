@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { TraceEntry } from "../state";
+import { NODE_TR, stripPerf } from "../lib/labels";
 
 /** Ajan izleme konsolu — düğüm geçişleri ve araç çağrıları gerekçesiyle akar.
  *  Jüri açıklanabilirlik kriterinin görünür yüzü.
@@ -75,7 +76,7 @@ function QuietRow({ rows }: { rows: { seq: number; detail: string }[] }) {
     <div>
       <button onClick={() => setOpen((o) => !o)}
               className="w-full text-left hover:bg-zinc-800/40 rounded px-1 text-zinc-600">
-        ✔ <span className="text-sky-800">interpret</span> — {rows.length} pencere, olay yok{" "}
+        ✔ <span className="text-sky-800">yorum</span> — {rows.length} pencere, olay yok{" "}
         <span>{open ? "▾" : "▸"}</span>
       </button>
       {open && (
@@ -160,8 +161,10 @@ export default function AgentTrace({ entries }: { entries: TraceEntry[] }) {
                              : r.status === "start" ? "text-zinc-500" : "text-emerald-400"}>
                 {r.status === "start" ? "▶" : r.status === "end" ? "✔" : "✖"}
               </span>{" "}
-              <span className="text-sky-400">{r.node}</span>
-              {r.detail && <span className="text-zinc-400"> — {r.detail}</span>}
+              <span className="text-sky-400">{NODE_TR[r.node] ?? r.node}</span>
+              {r.detail && (
+                <span className="text-zinc-400"> — {stripPerf(r.detail)}</span>
+              )}
             </div>
           ) : null
         )}

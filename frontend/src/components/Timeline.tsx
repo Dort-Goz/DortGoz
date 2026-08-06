@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { IncidentUpdate, WindowReport } from "../types/events";
-import { PHASE_TR, TYPE_TR, clock } from "../lib/labels";
+import { PHASE_TR, RISK_TR, TYPE_TR, clock } from "../lib/labels";
 
 /** Sessiz pencere: sınıf normal VE olay yok — okunacak bir şey taşımaz. */
 const quiet = (r: WindowReport) => r.anomaly_type === "normal" && r.events.length === 0;
@@ -122,15 +122,23 @@ export default function Timeline({
                      className="w-14 h-14 shrink-0 rounded object-cover bg-black" />
               )}
               <div className="min-w-0 flex-1">
-                <div className="flex items-baseline gap-2">
+                <div className="flex items-baseline gap-2 flex-wrap">
                   <span className="font-mono text-xs text-zinc-500">{clock(inc.t)}</span>
                   {/* Nihai sınıf kararı — operatörün ilk bakışta görmesi gereken bilgi */}
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300
                                    uppercase tracking-wide font-semibold">
                     {TYPE_TR[inc.anomaly_type] ?? inc.anomaly_type}
                   </span>
+                  {/* Model emin değil → insan incelemesi rozeti (gerekçe altta) */}
+                  {inc.needs_review && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wide
+                                     font-semibold bg-amber-950/60 text-amber-300
+                                     border border-amber-700/60">
+                      ⚑ inceleme ister
+                    </span>
+                  )}
                   <span className={`ml-auto text-[10px] uppercase font-bold risk-${inc.risk}`}>
-                    {inc.risk}
+                    {RISK_TR[inc.risk] ?? inc.risk}
                   </span>
                 </div>
                 <div className="text-sm font-medium text-zinc-200 mt-0.5">{inc.title}</div>
@@ -139,8 +147,15 @@ export default function Timeline({
                 </span>
               </div>
             </div>
-            {/* Uzun 2. geçiş anlatısı kartı şişirmesin — 3 satırda kırpılır */}
-            <p className="text-xs text-zinc-400 mt-1 line-clamp-3">{inc.detail}</p>
+            {inc.needs_review && inc.review_reason && (
+              <p className="text-[11px] text-amber-400/80 mt-1">⚑ {inc.review_reason}</p>
+            )}
+            {/* 2. geçiş anlatısı yapılandırılmış satırlar hâlinde gelir
+                (Başlangıç/Zirve/Sonuç). Kart seçiliyken TAMAMI görünür,
+                değilken 3 satırda kırpılır — uzun anlatı listeyi boğmasın. */}
+            <p className={`text-xs text-zinc-400 mt-1 whitespace-pre-line ${
+              inc.incident_id === highlightId ? "" : "line-clamp-3"
+            }`}>{inc.detail}</p>
           </button>
         ))}
 

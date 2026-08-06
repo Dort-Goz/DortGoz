@@ -14,7 +14,7 @@
 {"delay": 0.6, "payload": {"type": "tool_call", "tool": "lookup_procedure", "args": {"event": "yerde_hareketsiz_kisi"}, "rationale": "Kritik olay için prosedür tabanı sorgusu", "result": "İSG-7: 30 sn üzeri hareketsiz kişi → sağlık ekibi + alan güvenliği"}}
 {"delay": 0.7, "payload": {"type": "tool_call", "tool": "saglik_ekibi_cagir", "args": {"incident": "INC-002"}, "rationale": "İSG-7 gereği: hareketsiz kişi tespiti", "result": "mock: çağrı iletildi"}}
 {"delay": 0.6, "payload": {"type": "actuator_request", "request_id": "req-7f3a", "actuator": "alan_kapat", "reason": "İSG-7: olay bölgesinin güvenlik çemberine alınması önerilir (forklift devrilme alanı)", "incident_id": "INC-001"}}
-{"delay": 0.8, "payload": {"type": "incident_update", "incident_id": "INC-003", "t": 35, "phase": "basladi", "title": "Personel toplanması", "risk": "orta", "detail": "Olay çevresinde 4+ kişi — müdahale alanı daralıyor"}}
+{"delay": 0.8, "payload": {"type": "incident_update", "incident_id": "INC-003", "t": 35, "phase": "basladi", "title": "Personel toplanması", "risk": "orta", "detail": "Olay çevresinde 4+ kişi — müdahale alanı daralıyor", "needs_review": true, "review_reason": "sınırda pencereden tırmandırmayla kurtarıldı (P(dikkat)=0.32)"}}
 {"delay": 1.0, "payload": {"type": "ui_command", "action": "seek_video", "args": {"t": 15}}}
 {"delay": 0.4, "payload": {"type": "ui_command", "action": "highlight_incident", "args": {"incident_id": "INC-001"}}}
 {"delay": 0.8, "payload": {"type": "chat_message", "role": "agent", "text": "Özet: 00:15'te forklift devrilmesi, 00:20'de yerde hareketsiz kişi tespit edildi. Risk: KRİTİK. Sağlık ekibi çağrıldı (İSG-7). Alan kapatma onayınızı bekliyorum.", "streaming": false}}

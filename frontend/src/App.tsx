@@ -166,16 +166,29 @@ export default function App() {
         />
       )}
 
-      {/* Koşunun nihai kararı — hangi sınıf, hangi risk (backend: RunContext.verdict) */}
-      {run?.state === "done" && run.detail && (
-        <div className="shrink-0 rounded-lg border border-emerald-900/60 bg-emerald-950/30
-                        px-3 py-2 text-sm text-emerald-200 flex items-center gap-2">
-          <span className="text-[10px] uppercase tracking-wide font-bold text-emerald-500">
-            Karar
-          </span>
-          {run.detail}
-        </div>
-      )}
+      {/* Koşunun nihai kararı — hangi sınıf, hangi risk (backend: RunContext.verdict).
+          Renk EN CİDDİ olayın riskini taşır: yeşil kutu içinde "kritik" yazması
+          operatörü yanıltıyordu; olaysız koşu yeşil kalır. */}
+      {run?.state === "done" && run.detail && (() => {
+        const order = ["dusuk", "orta", "yuksek", "kritik"] as const;
+        const worst = state.incidents.reduce<string | null>(
+          (w, i) => (w === null || order.indexOf(i.risk) > order.indexOf(w as any) ? i.risk : w),
+          null);
+        const tone = worst === null
+          ? "border-emerald-900/60 bg-emerald-950/30 text-emerald-200"
+          : worst === "dusuk" ? "border-sky-900/60 bg-sky-950/30 text-sky-200"
+          : worst === "orta" ? "border-amber-800/60 bg-amber-950/30 text-amber-200"
+          : "border-red-800/60 bg-red-950/30 text-red-200";
+        return (
+          <div className={`shrink-0 rounded-lg border px-3 py-2 text-sm
+                           flex items-center gap-2 ${tone}`}>
+            <span className="text-[10px] uppercase tracking-wide font-bold opacity-80">
+              Karar
+            </span>
+            {run.detail}
+          </div>
+        );
+      })()}
 
       {/* Ana ızgara */}
       {/* 6 sütun: video 1:1 içerik taşıdığı için DAR bir sütuna oturur (2/6);

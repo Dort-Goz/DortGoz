@@ -37,7 +37,7 @@ def test_verdict_states_the_anomaly_type_and_time():
     verdict = ctx.verdict()
     assert "kavga" in verdict
     assert "00:48" in verdict           # operatör videoda bulabilsin
-    assert "yuksek" in verdict
+    assert "yüksek" in verdict          # operatöre dönük metin Türkçe yazımla
 
 
 def test_verdict_when_nothing_found():

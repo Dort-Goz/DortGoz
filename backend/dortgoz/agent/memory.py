@@ -51,6 +51,10 @@ class Incident:
     risk: Risk = "dusuk"
     notes: list[str] = field(default_factory=list)
     thumbnail: str | None = None
+    # İnsan incelemesi bayrağı: model emin değilse olay operatör kuyruğuna
+    # düşer (Bengisu tasarımı: operator_review_required). Gerekçe görünür.
+    needs_review: bool = False
+    review_reason: str = ""
 
 
 @dataclass
@@ -125,17 +129,33 @@ class Ledger:
         if review.get("risk") in RISK_ORDER:
             inc.risk = review["risk"]
         inc.title = _title_text(review.get("zirve", inc.title))
-        detail = (f"⟳ olay geneli: {review.get('baslangic','')} "
-                  f"→ {review.get('zirve','')} → {review.get('sonuc','')}").strip()
-        for u in review.get("belirsizlikler", [])[:2]:
-            detail += f"  ? {u}"
+        # Bütünü gören geçiş bayrağı YENİDEN karar verir: pencere belirsizliği
+        # bütünde çözülmüşse bayrak kalkar; bütünde de belirsizse kalır.
+        unc = review.get("belirsizlikler", [])
+        inc.needs_review = bool(unc) or inc.anomaly_type == "bilinmeyen"
+        inc.review_reason = (f"2. geçiş: {unc[0][:80]}" if unc else
+                             ("olay kapalı sınıf listesine oturmadı"
+                              if inc.anomaly_type == "bilinmeyen" else ""))
+        # Yapılandırılmış anlatı — arayüz satır satır gösterir (ok/simge çorbası
+        # operatörce okunamıyordu, 2026-08-06 arayüz geri bildirimi)
+        detail = "\n".join(filter(None, [
+            f"Başlangıç: {review.get('baslangic', '')}".strip(),
+            f"Zirve: {review.get('zirve', '')}".strip(),
+            f"Sonuç: {review.get('sonuc', '')}".strip(),
+            *(f"? {u}" for u in review.get("belirsizlikler", [])[:2]),
+        ]))
         return _update(inc, review.get("zirve_t", inc.first_seen), _trim(detail))
 
     # ---- güncelleme ----
 
-    def ingest(self, report: WindowReport, thumbnail: str | None = None
-               ) -> list[IncidentUpdate]:
-        """Bir pencere raporunu deftere işler; yayınlanacak güncellemeleri döndürür."""
+    def ingest(self, report: WindowReport, thumbnail: str | None = None,
+               uncertain: str = "") -> list[IncidentUpdate]:
+        """Bir pencere raporunu deftere işler; yayınlanacak güncellemeleri döndürür.
+
+        `uncertain` boş değilse pencere GÜVENSİZ kaynaktan geldi (gerekçe metni):
+        tırmandırmayla kurtarıldı, model belirsizlik bildirdi vb. — olaya insan
+        incelemesi bayrağı olarak işlenir.
+        """
         events = self.serious(report)
         if not events:
             if not self._open_id:
@@ -149,8 +169,34 @@ class Ledger:
         peak = max(events, key=lambda e: _rank(e.severity_hint))
         current = self.open_incident
         if current is None:
-            return [self._open(peak, events, report, thumbnail)]
-        return [self._extend(current, peak, events, report)]
+            upd = self._open(peak, events, report, thumbnail)
+        else:
+            upd = self._extend(current, peak, events, report)
+        inc = self.incidents[upd.incident_id]
+        self._flag_review(inc, report, uncertain)
+        upd.needs_review = inc.needs_review
+        upd.review_reason = inc.review_reason
+        return [upd]
+
+    def _flag_review(self, inc: Incident, report: WindowReport,
+                     uncertain: str) -> None:
+        """İnceleme bayrağı kuralları — model 'emin değilim' sinyali verdiyse.
+
+        Kaynaklar: (a) çağıranın işaretlediği güvensiz kaynak (tırmandırma vb.),
+        (b) sınıf `bilinmeyen` (kapalı listeye oturmadı), (c) raporun kendi
+        `uncertainties` alanı. Bayrak yalnız EKLENİR; kaldırma kararı olay-geneli
+        2. geçişindir (apply_review) — pencere pencere yanıp sönmesin.
+        """
+        reasons = []
+        if uncertain:
+            reasons.append(uncertain)
+        if inc.anomaly_type == "bilinmeyen":
+            reasons.append("olay kapalı sınıf listesine oturmadı")
+        if report.uncertainties:
+            reasons.append(f"model belirsizlik bildirdi: {report.uncertainties[0][:80]}")
+        if reasons and not inc.needs_review:
+            inc.needs_review = True
+            inc.review_reason = " · ".join(reasons[:2])
 
     def finalize(self) -> list[IncidentUpdate]:
         """Koşu bittiğinde açık kalan olayı kapatır."""
@@ -245,4 +291,6 @@ def _update(inc: Incident, t: float, detail: str) -> IncidentUpdate:
         risk=inc.risk,
         detail=detail,
         thumbnail=inc.thumbnail,
+        needs_review=inc.needs_review,
+        review_reason=inc.review_reason,
     )

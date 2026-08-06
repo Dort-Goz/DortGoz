@@ -132,7 +132,11 @@ def test_apply_review_rewrites_incident():
                                  "anomaly_type": "saldiri", "risk": "yuksek",
                                  "belirsizlikler": ["yaralı mı belirsiz"]})
     assert rev.anomaly_type == "saldiri" and rev.risk == "yuksek"
-    assert rev.t == 42.0 and "olay geneli" in rev.detail
+    # Anlatı yapılandırılmış satırlar hâlinde (arayüz satır satır basar)
+    assert rev.t == 42.0
+    assert "Başlangıç: Grup toplandı" in rev.detail
+    assert "Zirve: Kişi yere düşürüldü" in rev.detail
+    assert "? yaralı mı belirsiz" in rev.detail
     assert led.incidents[iid].anomaly_type == "saldiri"
 
 
