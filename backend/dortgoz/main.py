@@ -24,8 +24,15 @@ manager = ConnectionManager()
 
 MOCK_EVENTS = Path(__file__).parent / "mock" / "sample_events.jsonl"
 
-# Aynı anda tek koşu — A4 (minimal backend): kuyruk/işçi altyapısı yok
-_run_task: asyncio.Task | None = None
+# Akış başına bir koşu görevi; "" = tek-akış varsayılanı. Kuyruk/işçi
+# altyapısı yine yok (A4) — çoklu-akış demo kipi yalnız eşzamanlı görevler.
+# Üst sınır sunucu kapasitesinden: ~10 kamera @1× (5,8 GPU-sn/dk ölçümü).
+_run_tasks: dict[str, asyncio.Task] = {}
+MAX_FEEDS = 8
+
+
+def _active_runs() -> int:
+    return sum(1 for t in _run_tasks.values() if not t.done())
 
 
 @app.get("/health")
@@ -143,31 +150,41 @@ async def start_run(msg: OperatorMessage) -> None:
     ilerleme RunStatus, ara sonuçlar WindowReport olarak akar. Deney seçenekleri
     (model/istem override'ları) koşuya aynen taşınır.
     """
-    global _run_task
-    if _run_task and not _run_task.done():
+    feed = msg.feed
+    task = _run_tasks.get(feed)
+    if task and not task.done():
         await manager.broadcast(Event.wrap(RunStatus(
-            run_id="-", state="error", detail="zaten süren bir koşu var",
-        )))
+            run_id="-", state="error",
+            detail=f"bu akışta süren bir koşu var" + (f" ({feed})" if feed else ""),
+        ), feed=feed))
+        return
+    if _active_runs() >= MAX_FEEDS:
+        await manager.broadcast(Event.wrap(RunStatus(
+            run_id="-", state="error",
+            detail=f"akış sınırı: aynı anda en çok {MAX_FEEDS} koşu",
+        ), feed=feed))
         return
 
     from .pipeline.runner import run_video      # geç import: mock modda gerekmez
 
     run_id = f"{Path(msg.video).stem}-{uuid.uuid4().hex[:6]}"
-    _run_task = asyncio.create_task(run_video(
+    _run_tasks[feed] = asyncio.create_task(run_video(
         manager, msg.video, run_id,
         model=msg.model, system_prompt=msg.system_prompt, task_prompt=msg.task_prompt,
+        feed=feed,
     ))
 
 
 async def stop_run() -> None:
-    global _run_task
-    if _run_task and not _run_task.done():
-        _run_task.cancel()
-        try:
-            await _run_task
-        except asyncio.CancelledError:
-            pass
-    _run_task = None
+    """TÜM etkin koşuları durdurur — demo kipinde tek 'durdur' hepsini keser."""
+    for task in list(_run_tasks.values()):
+        if not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+    _run_tasks.clear()
 
 
 # Statik servisler — medya ve (varsa) derlenmiş frontend

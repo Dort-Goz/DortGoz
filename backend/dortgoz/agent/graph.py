@@ -73,16 +73,25 @@ def reset_history() -> None:
 
 
 def build_system_prompt() -> str:
-    """Sistem istemi = rol + (varsa) koşu bağlamı.
+    """Sistem istemi = rol + (varsa) koşu bağlam(lar)ı.
 
     Sohbetin analizden SONRA da anlamlı olmasının yolu bu: koşu bitince
-    `session` bağlamı yaşamaya devam eder, buraya gömülür.
+    `session` bağlamı yaşamaya devam eder, buraya gömülür. Çoklu-akış (demo)
+    kipinde TÜM kameraların brifingi başlıklarla art arda verilir — operatör
+    "3. kamerada ne oldu" diye sorabilir. 256K'lık modelde yer sorunu yok.
     """
     from .. import session
-    ctx = session.current()
-    if ctx is None:
+    ctxs = session.all_contexts()
+    if not ctxs:
         return SYSTEM_TR + NO_RUN_HINT
-    return SYSTEM_TR + CONTEXT_RULES + ctx.briefing()
+    if len(ctxs) == 1:
+        return SYSTEM_TR + CONTEXT_RULES + ctxs[0].briefing()
+    parts = [SYSTEM_TR + CONTEXT_RULES,
+             f"AYNI ANDA {len(ctxs)} KAMERA ÇÖZÜMLENDİ. Operatör kamera adıyla "
+             "sorabilir; hangi kameradan söz ettiği belirsizse sor.\n"]
+    for c in ctxs:
+        parts.append(f"\n════ KAMERA {c.feed or 'ana'} ════\n{c.briefing()}")
+    return "\n".join(parts)
 
 
 class ChatState(TypedDict):

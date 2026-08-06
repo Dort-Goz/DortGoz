@@ -139,15 +139,21 @@ Payload = Union[
 
 
 class Event(BaseModel):
-    """Tel üzerindeki zarf."""
+    """Tel üzerindeki zarf.
+
+    `feed`: çoklu-akış (demo) kipinde olayın hangi kamera akışına ait olduğu.
+    Boş dize = tek-akış davranışı (geriye uyumlu). Yük tiplerine tek tek alan
+    eklemek yerine ZARF etiketlenir — sözleşme tek noktadan genişler.
+    """
 
     seq: int = 0
     ts: float = Field(default_factory=time.time)
+    feed: str = ""
     payload: Payload = Field(discriminator="type")
 
     @staticmethod
-    def wrap(payload: Payload, seq: int = 0) -> "Event":
-        return Event(seq=seq, payload=payload)
+    def wrap(payload: Payload, seq: int = 0, feed: str = "") -> "Event":
+        return Event(seq=seq, feed=feed, payload=payload)
 
 
 # ---- Operatörden gelen mesajlar (frontend → backend) ----
@@ -165,3 +171,4 @@ class OperatorMessage(BaseModel):
     model: str = ""
     system_prompt: str = ""
     task_prompt: str = ""
+    feed: str = ""                    # start_run: çoklu-akış (demo) kamera etiketi

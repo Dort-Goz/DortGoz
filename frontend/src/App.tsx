@@ -7,7 +7,8 @@ import AgentTrace from "./components/AgentTrace";
 import ChatPanel from "./components/ChatPanel";
 import ActionLog from "./components/ActionLog";
 import ExperimentPanel, { type InterpretConfig } from "./components/ExperimentPanel";
-import { consoleReducer, initialState } from "./state";
+import FeedStrip from "./components/FeedStrip";
+import { consoleReducer, emptyFeed, initialState } from "./state";
 
 const EXPERIMENT_KEY = "dortgoz.experiment";
 
@@ -72,23 +73,36 @@ export default function App() {
       socketRef.current?.send({ kind: "actuator_response", request_id, approved }),
   }), []);
 
-  const run = state.runStatus;
-  const busy = run?.state === "processing";
+  const feed = state.feeds[state.active] ?? emptyFeed;
+  const run = feed.runStatus;
+  // "Durdur" TÜM akışları keser → meşguliyet de tüm akışlara bakar
+  const busy = Object.values(state.feeds).some((f) => f.runStatus?.state === "processing");
+
+  const overrides = useCallback(() => ({
+    // Yalnız varsayılandan sapan alanlar gönderilir (boş = backend varsayılanı)
+    model: interpretCfg && model !== interpretCfg.default_model ? model : "",
+    system_prompt:
+      interpretCfg && systemPrompt !== interpretCfg.system_prompt ? systemPrompt : "",
+    task_prompt:
+      interpretCfg && taskPrompt !== interpretCfg.task_prompt ? taskPrompt : "",
+  }), [interpretCfg, model, systemPrompt, taskPrompt]);
 
   const startRun = useCallback(() => {
     if (!selected || busy) return;
-    dispatch({ kind: "run_started", video: selected });
-    // Yalnız varsayılandan sapan alanlar gönderilir (boş = backend varsayılanı)
-    socketRef.current?.send({
-      kind: "start_run",
-      video: selected,
-      model: interpretCfg && model !== interpretCfg.default_model ? model : "",
-      system_prompt:
-        interpretCfg && systemPrompt !== interpretCfg.system_prompt ? systemPrompt : "",
-      task_prompt:
-        interpretCfg && taskPrompt !== interpretCfg.task_prompt ? taskPrompt : "",
+    dispatch({ kind: "run_started", video: selected, feed: "" });
+    socketRef.current?.send({ kind: "start_run", video: selected, ...overrides() });
+  }, [selected, busy, overrides]);
+
+  // Demo: ilk N klip, KAM-1..N etiketleriyle EŞZAMANLI koşar (kapasite ~10 @1×)
+  const startDemo = useCallback((count: number) => {
+    if (busy || videos.length === 0) return;
+    const picks = Array.from({ length: count }, (_, i) => videos[i % videos.length]);
+    picks.forEach((video, i) => {
+      const feedName = `KAM-${i + 1}`;
+      dispatch({ kind: "run_started", video, feed: feedName });
+      socketRef.current?.send({ kind: "start_run", video, feed: feedName, ...overrides() });
     });
-  }, [selected, busy, interpretCfg, model, systemPrompt, taskPrompt]);
+  }, [busy, videos, overrides]);
 
   const stopRun = useCallback(() => socketRef.current?.send({ kind: "stop_run" }), []);
 
@@ -137,6 +151,16 @@ export default function App() {
           >
             {busy ? "Durdur" : "Başlat"}
           </button>
+          {!busy && videos.length > 1 && (
+            <button
+              onClick={() => startDemo(Math.min(4, videos.length))}
+              title="Çoklu kamera demosu: ilk 4 klip eşzamanlı çözümlenir"
+              className="rounded px-2 py-1 border border-indigo-800 text-indigo-300
+                         hover:bg-indigo-950/40"
+            >
+              ⊞ demo ×4
+            </button>
+          )}
           {run && (
             <>
               <div className="w-32 h-1.5 rounded bg-zinc-800 overflow-hidden">
@@ -169,9 +193,13 @@ export default function App() {
       {/* Koşunun nihai kararı — hangi sınıf, hangi risk (backend: RunContext.verdict).
           Renk EN CİDDİ olayın riskini taşır: yeşil kutu içinde "kritik" yazması
           operatörü yanıltıyordu; olaysız koşu yeşil kalır. */}
+      {/* Çoklu-akış (demo) kamera duvarı — tek akışta görünmez */}
+      <FeedStrip feeds={state.feeds} active={state.active}
+                 onSelect={(f) => dispatch({ kind: "select_feed", feed: f })} />
+
       {run?.state === "done" && run.detail && (() => {
         const order = ["dusuk", "orta", "yuksek", "kritik"] as const;
-        const worst = state.incidents.reduce<string | null>(
+        const worst = feed.incidents.reduce<string | null>(
           (w, i) => (w === null || order.indexOf(i.risk) > order.indexOf(w as any) ? i.risk : w),
           null);
         const tone = worst === null
@@ -196,18 +224,18 @@ export default function App() {
           Alt sıra üçe eşit bölünür. */}
       <div className="flex-1 grid grid-cols-6 grid-rows-2 gap-2 min-h-0">
         <div className="col-span-2 row-span-1 min-h-0">
-          <VideoPanel highlight={state.highlight} seekTo={state.seekTo} video={state.video} />
+          <VideoPanel highlight={feed.highlight} seekTo={feed.seekTo} video={feed.video} />
         </div>
         <div className="col-span-4 min-h-0">
           <Timeline
-            incidents={state.incidents}
-            reports={state.reports}
-            highlightId={state.highlight?.incident_id}
+            incidents={feed.incidents}
+            reports={feed.reports}
+            highlightId={feed.highlight?.incident_id}
             onSelect={(incident) => dispatch({ kind: "select_incident", incident })}
           />
         </div>
         <div className="col-span-2 min-h-0">
-          <AgentTrace entries={state.trace} />
+          <AgentTrace entries={feed.trace} />
         </div>
         <div className="col-span-2 min-h-0">
           <ChatPanel messages={state.chat} onSend={send.chat} />

@@ -40,6 +40,7 @@ class RunContext:
 
     run_id: str
     video: str
+    feed: str = ""                    # çoklu-akış (demo) kamera etiketi
     duration: float = 0.0
     finished: bool = False
     reports: list[WindowReport] = field(default_factory=list)
@@ -96,23 +97,31 @@ class RunContext:
         return "\n".join(lines)
 
 
-# Süreç içinde tek etkin koşu (A4: kuyruk/işçi altyapısı yok)
-_current: RunContext | None = None
+# Akış başına bir bağlam (çoklu-akış demo kipi); "" = tek-akış varsayılanı.
+# Ekleme sırası korunur — current() en son başlayanı verir (araçların odağı).
+_contexts: dict[str, RunContext] = {}
 
 
-def start(run_id: str, video: str) -> RunContext:
-    global _current
-    _current = RunContext(run_id=run_id, video=video)
-    # Yeni koşu = yeni bağlam: eski kaydın sohbeti yeni kayda taşınmasın
+def start(run_id: str, video: str, feed: str = "") -> RunContext:
+    ctx = RunContext(run_id=run_id, video=video, feed=feed)
+    _contexts.pop(feed, None)         # aynı akışta yeni koşu → sona taşınsın
+    _contexts[feed] = ctx
+    # Yeni koşu = yeni bağlam: eski kaydın sohbeti yeni kayda taşınmasın.
+    # Demo başlatması N koşuyu art arda açar; sıfırlama idempotent, sorun değil.
     from .agent.graph import reset_history
     reset_history()
-    return _current
+    return ctx
 
 
 def current() -> RunContext | None:
-    return _current
+    """En son başlayan koşu — tek akışta TEK bağlam, araçların varsayılan odağı."""
+    return next(reversed(_contexts.values()), None)
+
+
+def all_contexts() -> list[RunContext]:
+    """Etkin tüm akışlar, başlama sırasıyla (sohbet brifingi hepsini görür)."""
+    return list(_contexts.values())
 
 
 def clear() -> None:
-    global _current
-    _current = None
+    _contexts.clear()

@@ -50,16 +50,22 @@ def resolve_media(video: str) -> Path:
 
 
 class RunRecorder:
-    """Koşu olaylarını hem WS'e yayınlar hem JSONL'e yazar."""
+    """Koşu olaylarını hem WS'e yayınlar hem JSONL'e yazar.
 
-    def __init__(self, manager: ConnectionManager, run_id: str) -> None:
+    `feed` çoklu-akış (demo) kipinde zarfa yazılır — arayüz olayları kameraya
+    göre ayırır; tek akışta boş kalır ve davranış eskisiyle birebir aynıdır.
+    """
+
+    def __init__(self, manager: ConnectionManager, run_id: str,
+                 feed: str = "") -> None:
         self.manager = manager
+        self.feed = feed
         self.path = settings.runs_dir / f"{run_id}.jsonl"
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._fh = self.path.open("w", encoding="utf-8")
 
     async def emit(self, payload) -> None:
-        event = Event.wrap(payload)
+        event = Event.wrap(payload, feed=self.feed)
         await self.manager.broadcast(event)
         self._fh.write(event.model_dump_json() + "\n")
         self._fh.flush()
@@ -146,6 +152,7 @@ async def run_video(
     model: str = "",
     system_prompt: str = "",
     task_prompt: str = "",
+    feed: str = "",
 ) -> None:
     """Bir videoyu işler; iptal edilirse (stop_run) durumu temiz bırakır.
 
@@ -153,8 +160,8 @@ async def run_video(
     yapılandırması `runs/<id>.meta.json`'a yazılır — hangi istem hangi çıktıyı
     üretti sorusu (ablation/kanıt disiplini) her zaman cevaplanabilir kalır.
     """
-    rec = RunRecorder(manager, run_id)
-    ctx = session.start(run_id, video)      # sohbet analiz sonrası buradan devam eder
+    rec = RunRecorder(manager, run_id, feed=feed)
+    ctx = session.start(run_id, video, feed=feed)   # sohbet analiz sonrası buradan sürer
     ledger = ctx.ledger
     effective_model = model or settings.main_model
     (settings.runs_dir / f"{run_id}.meta.json").write_text(json.dumps({

@@ -108,6 +108,8 @@ export type Payload =
 export interface Event {
   seq: number;
   ts: number;
+  /** Çoklu-akış (demo) kipinde kamera etiketi; boş/yok = tek akış. */
+  feed?: string;
   payload: Payload;
 }
 
@@ -117,6 +119,7 @@ export interface OperatorMessage {
   text?: string;
   request_id?: string;
   approved?: boolean;
+  feed?: string;
   video?: string;
   /** start_run deney seçenekleri — boş/undefined = varsayılan (bkz. events.py) */
   model?: string;
