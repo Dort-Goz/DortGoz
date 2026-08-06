@@ -115,6 +115,37 @@ def vlm_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def e2e_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Video seviyesindeki local run artifact'larından uçtan uca KPI'lar."""
+
+    critical_total = critical_hit = false_alarms = 0
+    normal_seconds = 0.0
+    latencies: list[float] = []
+    ram: list[float] = []
+    vram: list[float] = []
+    for record in records:
+        expected_critical = bool(record.get("expected_critical"))
+        confirmed_critical = bool(record.get("confirmed_critical"))
+        if expected_critical:
+            critical_total += 1
+            critical_hit += confirmed_critical
+        elif bool(record.get("false_alarm")):
+            false_alarms += 1
+        if bool(record.get("is_normal")):
+            normal_seconds += float(record.get("duration_seconds", 0))
+        for key, target in (("latency_ms", latencies), ("ram_mb", ram), ("vram_mb", vram)):
+            if record.get(key) is not None:
+                target.append(float(record[key]))
+    return {
+        "record_count": len(records), "critical_total": critical_total, "critical_hits": critical_hit,
+        "critical_recall": critical_hit / critical_total if critical_total else 0.0,
+        "false_alarms": false_alarms,
+        "false_alarms_per_hour": false_alarms / (normal_seconds / 3600) if normal_seconds else 0.0,
+        "mean_latency_ms": sum(latencies) / len(latencies) if latencies else None,
+        "max_ram_mb": max(ram, default=None), "max_vram_mb": max(vram, default=None),
+    }
+
+
 def _tiou(left: tuple[float, float], right: tuple[float, float]) -> float:
     overlap = max(0.0, min(left[1], right[1]) - max(left[0], right[0]))
     union = max(left[1], right[1]) - min(left[0], right[0])
@@ -125,4 +156,4 @@ def _rate(records: list[dict[str, Any]], key: str) -> float:
     return sum(bool(record.get(key)) for record in records) / len(records) if records else 0.0
 
 
-__all__ = ["agent_metrics", "candidate_metrics", "evidence_metrics", "vlm_metrics"]
+__all__ = ["agent_metrics", "candidate_metrics", "e2e_metrics", "evidence_metrics", "vlm_metrics"]

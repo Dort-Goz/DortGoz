@@ -1,6 +1,7 @@
 from dortgoz.benchmark_metrics import (
     agent_metrics,
     candidate_metrics,
+    e2e_metrics,
     evidence_metrics,
     vlm_metrics,
 )
@@ -49,3 +50,15 @@ def test_vlm_metrics_reports_decision_time_evidence_and_latency() -> None:
     assert result["peak_mae_seconds"] == 2
     assert result["mean_latency_ms"] == 200
     assert result["unsupported_critical_claim_rate"] == 1 / 3
+
+
+def test_e2e_metrics_reports_critical_recall_false_alarm_and_resources() -> None:
+    result = e2e_metrics([
+        {"expected_critical": True, "confirmed_critical": True, "latency_ms": 100, "ram_mb": 200, "vram_mb": 300},
+        {"expected_critical": True, "confirmed_critical": False, "latency_ms": 300, "ram_mb": 250, "vram_mb": 280},
+        {"is_normal": True, "duration_seconds": 1800, "false_alarm": True},
+    ])
+    assert result["critical_recall"] == 0.5
+    assert result["false_alarms_per_hour"] == 2
+    assert result["mean_latency_ms"] == 200
+    assert (result["max_ram_mb"], result["max_vram_mb"]) == (250, 300)
