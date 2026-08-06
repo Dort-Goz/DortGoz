@@ -96,6 +96,9 @@ _current: RunContext | None = None
 def start(run_id: str, video: str) -> RunContext:
     global _current
     _current = RunContext(run_id=run_id, video=video)
+    # Yeni koşu = yeni bağlam: eski kaydın sohbeti yeni kayda taşınmasın
+    from .agent.graph import reset_history
+    reset_history()
     return _current
 
 
