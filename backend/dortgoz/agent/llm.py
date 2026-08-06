@@ -17,8 +17,21 @@ from openai import AsyncOpenAI, RateLimitError
 from ..config import settings
 
 
+# Döngü başına TEK istemci: her çağrıda yeni AsyncOpenAI kurmak her seferinde
+# yeni bir httpx havuzu açıyordu (kapatılmadan) — 24-akış soak'ında binlerce
+# istemci = sızan bağlantı/fd. İstemci eşzamanlı kullanım için zaten güvenli.
+_clients: dict[int, AsyncOpenAI] = {}
+
+
 def main_client() -> AsyncOpenAI:
-    return AsyncOpenAI(base_url=settings.llama_base_url, api_key=settings.api_key)
+    try:
+        key = id(asyncio.get_running_loop())
+    except RuntimeError:
+        key = 0
+    if key not in _clients:
+        _clients[key] = AsyncOpenAI(base_url=settings.llama_base_url,
+                                    api_key=settings.api_key)
+    return _clients[key]
 
 
 # ---- geri basınç: uçuş sınırı + 429'da üstel geri çekilme ----
