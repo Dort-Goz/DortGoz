@@ -126,6 +126,10 @@ class RunStatus(BaseModel):
     run_id: str
     state: Literal["idle", "processing", "done", "error"]
     progress: float = 0.0             # 0..1
+    # İşleme hızı, × gerçek zaman (işlenen görüntü sn / geçen duvar sn).
+    # ≥1 = akış gerçek zamanda taşınıyor; çoklu-akışta toplam kapasiteyi
+    # akış başına hızların toplamı verir. 0 = henüz ölçülmedi.
+    speed: float = 0.0
     detail: str = ""
     # Koşuyu BAŞLATMAYAN istemci de videoyu bilmeli: sayfayı yenileyen operatör
     # ya da ikinci bir izleyici aksi halde boş oynatıcı görür (2026-08-05 QA).

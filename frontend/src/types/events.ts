@@ -96,6 +96,8 @@ export interface RunStatus {
   run_id: string;
   state: "idle" | "processing" | "done" | "error";
   progress: number;
+  /** İşleme hızı, × gerçek zaman; ≥1 = akış gerçek zamanda taşınıyor. */
+  speed?: number;
   detail: string;
   /** Koşulan klip — koşuyu başlatmayan istemci (yenileme, 2. izleyici) için */
   video: string;

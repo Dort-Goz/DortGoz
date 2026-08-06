@@ -21,14 +21,36 @@ export default function FeedStrip({ feeds, active, onSelect }: {
   const names = Object.keys(feeds).filter((k) => k !== "");
   if (names.length < 2) return null;      // tek akışta şerit gereksiz
 
+  // Toplam kapasite göstergesi: akış hızlarının toplamı. N akışın gerçek
+  // zamanda taşınması için Σ ≥ işlenen akış sayısı gerekir — jüriye "kaç
+  // kamera kaldırır" sorusunun canlı cevabı.
+  const busyFeeds = names.filter((n) => feeds[n].runStatus?.state === "processing");
+  const total = names.reduce((s, n) => s + (feeds[n].runStatus?.speed ?? 0), 0);
+  const enough = busyFeeds.length === 0 || total >= busyFeeds.length;
+
   return (
     <div className="shrink-0 flex gap-2 overflow-x-auto">
+      <div className={`rounded-lg border px-3 py-1.5 min-w-32 shrink-0 ${
+        enough ? "border-emerald-900/60 bg-emerald-950/30" : "border-red-900/60 bg-red-950/30"
+      }`}>
+        <div className={`text-sm font-mono font-bold ${
+          enough ? "text-emerald-300" : "text-red-300"
+        }`}>
+          Σ ×{total >= 10 ? total.toFixed(0) : total.toFixed(1)}
+        </div>
+        <div className="text-[10px] text-zinc-500">
+          {busyFeeds.length > 0
+            ? `${busyFeeds.length} akış işleniyor · gerçek zaman için Σ ≥ ${busyFeeds.length}`
+            : `${names.length} akış tamamlandı`}
+        </div>
+      </div>
       {names.map((name) => {
         const f = feeds[name];
         const risk = worstRisk(f);
         const review = f.incidents.filter((i) => i.needs_review).length;
         const busy = f.runStatus?.state === "processing";
         const pct = Math.round((f.runStatus?.progress ?? 0) * 100);
+        const speed = f.runStatus?.speed ?? 0;
         return (
           <button
             key={name}
@@ -48,7 +70,15 @@ export default function FeedStrip({ feeds, active, onSelect }: {
               {review > 0 && (
                 <span className="text-[10px] text-amber-400">⚑{review}</span>
               )}
-              <span className="ml-auto text-[10px] text-zinc-500">
+              {/* Gerçek-zaman oranı: ≥1× yeşil (akışa yetişiyor), <1× kırmızı */}
+              {speed > 0 && (
+                <span className={`ml-auto text-[10px] font-mono font-bold ${
+                  speed >= 1 ? "text-emerald-400" : "text-red-400"
+                }`}>
+                  ×{speed >= 10 ? speed.toFixed(0) : speed.toFixed(1)}
+                </span>
+              )}
+              <span className={`text-[10px] text-zinc-500 ${speed > 0 ? "" : "ml-auto"}`}>
                 {busy ? `%${pct}` : f.runStatus?.state ?? "—"}
               </span>
             </div>

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from pathlib import Path
 
 from .. import session
@@ -177,6 +178,7 @@ async def run_video(
         custom = " · özel istem" if (system_prompt or task_prompt) else ""
         await rec.emit(RunStatus(run_id=run_id, state="processing", video=video,
                                  detail=f"{video} · {effective_model}{custom}"))
+        t_wall = time.time()      # hız = işlenen görüntü sn / geçen duvar sn
         await rec.emit(AgentStep(node="perceive", status="start", detail="hareket profili"))
         duration = await ingest.probe_duration(path)
         ctx.duration = duration
@@ -267,6 +269,7 @@ async def run_video(
                     await rec.emit(RunStatus(
                         run_id=run_id, state="processing", video=video,
                         progress=(idx + 1) / len(wins),
+                        speed=end / max(time.time() - t_wall, 1e-6),
                     ))
                     continue
 
@@ -352,6 +355,7 @@ async def run_video(
             await rec.emit(RunStatus(
                 run_id=run_id, state="processing", video=video,
                 progress=(idx + 1) / len(wins),
+                speed=end / max(time.time() - t_wall, 1e-6),
             ))
 
         for update in ledger.finalize():       # video biterken açık kalan olayı kapat
@@ -360,7 +364,8 @@ async def run_video(
         ctx.finished = True
         # Koşunun nihai kararı operatöre görünür olmalı — sınıf + risk tek satırda
         await rec.emit(RunStatus(run_id=run_id, state="done", progress=1.0,
-                                 video=video, detail=ctx.verdict()))
+                                 video=video, detail=ctx.verdict(),
+                                 speed=duration / max(time.time() - t_wall, 1e-6)))
     except asyncio.CancelledError:
         await rec.emit(RunStatus(run_id=run_id, state="idle", video=video,
                                  detail="operatör durdurdu"))

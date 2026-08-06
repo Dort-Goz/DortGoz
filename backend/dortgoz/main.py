@@ -26,9 +26,11 @@ MOCK_EVENTS = Path(__file__).parent / "mock" / "sample_events.jsonl"
 
 # Akış başına bir koşu görevi; "" = tek-akış varsayılanı. Kuyruk/işçi
 # altyapısı yine yok (A4) — çoklu-akış demo kipi yalnız eşzamanlı görevler.
-# Üst sınır sunucu kapasitesinden: ~10 kamera @1× (5,8 GPU-sn/dk ölçümü).
+# Sınır = şartnamedeki 24 kamera senaryosu. Ölçülen kapasite ~10 kamera @1×
+# (5,8 GPU-sn/dk): 24 akışta hız rozetleri 1×'in ALTINI gösterir — bu bilinçli,
+# sistem yavaşlar ama düşmez; RunStatus.speed dürüst ölçümü taşır.
 _run_tasks: dict[str, asyncio.Task] = {}
-MAX_FEEDS = 8
+MAX_FEEDS = 24
 
 
 def _active_runs() -> int:

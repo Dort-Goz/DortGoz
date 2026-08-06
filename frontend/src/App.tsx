@@ -23,6 +23,7 @@ export default function App() {
   const [model, setModel] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [taskPrompt, setTaskPrompt] = useState("");
+  const [demoCount, setDemoCount] = useState(4);
 
   useEffect(() => {
     const socket = new DortgozSocket((e: Event) => dispatch({ kind: "event", event: e }));
@@ -156,14 +157,23 @@ export default function App() {
             {busy ? "Durdur" : "Başlat"}
           </button>
           {!busy && videos.length > 1 && (
-            <button
-              onClick={() => startDemo(Math.min(4, videos.length))}
-              title="Çoklu kamera demosu: ilk 4 klip eşzamanlı çözümlenir"
-              className="rounded px-2 py-1 border border-indigo-800 text-indigo-300
-                         hover:bg-indigo-950/40"
-            >
-              ⊞ demo ×4
-            </button>
+            <span className="flex items-center gap-1">
+              <button
+                onClick={() => startDemo(demoCount)}
+                title="Çoklu kamera demosu: N akış eşzamanlı çözümlenir (24 = şartname senaryosu)"
+                className="rounded px-2 py-1 border border-indigo-800 text-indigo-300
+                           hover:bg-indigo-950/40"
+              >
+                ⊞ demo
+              </button>
+              <select
+                value={demoCount}
+                onChange={(e) => setDemoCount(Number(e.target.value))}
+                className="bg-zinc-800 border border-zinc-700 rounded px-1 py-1"
+              >
+                {[2, 4, 8, 12, 24].map((n) => <option key={n} value={n}>×{n}</option>)}
+              </select>
+            </span>
           )}
           {run && (
             <>
