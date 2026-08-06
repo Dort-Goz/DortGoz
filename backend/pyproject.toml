@@ -11,6 +11,7 @@ dependencies = [
     "pydantic-settings>=2.3",
     "openai>=1.40",
     "langgraph>=0.2",
+    "onnxruntime>=1.28.0",
 ]
 
 [dependency-groups]

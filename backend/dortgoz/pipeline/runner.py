@@ -21,7 +21,7 @@ from ..agent.memory import RISK_ORDER, Ledger
 from ..config import settings
 from ..events import AgentStep, Event, RunStatus, WindowReport
 from ..ws import ConnectionManager
-from . import ingest, interpret, windowing
+from . import ingest, interpret, perception, windowing
 from .interpret import SYSTEM_TR, TASK_TR, interpret_window
 
 THUMB_DIR = "_thumbs"       # media/ altında; /media mount'u üzerinden servis edilir
@@ -211,6 +211,7 @@ async def run_video(
             wins = windowing.windows(duration, settings.window_seconds)
 
         n_ctx = await context_size(effective_model)   # bağlam doluluğu için (bir kez)
+        det_enabled = settings.detector_enabled       # ağırlık yoksa koşuda kapanır
         prev_end = 0.0
         for idx, (start, end) in enumerate(wins):
             if settings.dynamic_windows:
@@ -223,11 +224,38 @@ async def run_video(
                             await review_if_closed(rec, ledger, path, profile, update, model)
                 prev_end = end
             peak = windowing.window_motion(profile, start, end)
-            if not settings.dynamic_windows and peak < gate:
-                # Sert eleme yalnız burada: hareketsiz pencere VLM'e hiç gitmez
+
+            # ALGI: pencerenin dedektör özeti — hem kapı kararına hem VLM
+            # istemine gider. Ağırlık yoksa koşu boyunca TEK uyarıyla kapanır.
+            percep = None
+            if det_enabled:
+                try:
+                    percep = await perception.scan_window(
+                        path, start, end, settings.detector_samples)
+                except FileNotFoundError as exc:
+                    det_enabled = False
+                    await rec.emit(AgentStep(
+                        node="perceive", status="error",
+                        detail=f"dedektör kapatıldı: {str(exc)[:120]}"))
+                except Exception as exc:     # tek pencere algı hatası koşuyu bozmaz
+                    await rec.emit(AgentStep(
+                        node="perceive", status="error",
+                        detail=f"{start:.0f}-{end:.0f} sn algı hatası: {str(exc)[:100]}"))
+
+            gated = not settings.dynamic_windows and peak < gate
+            # KURTARMA yalnız KİŞİ ile: park etmiş araç her ölü pencereyi
+            # kurtarır ve kapı işlevsiz kalırdı; hareket eden araç zaten
+            # hareket kapısından geçer. Hedef boşluk: "yerde hareketsiz kişi"
+            # (kare farkı için görünmez — 2026-08-03 mimari sonucu, ölçülmüştü).
+            rescued = bool(gated and percep and percep.counts.get("person"))
+            if gated and not rescued:
+                # Sert eleme yalnız burada: hareketsiz VE insansız pencere
+                # VLM'e hiç gitmez
                 await rec.emit(AgentStep(
                     node="interpret", status="end",
-                    detail=f"{start:.0f}-{end:.0f} sn atlandı (etkinlik {peak:.4f} < {gate:.4f})",
+                    detail=f"{start:.0f}-{end:.0f} sn atlandı (etkinlik {peak:.4f} < {gate:.4f}"
+                           + (", dedektör: insan yok" if percep is not None else "")
+                           + ")",
                 ))
                 # Ölü pencere süregelen olayı da sonlandırır (olaysız pencere = kapanış)
                 for update in ledger.ingest(WindowReport(
@@ -240,7 +268,9 @@ async def run_video(
                 await rec.emit(AgentStep(
                     node="interpret", status="start",
                     detail=f"{start:.0f}-{end:.0f} sn ({end - start:.0f} sn, "
-                           f"etkinlik {peak:.3f} ≥ eşik {gate:.4f})"
+                           + (f"DEDEKTÖR KURTARDI: {percep.counts.get('person', 0)} kişi, "
+                              f"etkinlik {peak:.4f} < eşik" if rescued
+                              else f"etkinlik {peak:.3f} ≥ eşik {gate:.4f}")
                            + (" · süregelen olay bağlamı verildi" if hint else ""),
                 ))
                 keyframes = windowing.select_keyframes(
@@ -250,6 +280,9 @@ async def run_video(
                 try:
                     report = await interpret_window(
                         path, (start, end), keyframes,
+                        # Dedektör sayıları modele SAYISAL bağlam verir (niyet
+                        # gerektiren sınıflarda eksik olan kanıt) — yorum değil
+                        meta=percep.meta_text() if percep else "",
                         model=model, system_prompt=system_prompt,
                         task_prompt=task_prompt,
                         # Süregelen olayın bağlamı bir sonraki pencereye taşınır
@@ -283,6 +316,7 @@ async def run_video(
                     try:
                         esc = await interpret_window(
                             path, (start, end), keyframes,
+                            meta=percep.meta_text() if percep else "",
                             model=model, system_prompt=system_prompt,
                             task_prompt=task_prompt, context=hint,
                             think=True,

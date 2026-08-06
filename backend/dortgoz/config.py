@@ -62,6 +62,14 @@ class Settings(BaseSettings):
     max_inflight: int = 8
     llm_retries: int = 6
 
+    # Algı katmanı — D-FINE (ONNX, CPU). Ağırlık repo dışında; yol makineye
+    # göre değişir (scripts/fetch_models.sh indirir). detector_enabled=0 →
+    # dedektörsüz eski davranış (ablation / ağırlıksız kurulum).
+    detector_enabled: bool = True
+    dfine_onnx: str = "~/.cache/dortgoz/dfine/model.onnx"
+    detector_conf: float = 0.40
+    detector_samples: int = 4        # pencere başına örneklenen kare
+
     # Yollar
     media_dir: Path = Path(__file__).resolve().parents[2] / "media"
     runs_dir: Path = Path(__file__).resolve().parents[2] / "runs"
