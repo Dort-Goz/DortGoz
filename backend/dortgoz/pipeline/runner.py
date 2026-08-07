@@ -247,7 +247,7 @@ async def run_video(
             # kurtarır ve kapı işlevsiz kalırdı; hareket eden araç zaten
             # hareket kapısından geçer. Hedef boşluk: "yerde hareketsiz kişi"
             # (kare farkı için görünmez — 2026-08-03 mimari sonucu, ölçülmüştü).
-            rescued = bool(gated and percep and percep.counts.get("person"))
+            rescued = bool(gated and percep and percep.rescue_persons)
             if gated and not rescued:
                 # Sert eleme yalnız burada: hareketsiz VE insansız pencere
                 # VLM'e hiç gitmez

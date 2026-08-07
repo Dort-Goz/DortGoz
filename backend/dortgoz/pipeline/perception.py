@@ -140,6 +140,11 @@ class WindowPerception:
     counts: dict[str, int]           # sınıf → örnekler arasında görülen EN ÇOK sayı
     stationary_persons: int          # ilk↔son örnekte aynı yerde duran kişi
     samples: int
+    # düşük-eşikli (detector_rescue_conf) kişi sayısı — YALNIZ kurtarma kararı
+    # için; meta_text'e girmez (düşük eşik hassasiyeti düşürür, sayı VLM'i
+    # yanıltabilir). Neden ayrı: 2026-08-07 ölçümü, uzak planda 0,40 eşiği
+    # gerçek kalabalıkları (13-29 kişi) tümüyle kaçırdı.
+    rescue_persons: int = 0
 
     @property
     def hit(self) -> bool:
@@ -175,24 +180,37 @@ async def scan_window(video: Path, start: float, end: float,
     ts = [start + (end - start) * (i + 0.5) / n for i in range(n)]
     frames = await asyncio.gather(*(frame_rgb(video, t) for t in ts))
 
+    # Asimetrik eşik (2026-08-07 ölçümü): 0,40'ta "boş" görünen 17 pencerenin
+    # 17'si 0,15'te doluydu (ikisi orta+ olaylı, 13-29 kişi!) — uzak plan /
+    # 320×240 kaynakta güven sistematik düşük. KURTARMA yalnız-geri-çağırma
+    # kuralı olduğu için düşük eşikle bakar; meta sayıları (VLM istemine giden)
+    # hassasiyet için detector_conf'ta kalır.
+    low_conf = min(settings.detector_conf, settings.detector_rescue_conf)
+
     def run_all() -> list[list[Detection]]:
         import numpy as np
         return [det.detect(np.frombuffer(f, dtype=np.uint8).reshape(SIZE, SIZE, 3),
-                           settings.detector_conf) for f in frames]
+                           low_conf) for f in frames]
 
     per_frame = await asyncio.to_thread(run_all)
 
     counts: dict[str, int] = {}
+    rescue_persons = 0
     for dets in per_frame:
         frame_counts: dict[str, int] = {}
+        n_low_persons = 0
         for d in dets:
-            frame_counts[d.label] = frame_counts.get(d.label, 0) + 1
+            if d.label == "person":
+                n_low_persons += 1
+            if d.conf >= settings.detector_conf:
+                frame_counts[d.label] = frame_counts.get(d.label, 0) + 1
+        rescue_persons = max(rescue_persons, n_low_persons)
         for c, k in frame_counts.items():
             counts[c] = max(counts.get(c, 0), k)
 
     stationary = 0
-    first = [d for d in per_frame[0] if d.label == "person"]
-    last = [d for d in per_frame[-1] if d.label == "person"]
+    first = [d for d in per_frame[0] if d.label == "person" and d.conf >= settings.detector_conf]
+    last = [d for d in per_frame[-1] if d.label == "person" and d.conf >= settings.detector_conf]
     used: set[int] = set()
     for a in first:
         for j, b in enumerate(last):
@@ -202,4 +220,4 @@ async def scan_window(video: Path, start: float, end: float,
                 break
 
     return WindowPerception(counts=counts, stationary_persons=stationary,
-                            samples=n)
+                            samples=n, rescue_persons=rescue_persons)

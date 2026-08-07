@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     detector_enabled: bool = True
     dfine_onnx: str = "~/.cache/dortgoz/dfine/model.onnx"
     detector_conf: float = 0.40
+    # Kurtarma kararının eşiği (yalnız-geri-çağırma OR kuralı) — meta sayıları
+    # detector_conf'ta kalır. 2026-08-07 ölçümü: uzak plan/320×240 kaynakta
+    # 0,40 gerçek kalabalıkları (13-29 kişi) tümüyle kaçırıyor, 0,15 hepsini
+    # buluyor; kurtarma ucuz-yanlış-pozitife dayanıklı (maliyet yalnız fazladan
+    # derin okuma), o yüzden düşük eşik güvenli.
+    detector_rescue_conf: float = 0.25
     detector_samples: int = 4        # pencere başına örneklenen kare
 
     # Yollar
