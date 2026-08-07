@@ -151,7 +151,7 @@ export default function App() {
   const startCanonical = useCallback(async () => {
     if (!uploadedVideo) return;
     setCanonicalError(null); setCanonicalEvents([]); setAnalysisProgress(null);
-    dispatch({ kind: "run_started", video: uploadedVideo.stored_filename });
+    dispatch({ kind: "run_started", video: uploadedVideo.stored_filename, feed: "" });
     try { setAnalysisId((await startAnalysis(uploadedVideo.video_id)).analysis_id); }
     catch (reason) { setCanonicalError(reason instanceof Error ? reason.message : "Analiz başlatılamadı."); }
   }, [uploadedVideo]);

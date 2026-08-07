@@ -163,7 +163,7 @@ class Event(BaseModel):
     payload: Payload = Field(discriminator="type")
 
     @staticmethod
-def wrap(payload: Payload, seq: int = 0, feed: str = "") -> Event:
+    def wrap(payload: Payload, seq: int = 0, feed: str = "") -> Event:
         return Event(seq=seq, feed=feed, payload=payload)
 
 
