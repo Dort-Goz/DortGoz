@@ -1,0 +1,12 @@
+{
+ "video_id": "Burglary035_x264",
+ "source_ref": "Burglary/Burglary035_x264.mp4",
+ "split": "train",
+ "intervals": [
+  {
+   "start_time": 0.03,
+   "end_time": 58.0,
+   "label": "anomaly"
+  }
+ ]
+}

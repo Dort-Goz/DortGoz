@@ -1,0 +1,12 @@
+{
+ "video_id": "Explosion007_x264",
+ "source_ref": "Explosion/Explosion007_x264.mp4",
+ "split": "train",
+ "intervals": [
+  {
+   "start_time": 53.0,
+   "end_time": 76.0,
+   "label": "anomaly"
+  }
+ ]
+}

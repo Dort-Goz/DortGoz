@@ -1,0 +1,12 @@
+{
+ "video_id": "Shoplifting017_x264",
+ "source_ref": "Shoplifting/Shoplifting017_x264.mp4",
+ "split": "train",
+ "intervals": [
+  {
+   "start_time": 12.0,
+   "end_time": 14.0,
+   "label": "anomaly"
+  }
+ ]
+}

@@ -1,0 +1,12 @@
+{
+ "video_id": "Shooting037_x264",
+ "source_ref": "Shooting/Shooting037_x264.mp4",
+ "split": "train",
+ "intervals": [
+  {
+   "start_time": 4.67,
+   "end_time": 8.67,
+   "label": "anomaly"
+  }
+ ]
+}

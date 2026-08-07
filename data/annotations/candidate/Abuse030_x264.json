@@ -1,0 +1,12 @@
+{
+ "video_id": "Abuse030_x264",
+ "source_ref": "Abuse/Abuse030_x264.mp4",
+ "split": "validation",
+ "intervals": [
+  {
+   "start_time": 42.5,
+   "end_time": 45.33,
+   "label": "anomaly"
+  }
+ ]
+}

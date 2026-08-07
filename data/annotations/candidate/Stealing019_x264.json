@@ -1,0 +1,17 @@
+{
+ "video_id": "Stealing019_x264",
+ "source_ref": "Stealing/Stealing019_x264.mp4",
+ "split": "train",
+ "intervals": [
+  {
+   "start_time": 91.0,
+   "end_time": 93.0,
+   "label": "anomaly"
+  },
+  {
+   "start_time": 139.0,
+   "end_time": 145.0,
+   "label": "anomaly"
+  }
+ ]
+}

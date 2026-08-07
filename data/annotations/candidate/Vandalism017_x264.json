@@ -1,0 +1,17 @@
+{
+ "video_id": "Vandalism017_x264",
+ "source_ref": "Vandalism/Vandalism017_x264.mp4",
+ "split": "train",
+ "intervals": [
+  {
+   "start_time": 9.0,
+   "end_time": 11.0,
+   "label": "anomaly"
+  },
+  {
+   "start_time": 26.0,
+   "end_time": 28.0,
+   "label": "anomaly"
+  }
+ ]
+}

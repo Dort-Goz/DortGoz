@@ -1,0 +1,12 @@
+{
+ "video_id": "RoadAccidents011_x264",
+ "source_ref": "RoadAccidents/RoadAccidents011_x264.mp4",
+ "split": "train",
+ "intervals": [
+  {
+   "start_time": 8.67,
+   "end_time": 10.0,
+   "label": "anomaly"
+  }
+ ]
+}

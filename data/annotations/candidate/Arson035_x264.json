@@ -1,0 +1,12 @@
+{
+ "video_id": "Arson035_x264",
+ "source_ref": "Arson/Arson035_x264.mp4",
+ "split": "validation",
+ "intervals": [
+  {
+   "start_time": 20.0,
+   "end_time": 30.0,
+   "label": "anomaly"
+  }
+ ]
+}

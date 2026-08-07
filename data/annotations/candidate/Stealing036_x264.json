@@ -1,0 +1,12 @@
+{
+ "video_id": "Stealing036_x264",
+ "source_ref": "Stealing/Stealing036_x264.mp4",
+ "split": "validation",
+ "intervals": [
+  {
+   "start_time": 42.0,
+   "end_time": 53.0,
+   "label": "anomaly"
+  }
+ ]
+}
