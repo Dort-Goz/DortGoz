@@ -118,6 +118,13 @@ class Settings(BaseSettings):
     candidate_start_threshold: float = 0.65
     candidate_continue_threshold: float = 0.40
     candidate_end_patience: int = 3
+    # Per-kamera nedensel eşik adaptasyonu (doygunluk politikası): geçmişte
+    # skor doyuran kamera yeni aralık barını yükseltir. Semantic scorer'la
+    # ölçüldü (2026-08-08, iki alanda tam recall); taban scorer'da doğrulanmadı
+    # — varsayılan kapalı, semantic ile birlikte açılması önerilir.
+    candidate_adaptive_threshold: bool = False
+    candidate_adaptive_saturation: float = 0.95
+    candidate_adaptive_raised: float = 0.85
     candidate_merge_gap_seconds: float = 2.0
     candidate_min_duration_seconds: float = 0.5
     candidate_threshold_version: str = "candidate-thresholds-v1"

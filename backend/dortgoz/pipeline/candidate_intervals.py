@@ -63,6 +63,49 @@ def sample_score(sample: ScreeningSample) -> float:
     return max(getattr(sample, field) for field in _SCORE_FIELDS)
 
 
+def adaptive_saturation_shift(
+    samples: list[ScreeningSample],
+    *,
+    start_threshold: float,
+    saturation: float = 0.95,
+    raised_threshold: float = 0.85,
+    warmup_samples: int = 30,
+) -> list[ScreeningSample]:
+    """Per-kamera nedensel eşik adaptasyonu — doygunluk politikası.
+
+    Kamera GEÇMİŞTE ≥saturation skor ürettiyse (olayları doyurduğu kanıtlı),
+    yeni aralık başlatma barı raised_threshold'a çıkar; hiç doymamış kamera
+    start_threshold tabanında kalır. Karar her örnekte yalnız geçmişe bakar.
+
+    Uygulama kaydırma hilesiyle: skor (start_threshold − o anki eşik) kadar
+    kaydırılır ve kurucu SABİT eşikle çalışır — histerezis mantığı tek yerde
+    kalır. Yan etki: adapte kamerada rapor edilen peak_score kaydırılmış
+    değerdir (ölçüm 2026-08-08: semantic scorer'da val 13/13 @ %57,1,
+    feed 19/19 @ %38,5 — sabit eşik %65,6 / %64,9'a karşı).
+    """
+
+    out: list[ScreeningSample] = []
+    seen_saturation = False
+    for index, sample in enumerate(samples):
+        raised = seen_saturation and index >= warmup_samples
+        shift = start_threshold - (raised_threshold if raised else start_threshold)
+        score = sample_score(sample)
+        if shift:
+            adjusted = min(max(score + shift, 0.0), 1.0)
+            out.append(sample.model_copy(update={
+                # Tüm başlıklar tek routing skoruna indirgenir; OR mantığı
+                # sample_score'da zaten uygulandı, kaydırma onu taşır.
+                "anomaly_score": adjusted,
+                "interaction_score": 0.0, "fall_score": 0.0,
+                "fire_smoke_score": 0.0, "vehicle_conflict_score": 0.0,
+                "tampering_score": 0.0,
+            }))
+        else:
+            out.append(sample)
+        seen_saturation = seen_saturation or score >= saturation
+    return out
+
+
 def build_candidate_intervals(
     samples: Iterable[ScreeningSample],
     *,

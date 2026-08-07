@@ -249,6 +249,13 @@ async def run_video(
                     screen_samples = scorer.score(profile)
             else:
                 screen_samples = scorer.score(profile)
+            if settings.candidate_adaptive_threshold:
+                from .candidate_intervals import adaptive_saturation_shift
+                screen_samples = adaptive_saturation_shift(
+                    screen_samples,
+                    start_threshold=settings.candidate_start_threshold,
+                    saturation=settings.candidate_adaptive_saturation,
+                    raised_threshold=settings.candidate_adaptive_raised)
             ivs = build_candidate_intervals(
                 screen_samples, analysis_id=run_id, video_id=video,
                 duration_seconds=duration,

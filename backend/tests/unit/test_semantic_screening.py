@@ -87,6 +87,33 @@ def test_score_video_combines_semantic_and_activity(monkeypatch, tmp_path: Path)
     assert samples[0].source_model == "siglip2-semantic-v1"
 
 
+def test_adaptive_saturation_shift_is_causal_and_floor_respecting() -> None:
+    from dortgoz.pipeline.candidate_intervals import adaptive_saturation_shift
+
+    def mk(scores):
+        return [ScreeningSample(timestamp=float(i), anomaly_score=s,
+                                image_quality=1.0, source_model="t")
+                for i, s in enumerate(scores)]
+
+    # Hiç doymayan kamera: skorlar aynen kalır (taban eşiği korunur)
+    quiet = mk([0.3, 0.7, 0.5] * 20)
+    out = adaptive_saturation_shift(quiet, start_threshold=0.60, warmup_samples=5)
+    assert [s.anomaly_score for s in out] == [s.anomaly_score for s in quiet]
+
+    # Doyma SONRASI (ve açılış geçince) bar yükselir: 0,70'lik skor artık
+    # 0,60 barının altına kayar; doyma ÖNCESİ aynı skor kaymaz (nedensellik)
+    scores = [0.70, 0.99] + [0.70] * 40
+    out = adaptive_saturation_shift(mk(scores), start_threshold=0.60,
+                                    saturation=0.95, raised_threshold=0.85,
+                                    warmup_samples=5)
+    assert out[0].anomaly_score == pytest.approx(0.70)      # geçmişte doyma yok
+    assert out[41].anomaly_score == pytest.approx(0.45)     # 0,70 − 0,25 kaydı
+    # Doymuş kameranın gerçek olayı (0,95) yükseltilmiş barı hâlâ geçer
+    ev = adaptive_saturation_shift(mk([0.99] + [0.1] * 30 + [0.95]),
+                                   start_threshold=0.60, warmup_samples=5)
+    assert ev[-1].anomaly_score >= 0.60
+
+
 def test_score_without_frames_is_refused() -> None:
     model = SemanticCandidateModel(_artifact(), onnx_file=Path("x"), anchors_file=Path("y"))
     with pytest.raises(RuntimeError):
