@@ -1,0 +1,22 @@
+{
+ "model_id": "siglip2-semantic-v1",
+ "version": "1.0.0",
+ "license": "Apache-2.0",
+ "onnx_path": "models/semantic/local/siglip2_vision.onnx",
+ "onnx_sha256": "6c62f18cf761ba250edce96ca4c1107c963655f7a9ad46f340fbfbbad76f25b4",
+ "anchors_path": "models/semantic/local/siglip2_anchors.npz",
+ "anchors_sha256": "6a6c033a175ff664c52c75f76f7c028497fb079f41440ebe593944bd8a8bece6",
+ "ev_weight": 0.5,
+ "z_scale": 0.6,
+ "sample_step": 2.0,
+ "warmup": 3,
+ "sd_floor_ev": 0.01,
+ "sd_floor_act": 0.02,
+ "ev_prior": null,
+ "act_prior": {
+  "mu": 0.1505,
+  "sd": 0.1966,
+  "n": 8.0
+ },
+ "notes": "Nedensel kamera-tabanlı SigLIP-z + activity-z. Üretim yolu ölçümü (2026-08-08, çalışma noktası st=0,60/ct=0,36): val 13/13 @ %65,6 (taban %81,0); feed doğrulaması project-state günlüğünde."
+}

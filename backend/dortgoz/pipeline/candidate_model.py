@@ -25,7 +25,7 @@ class CandidateModelManifest(BaseModel):
 
     model_id: str = Field(min_length=1)
     version: str = Field(min_length=1)
-    model_type: Literal["motion_baseline", "onnx_cnn", "temporal_cnn"]
+    model_type: Literal["motion_baseline", "onnx_cnn", "temporal_cnn", "siglip_semantic"]
     artifact_path: str = Field(min_length=1)
     artifact_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     license: Literal["Apache-2.0", "MIT"]
@@ -223,7 +223,33 @@ def load_candidate_scorer(manifest_path: Path) -> CandidateScorer:
         if artifact.license != manifest.license:
             raise ValueError("temporal CNN artifact lisansı manifest ile eşleşmiyor")
         return TemporalCnnCandidateModel(artifact)
+    if manifest.model_type == "siglip_semantic":
+        from .semantic import SemanticArtifact, SemanticCandidateModel
+
+        artifact = SemanticArtifact.model_validate(payload)
+        if artifact.model_id != manifest.model_id:
+            raise ValueError("semantic artifact model_id manifest ile eşleşmiyor")
+        if artifact.license != manifest.license:
+            raise ValueError("semantic artifact lisansı manifest ile eşleşmiyor")
+        repo_root = _find_repo_root(manifest_path.resolve())
+        return SemanticCandidateModel(
+            artifact,
+            onnx_file=_resolve_repo_file(repo_root, artifact.onnx_path),
+            anchors_file=_resolve_repo_file(repo_root, artifact.anchors_path),
+        )
     raise ValueError("onnx_cnn scorer için lisans doğrulanmış runtime adapter'i henüz kayıtlı değil")
+
+
+def _resolve_repo_file(repo_root: Path, ref: str) -> Path:
+    """Repo-relative dosya referansını path-safe çözer (artifact yolu kuralı)."""
+
+    rel = PurePosixPath(ref.replace("\\", "/"))
+    if rel.is_absolute() or ".." in rel.parts:
+        raise ValueError("semantic artifact dosya yolu repo kökü içinde olmalı")
+    resolved = (repo_root / rel).resolve()
+    if not resolved.is_relative_to(repo_root) or not resolved.is_file():
+        raise ValueError(f"semantic artifact dosyası bulunamadı: {ref}")
+    return resolved
 
 
 def _find_repo_root(start: Path) -> Path:

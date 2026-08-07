@@ -235,8 +235,22 @@ async def run_video(
                     await rec.emit(AgentStep(
                         node="perceive", status="error",
                         detail=f"aday model yüklenemedi, baseline'a dönüldü: {str(exc)[:80]}"))
+            # Anlamsal scorer kare akışı ister; hata koşuyu düşürmez, tabana döner
+            if hasattr(scorer, "score_video"):
+                try:
+                    screen_samples = await asyncio.to_thread(
+                        scorer.score_video, profile, path)
+                except Exception as exc:
+                    await rec.emit(AgentStep(
+                        node="perceive", status="error",
+                        detail=f"anlamsal screening düştü, baseline'a dönüldü: "
+                               f"{str(exc)[:80]}"))
+                    scorer = MotionBaselineModel()
+                    screen_samples = scorer.score(profile)
+            else:
+                screen_samples = scorer.score(profile)
             ivs = build_candidate_intervals(
-                scorer.score(profile), analysis_id=run_id, video_id=video,
+                screen_samples, analysis_id=run_id, video_id=video,
                 duration_seconds=duration,
                 model_id=getattr(scorer, "model_id",
                                  getattr(getattr(scorer, "artifact", None), "model_id", "?")),
