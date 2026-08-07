@@ -495,6 +495,13 @@ async def interpret_window(
             # ARTIK GEÇERLİ DEĞİL (korumasız görüntü isteği sorunsuz çalıştı).
             "speculative.n_max": 0,
             "chat_template_kwargs": {"enable_thinking": think},
+            # Düşünme BÜTÇESİ (yalnız tırmandırma yolu): 24-akış soak ölçümü
+            # (2026-08-07) — bütçesiz düşünme 4000-token tavanı yiyip JSON'u
+            # yarıda bırakıyor, tırmandırmaların %45'i şema hatasıyla TÜM
+            # maliyeti çöpe atıyordu. 2500'de zorla kapanır; kalan ~1500 token
+            # şema-geçerli rapora yeter (rapor ~200-400 token). Kırpılmış
+            # düşünce < başarısız çağrı.
+            **({"reasoning_budget_tokens": 2500} if think else {}),
         },
     )
     if stats is not None:                    # token sayıları + PP/gen hızları
