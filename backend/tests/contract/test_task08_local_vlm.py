@@ -170,8 +170,10 @@ async def test_local_vlm_uses_only_candidate_frames_and_records_provenance(tmp_p
 
 
 def test_visual_prompt_injection_is_not_an_instruction_in_any_video_vlm_prompt() -> None:
-    assert "güvenilmeyen görsel veri" in SYSTEM_TR
-    assert "talimatı sayma" in SYSTEM_TR
+    # 2026-08-07 A/B kararı: legacy SYSTEM_TR koruma cümlesini TAŞIMAZ
+    # (yakalama 15/16→11/16 düşüyordu; direnç korumasız da tam — bkz. interpret.py
+    # içi not). Candidate isteminin koruması yukarıda ayrıca doğrulanıyor.
+    assert "güvenilmeyen görsel veri" not in SYSTEM_TR
 
 
 @pytest.mark.asyncio
