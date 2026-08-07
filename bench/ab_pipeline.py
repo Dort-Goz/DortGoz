@@ -70,11 +70,24 @@ async def measure_clip(path: Path) -> dict:
         "duration": duration,
         "windows": [],
     }
+    # Pencere planı önden çıkarılır ki i. pencerenin VLM çağrısı beklenirken
+    # i+1'in kareleri arka planda ısınabilsin (GPU/ffmpeg örtüşmesi).
+    plan: list[tuple[float, float, float, list[float] | None]] = []
     for start, end in windowing.windows(duration, settings.window_seconds):
         peak = windowing.window_motion(profile, start, end)
-        rec = {"start": start, "end": end, "motion": peak, "gated": peak < settings.motion_gate}
+        keys = (None if peak < settings.motion_gate else
+                windowing.select_keyframes(profile, start, end, settings.keyframes_per_window))
+        plan.append((start, end, peak, keys))
+    live_keys = [k for (_, _, _, k) in plan if k]
+
+    live_idx = 0
+    for start, end, peak, keys in plan:
+        rec = {"start": start, "end": end, "motion": peak, "gated": keys is None}
         if not rec["gated"]:
-            keys = windowing.select_keyframes(profile, start, end, settings.keyframes_per_window)
+            ingest.prefetch_frames(path, keys)      # bakış + derin aynı görevleri paylaşır
+            if live_idx + 1 < len(live_keys):
+                ingest.prefetch_frames(path, live_keys[live_idx + 1])
+            live_idx += 1
 
             t0 = time.time()
             rec["glance_p"] = await glance_window(path, (start, end), keys[:2])

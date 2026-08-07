@@ -156,8 +156,8 @@ def adaptive_gate(profile: list[MotionSample], k: float = 4.0,
     return min(max(noise_floor(profile) * k, minimum), ceiling)
 
 
-async def grab_frame(video: Path, t: float, width: int = 512) -> bytes:
-    """`t` anındaki tek kareyi JPEG olarak döndürür (VLM istemine gömülür).
+async def _grab_frame_ffmpeg(video: Path, t: float, width: int) -> bytes:
+    """`t` anındaki tek kareyi ffmpeg'le çıkarır (önbelleksiz iç yol).
 
     Konteyner süresi akış süresinden uzun olabiliyor (UCF-Crime'da ölçüldü:
     RoadAccidents132 konteyner 62,34 sn / akış 62,07 sn) — son pencerenin karesi
@@ -177,3 +177,45 @@ async def grab_frame(video: Path, t: float, width: int = 512) -> bytes:
         except FFmpegError as exc:
             last_err = exc
     raise last_err or FFmpegError(f"kare alınamadı: t={t:.3f} {video.name}")
+
+
+# Kare görev-önbelleği: aynı kare hem bakış (keys[:2]) hem derin okuma, canlıda
+# 2. geçiş tarafından da çekiliyor — görevi paylaşmak kopya ffmpeg'leri teke
+# indirir. prefetch_frames ise bir SONRAKİ pencerenin karelerini VLM çağrısı
+# beklenirken arka planda çıkartır (GPU ve ffmpeg örtüşür; 2026-08-07 decode/PP
+# oturumunun istemci ayağı). Sınırlı LRU: kare ~50-100 KB, 128 giriş ≈ ≤13 MB.
+_frame_tasks: dict[tuple[str, float, int], asyncio.Task] = {}
+_FRAME_TASKS_MAX = 128
+
+
+def _frame_task(video: Path, t: float, width: int) -> asyncio.Task:
+    key = (str(video), round(t, 3), width)
+    task = _frame_tasks.pop(key, None)
+    loop = asyncio.get_running_loop()
+    stale = task is not None and (
+        (task.done() and (task.cancelled() or task.exception() is not None))
+        or (not task.done() and task.get_loop() is not loop)  # ör. test koşuları arası
+    )
+    if task is None or stale:
+        task = loop.create_task(_grab_frame_ffmpeg(video, t, width))
+        # sonucu hiç beklenmeden düşen görev "exception never retrieved"
+        # gürültüsü üretmesin; bekleyenler istisnayı yine alır
+        task.add_done_callback(
+            lambda tk: tk.exception() if not tk.cancelled() else None)
+    _frame_tasks[key] = task  # yeniden ekleme = LRU tazeleme
+    while len(_frame_tasks) > _FRAME_TASKS_MAX:
+        _frame_tasks.pop(next(iter(_frame_tasks)))
+    return task
+
+
+def prefetch_frames(video: Path, ts: list[float], width: int = 512) -> None:
+    """Kareleri arka planda çıkarmaya başlar (beklemez); sonradan gelen
+    grab_frame aynı görevi bulur ve hazırsa anında döner."""
+    for t in ts:
+        _frame_task(video, t, width)
+
+
+async def grab_frame(video: Path, t: float, width: int = 512) -> bytes:
+    """`t` anındaki tek kareyi JPEG olarak döndürür (VLM istemine gömülür)."""
+    # shield: paylaşılan görevi tek bir bekleyenin iptali öldürmemeli
+    return await asyncio.shield(_frame_task(video, t, width))

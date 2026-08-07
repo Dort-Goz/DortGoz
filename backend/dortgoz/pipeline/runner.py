@@ -276,6 +276,15 @@ async def run_video(
                 keyframes = windowing.select_keyframes(
                     profile, start, end, settings.keyframes_per_window
                 )
+                # Bu pencerenin VLM çağrısı beklenirken bir SONRAKİ canlı
+                # pencerenin kareleri arka planda çıkarılır (GPU/ffmpeg
+                # örtüşmesi; defter sırası değişmez — yalnız G/Ç ısınması)
+                ingest.prefetch_frames(path, keyframes)
+                for nstart, nend in wins[idx + 1:]:
+                    if windowing.window_motion(profile, nstart, nend) >= gate:
+                        ingest.prefetch_frames(path, windowing.select_keyframes(
+                            profile, nstart, nend, settings.keyframes_per_window))
+                        break
                 call: dict = {}
                 try:
                     report = await interpret_window(
