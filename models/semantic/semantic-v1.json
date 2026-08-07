@@ -1,11 +1,11 @@
 {
  "model_id": "siglip2-semantic-v1",
- "version": "1.0.0",
+ "version": "1.1.0",
  "license": "Apache-2.0",
  "onnx_path": "models/semantic/local/siglip2_vision.onnx",
  "onnx_sha256": "6c62f18cf761ba250edce96ca4c1107c963655f7a9ad46f340fbfbbad76f25b4",
  "anchors_path": "models/semantic/local/siglip2_anchors.npz",
- "anchors_sha256": "6a6c033a175ff664c52c75f76f7c028497fb079f41440ebe593944bd8a8bece6",
+ "anchors_sha256": "329512896b800078170b76031e777ffc21ad61a7d69feaf456261eeb97df6c82",
  "ev_weight": 0.5,
  "z_scale": 0.6,
  "sample_step": 2.0,

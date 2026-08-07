@@ -27,13 +27,15 @@ OUT = ROOT / "models" / "semantic"
 LOCAL = OUT / "local"
 
 MODEL_ID = "google/siglip2-base-patch16-224"
+# Çapa süpürmesi 2026-08-08 (rapor §9.4): 18'lik havuzdan eğitim-kliplerinde
+# ileri-greedy seçim; val+feed doğrulaması TAM recall @ ~%40 kapsama (st=0,80).
+# Az ve keskin çapa = daha temiz nedensel taban (6'lı genel set %65 kapsamadaydı;
+# birleşim-10 ÖLÇÜMLE daha kötü — çapa eklemek bedava değil).
 EVENT_ANCHORS = [
-    "people fighting or attacking each other",
     "a fire, smoke or an explosion",
-    "a person breaking into or stealing from a car or building",
-    "a traffic accident or vehicle crash",
-    "a person lying on the ground",
-    "an armed robbery or a person with a weapon",
+    "a person snatching a bag and running away",
+    "a person smashing or damaging property",
+    "people running away in panic",
 ]
 NORMAL_ANCHORS = [
     "people walking normally on a street",
@@ -124,7 +126,7 @@ def write_metadata() -> None:
     anchors_file = LOCAL / "siglip2_anchors.npz"
     artifact = {
         "model_id": "siglip2-semantic-v1",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "license": "Apache-2.0",
         "onnx_path": "models/semantic/local/siglip2_vision.onnx",
         "onnx_sha256": sha256(onnx_file),
@@ -140,7 +142,7 @@ def write_metadata() -> None:
                              encoding="utf-8")
     manifest = {
         "model_id": "siglip2-semantic-v1",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "model_type": "siglip_semantic",
         "artifact_path": "models/semantic/semantic-v1.json",
         "artifact_sha256": sha256(artifact_file),
@@ -148,8 +150,8 @@ def write_metadata() -> None:
         "input_fps": 0.5,
         "feature_schema": ["siglip2_event_sim", "activity"],
         "notes": "Etkinleştirme: DORTGOZ_CANDIDATE_MODEL_MANIFEST=models/semantic/manifest.json "
-                 "+ DORTGOZ_CANDIDATE_START_THRESHOLD=0.60 "
-                 "DORTGOZ_CANDIDATE_CONTINUE_THRESHOLD=0.36",
+                 "+ DORTGOZ_CANDIDATE_START_THRESHOLD=0.80 "
+                 "DORTGOZ_CANDIDATE_CONTINUE_THRESHOLD=0.48",
     }
     (OUT / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")

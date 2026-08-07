@@ -1,14 +1,14 @@
 {
  "model_id": "siglip2-semantic-v1",
- "version": "1.0.0",
+ "version": "1.1.0",
  "model_type": "siglip_semantic",
  "artifact_path": "models/semantic/semantic-v1.json",
- "artifact_sha256": "3dc8f0dda322dfd48132ba283fb3d5eea61c44d925105da3b38a645e263e86d9",
+ "artifact_sha256": "4ef8f8a6073ad71a3b205139e3794d960c929187e0ae623399ad7163f10563b5",
  "license": "Apache-2.0",
  "input_fps": 0.5,
  "feature_schema": [
   "siglip2_event_sim",
   "activity"
  ],
- "notes": "Etkinleştirme: DORTGOZ_CANDIDATE_MODEL_MANIFEST=models/semantic/manifest.json + DORTGOZ_CANDIDATE_START_THRESHOLD=0.60 DORTGOZ_CANDIDATE_CONTINUE_THRESHOLD=0.36"
+ "notes": "Etkinleştirme: DORTGOZ_CANDIDATE_MODEL_MANIFEST=models/semantic/manifest.json + DORTGOZ_CANDIDATE_START_THRESHOLD=0.80 DORTGOZ_CANDIDATE_CONTINUE_THRESHOLD=0.48"
 }
