@@ -164,6 +164,19 @@ class Settings(BaseSettings):
             return value.resolve()
         return (Path(__file__).resolve().parents[2] / value).resolve()
 
+    @field_validator("candidate_model_manifest", mode="after")
+    @classmethod
+    def resolve_candidate_model_manifest(cls, value: str) -> str:
+        """Göreli scorer-manifest yolu CWD'ye değil repo köküne göre çözülür.
+
+        (2026-08-08 soak bulgusu: backend/ CWD'sinden başlatılan süreçte
+        .env'deki göreli yol yüklenemiyor, koşu sessizce tabana düşüyordu.)
+        """
+
+        if not value or Path(value).is_absolute():
+            return value
+        return str((Path(__file__).resolve().parents[2] / value).resolve())
+
     @field_validator("vlm_manifest_path", mode="after")
     @classmethod
     def resolve_vlm_manifest_path(cls, value: Path | None) -> Path | None:

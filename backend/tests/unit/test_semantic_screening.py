@@ -120,6 +120,18 @@ def test_score_without_frames_is_refused() -> None:
         model.score([])
 
 
+def test_relative_model_manifest_resolves_to_repo_root(monkeypatch) -> None:
+    """Göreli DORTGOZ_CANDIDATE_MODEL_MANIFEST, CWD'den bağımsız çözülmeli."""
+    from dortgoz.config import Settings
+
+    monkeypatch.setenv("DORTGOZ_CANDIDATE_MODEL_MANIFEST", "models/semantic/manifest.json")
+    resolved = Settings().candidate_model_manifest
+    assert Path(resolved).is_absolute()
+    assert resolved.endswith("models/semantic/manifest.json")
+    monkeypatch.setenv("DORTGOZ_CANDIDATE_MODEL_MANIFEST", "")
+    assert Settings().candidate_model_manifest == ""
+
+
 def test_manifest_loads_semantic_scorer(tmp_path: Path) -> None:
     from dortgoz.pipeline.candidate_model import load_candidate_scorer
 
