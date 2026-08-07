@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -82,9 +83,82 @@ class Settings(BaseSettings):
     detector_rescue_conf: float = 0.25
     detector_samples: int = 4        # pencere başına örneklenen kare
 
+    # Yeni kontrollü agent dikeyinin güvenlik sınırları. Bunlar policy içinde
+    # sabit yazılmaz; DORTGOZ_* ortam değişkenleriyle kontrollü değiştirilebilir.
+    video_max_bytes: int = 2 * 1024 * 1024 * 1024
+    max_agent_steps: int = 14
+    max_vlm_attempts: int = 2
+    max_context_expansions: int = 1
+    max_dense_analyses: int = 1
+    quality_min: float = 0.35
+    medium_candidate_score: float = 0.45
+    high_candidate_score: float = 0.70
+    critical_candidate_score: float = 0.85
+    cv_only_confidence: float = 0.92
+    vlm_confirm_confidence: float = 0.80
+    vlm_reject_confidence: float = 0.80
+
+    # Görev 07 candidate interval baseline. Learned model geldiğinde aynı
+    # threshold sözleşmesi validation/calibration çıktısından beslenir.
+    candidate_start_threshold: float = 0.65
+    candidate_continue_threshold: float = 0.40
+    candidate_end_patience: int = 3
+    candidate_merge_gap_seconds: float = 2.0
+    candidate_min_duration_seconds: float = 0.5
+    candidate_threshold_version: str = "candidate-thresholds-v1"
+
+    # Görev 08: gerçek VLM yalnız explicit, hash-doğrulanmış local manifest ile
+    # açılır. Mock modda bu profil isteği reddedilir.
+    vlm_manifest_path: Path | None = None
+    vlm_timeout_seconds: float = 90.0
+    vlm_context_clip_timeout_seconds: float = 90.0
+    vlm_context_before_seconds: float = 8.0
+    vlm_context_after_seconds: float = 8.0
+
     # Yollar
     media_dir: Path = Path(__file__).resolve().parents[2] / "media"
     runs_dir: Path = Path(__file__).resolve().parents[2] / "runs"
+    candidate_cache_dir: Path = Path(__file__).resolve().parents[2] / "cache" / "candidate"
+    candidate_manifest_path: Path = (
+        Path(__file__).resolve().parents[2] / "models" / "candidate" / "manifest.json"
+    )
+    # Varsayılan bellek adapter'ı test/mock sadeliği için süreç içidir. Docker/
+    # offline dağıtım bu yolu ayarlayarak restart sonrası SQLite kalıcılığı açar.
+    event_store_path: Path | None = None
+
+    @field_validator("vlm_manifest_path", "event_store_path", mode="before")
+    @classmethod
+    def blank_path_is_unset(cls, value: object) -> object:
+        """Compose'taki boş opsiyonel env değeri sahte ``Path('.')`` olmasın."""
+
+        return None if value is None or value == "" else value
+
+    @field_validator("candidate_manifest_path", mode="after")
+    @classmethod
+    def resolve_candidate_manifest_path(cls, value: Path) -> Path:
+        """Env'den gelen göreli manifest yolunu repository köküne sabitler."""
+
+        if value.is_absolute():
+            return value.resolve()
+        return (Path(__file__).resolve().parents[2] / value).resolve()
+
+    @field_validator("vlm_manifest_path", mode="after")
+    @classmethod
+    def resolve_vlm_manifest_path(cls, value: Path | None) -> Path | None:
+        if value is None:
+            return None
+        if value.is_absolute():
+            return value.resolve()
+        return (Path(__file__).resolve().parents[2] / value).resolve()
+
+    @field_validator("event_store_path", mode="after")
+    @classmethod
+    def resolve_event_store_path(cls, value: Path | None) -> Path | None:
+        if value is None:
+            return None
+        if value.is_absolute():
+            return value.resolve()
+        return (Path(__file__).resolve().parents[2] / value).resolve()
 
     model_config = {
         "env_prefix": "DORTGOZ_",

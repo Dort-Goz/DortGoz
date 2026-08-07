@@ -3,7 +3,12 @@
 import json
 
 from dortgoz.pipeline.interpret import (
-    _to_report, repair_truncated_json, report_schema, review_schema, tier_schema)
+    _to_report,
+    repair_truncated_json,
+    report_schema,
+    review_schema,
+    tier_schema,
+)
 
 
 def test_report_schema_is_flat_and_strict():

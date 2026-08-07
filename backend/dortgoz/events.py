@@ -8,7 +8,7 @@ değiştiren diğerini de değiştirir (bkz. docs/interface_design.md).
 from __future__ import annotations
 
 import time
-from typing import Any, Literal, Union
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -136,10 +136,17 @@ class RunStatus(BaseModel):
     video: str = ""
 
 
-Payload = Union[
-    WindowReport, AgentStep, ToolCall, IncidentUpdate,
-    ActuatorRequest, ActuatorResult, ChatMessage, UICommand, RunStatus,
-]
+Payload = (
+    WindowReport
+    | AgentStep
+    | ToolCall
+    | IncidentUpdate
+    | ActuatorRequest
+    | ActuatorResult
+    | ChatMessage
+    | UICommand
+    | RunStatus
+)
 
 
 class Event(BaseModel):
@@ -156,7 +163,7 @@ class Event(BaseModel):
     payload: Payload = Field(discriminator="type")
 
     @staticmethod
-    def wrap(payload: Payload, seq: int = 0, feed: str = "") -> "Event":
+def wrap(payload: Payload, seq: int = 0, feed: str = "") -> Event:
         return Event(seq=seq, feed=feed, payload=payload)
 
 

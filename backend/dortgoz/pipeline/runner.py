@@ -102,7 +102,7 @@ def perf_text(call: dict, n_ctx: int | None) -> str:
     return " · " + " · ".join(bits) if bits else ""
 
 
-async def review_if_closed(rec: "RunRecorder", ledger: Ledger, path: Path,
+async def review_if_closed(rec: RunRecorder, ledger: Ledger, path: Path,
                            profile: list[float], update, model: str) -> None:
     """Olay KAPANDIĞINDA tüm aralığı tek bağlamda yeniden okur ve kartı düzeltir.
 

@@ -8,19 +8,48 @@ yeniden oynatılır — GPU/model olmadan uçtan uca arayüz geliştirme.
 from __future__ import annotations
 
 import asyncio
+import uuid
 from pathlib import Path
 
-import uuid
-
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from .api.errors import (
+    domain_exception_handler,
+    http_exception_handler,
+    validation_exception_handler,
+)
+from .api.router import router as api_router
+from .api.router import runtime as api_runtime
 from .config import settings
+from .domain.video import VideoIngestError
 from .events import ActuatorResult, ChatMessage, Event, OperatorMessage, RunStatus
+from .repositories.errors import (
+    RepositoryConflictError,
+    RepositoryDuplicateError,
+    RepositoryError,
+    RepositoryNotFoundError,
+)
 from .ws import ConnectionManager, replay_jsonl
 
 app = FastAPI(title="Dörtgöz", version="0.1.0")
 manager = ConnectionManager()
+
+app.include_router(api_router)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+for _error_type in (
+    VideoIngestError,
+    RepositoryError,
+    RepositoryNotFoundError,
+    RepositoryDuplicateError,
+    RepositoryConflictError,
+):
+    app.add_exception_handler(_error_type, domain_exception_handler)
+app.add_exception_handler(Exception, domain_exception_handler)
 
 MOCK_EVENTS = Path(__file__).parent / "mock" / "sample_events.jsonl"
 
@@ -40,6 +69,58 @@ def _active_runs() -> int:
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok", "mock": settings.mock}
+
+
+@app.get("/ready")
+async def readiness() -> JSONResponse:
+    """Yerel deployment bağımlılıklarını ayrı ayrı gösteren hazır olma kapısı.
+
+    Bu uç model endpoint'ine ağ isteği yapmaz: air-gapped ortamda yanlışlıkla dış
+    egress başlatmak yerine manifest/yapılandırma hazırlığını raporlar. Gerçek
+    profil, ilk candidate çağrısında ayrıca dosya hash'ini denetler.
+    """
+
+    storage_ready = True
+    storage_detail = "ok"
+    try:
+        settings.media_dir.mkdir(parents=True, exist_ok=True)
+        settings.runs_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        storage_ready = False
+        storage_detail = f"{type(exc).__name__}: {exc}"
+
+    event_store_path = settings.event_store_path
+    event_store = {
+        "ready": True,
+        "mode": getattr(api_runtime.repository, "persistence_mode", "memory"),
+        "path": str(event_store_path) if event_store_path is not None else None,
+    }
+    if settings.mock:
+        model = {"ready": True, "mode": "mock", "endpoint_checked": False}
+    elif settings.vlm_manifest_path is None:
+        model = {
+            "ready": False,
+            "mode": "local_vlm",
+            "detail": "DORTGOZ_VLM_MANIFEST_PATH ayarlanmadı",
+            "endpoint_checked": False,
+        }
+    else:
+        model = {
+            "ready": settings.vlm_manifest_path.is_file(),
+            "mode": "local_vlm",
+            "manifest_path": str(settings.vlm_manifest_path),
+            "endpoint_checked": False,
+        }
+    components = {
+        "storage": {"ready": storage_ready, "detail": storage_detail},
+        "event_store": event_store,
+        "model": model,
+    }
+    ready = all(component["ready"] for component in components.values())
+    return JSONResponse(
+        status_code=200 if ready else 503,
+        content={"status": "ready" if ready else "not_ready", "components": components},
+    )
 
 
 @app.get("/api/runs")
@@ -167,7 +248,7 @@ async def start_run(msg: OperatorMessage) -> None:
         ), feed=feed))
         return
 
-    from .pipeline.runner import run_video      # geç import: mock modda gerekmez
+    from .pipeline.runner import run_video  # geç import: mock modda gerekmez
 
     run_id = f"{Path(msg.video).stem}-{uuid.uuid4().hex[:6]}"
     _run_tasks[feed] = asyncio.create_task(run_video(

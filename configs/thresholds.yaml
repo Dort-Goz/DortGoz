@@ -1,0 +1,10 @@
+# Dörtgöz candidate interval sözleşmesi (Task 07 baseline)
+# Learned scorer geldiğinde eşikler validation bölmesinde kalibre edilir.
+candidate:
+  start_threshold: 0.65
+  continue_threshold: 0.40
+  end_patience: 3
+  merge_gap_seconds: 2.0
+  min_duration_seconds: 0.5
+  threshold_version: candidate-thresholds-v1
+

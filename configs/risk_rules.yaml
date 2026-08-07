@@ -1,0 +1,12 @@
+{
+  "version": "risk-rules-v1",
+  "low_confidence_threshold": 0.8,
+  "rules": [
+    {"rule_id": "RSK-FIRE", "event_types": ["fire_smoke"], "level": "critical", "reason": "Yangın veya duman işareti acil insan değerlendirmesi gerektirir.", "priority": 100},
+    {"rule_id": "RSK-COLLISION", "event_types": ["vehicle_collision"], "level": "critical", "reason": "Araç çarpışması işareti acil insan değerlendirmesi gerektirir.", "priority": 100},
+    {"rule_id": "RSK-ASSAULT", "event_types": ["assault", "physical_fight"], "level": "high", "reason": "Doğrulanmış fiziksel çatışma operatör değerlendirmesi gerektirir.", "priority": 80},
+    {"rule_id": "RSK-FALL", "event_types": ["fall", "person_on_ground"], "level": "high", "reason": "Düşme veya yerde kişi işareti operatör değerlendirmesi gerektirir.", "priority": 80},
+    {"rule_id": "RSK-TECHNICAL", "event_types": ["camera_blackout", "camera_freeze", "camera_occlusion"], "level": "medium", "reason": "Kamera sürekliliği bozulduğu için saha doğrulaması gerekir.", "priority": 50},
+    {"rule_id": "RSK-UNKNOWN", "event_types": ["unknown_anomaly"], "level": "medium", "reason": "Bilinmeyen anomali için insan değerlendirmesi gerekir.", "priority": 40}
+  ]
+}
