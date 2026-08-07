@@ -203,10 +203,13 @@ def train_and_write_temporal_cnn(
         artifact_license=artifact_license,
     )
     validation_metrics = evaluate_temporal_cnn(model, validation_examples)
-    if validation_metrics.recall_at_half < min_validation_recall:
+    # Kabul ölçütü ARALIK-düzeyi olay recall'u (mimarinin sözleşmesi) —
+    # örnek-düzeyi recall@0.5 yüksek-recall interval screener için yanlış
+    # kapıydı (2026-08-07 ölçümü; ayrıntı temporal_cnn.py notları).
+    if validation_metrics.interval_event_recall < min_validation_recall:
         raise ValueError(
-            "validation recall kabul eşiğinin altında: "
-            f"{validation_metrics.recall_at_half:.3f} < {min_validation_recall:.3f}"
+            "validation ARALIK olay-recall'u kabul eşiğinin altında: "
+            f"{validation_metrics.interval_event_recall:.3f} < {min_validation_recall:.3f}"
         )
     return write_temporal_cnn(
         output_dir,
@@ -263,7 +266,8 @@ def _is_safe_reference(value: str) -> bool:
 
 
 def _metrics_payload(metrics: object) -> str:
-    fields = ("sample_count", "positive_count", "mean_loss", "recall_at_half", "false_positive_rate_at_half")
+    fields = ("sample_count", "positive_count", "mean_loss", "recall_at_half",
+              "false_positive_rate_at_half", "interval_event_recall")
     return json.dumps({field: getattr(metrics, field) for field in fields}, separators=(",", ":"))
 
 
@@ -284,7 +288,8 @@ def main() -> None:
     parser.add_argument("--base-fps", type=float, default=1.0)
     parser.add_argument("--kernel-size", type=int, default=3)
     parser.add_argument("--epochs", type=int, default=80)
-    parser.add_argument("--learning-rate", type=float, default=0.35)
+    # 0.35 sınıf-ağırlıklı güncellemelerle ıraksıyor; 0.05 ölçülü varsayılan
+    parser.add_argument("--learning-rate", type=float, default=0.05)
     parser.add_argument("--l2", type=float, default=0.0001)
     parser.add_argument("--seed", type=int, default=20260806)
     parser.add_argument("--artifact-license", choices=("Apache-2.0", "MIT"))

@@ -22,7 +22,7 @@ from ..config import settings
 from ..events import AgentStep, Event, RunStatus, WindowReport
 from ..ws import ConnectionManager
 from . import ingest, interpret, perception, windowing
-from .candidate_intervals import IntervalConfig
+from .candidate_intervals import IntervalConfig, build_candidate_intervals
 from .candidate_model import MotionBaselineModel
 from .interpret import SYSTEM_TR, TASK_TR, interpret_window
 
@@ -227,10 +227,20 @@ async def run_video(
         cand_spans: list[tuple[float, float]] | None = None
         if settings.candidate_screening and not settings.dynamic_windows:
             scorer = MotionBaselineModel()
-            ivs = scorer.candidates(
-                profile, analysis_id=run_id, video_id=video,
+            if settings.candidate_model_manifest:
+                try:
+                    from .candidate_model import load_candidate_scorer
+                    scorer = load_candidate_scorer(Path(settings.candidate_model_manifest))
+                except Exception as exc:   # hatalı manifest koşuyu düşürmez — tabana dön
+                    await rec.emit(AgentStep(
+                        node="perceive", status="error",
+                        detail=f"aday model yüklenemedi, baseline'a dönüldü: {str(exc)[:80]}"))
+            ivs = build_candidate_intervals(
+                scorer.score(profile), analysis_id=run_id, video_id=video,
                 duration_seconds=duration,
-                interval_config=IntervalConfig(
+                model_id=getattr(scorer, "model_id",
+                                 getattr(getattr(scorer, "artifact", None), "model_id", "?")),
+                config=IntervalConfig(
                     start_threshold=settings.candidate_start_threshold,
                     continue_threshold=settings.candidate_continue_threshold,
                     end_patience=settings.candidate_end_patience,
@@ -240,9 +250,11 @@ async def run_video(
                 ))
             cand_spans = [(iv.start_time, iv.end_time) for iv in ivs]
             cov = sum(b - a for a, b in cand_spans)
+            scorer_id = getattr(scorer, "model_id",
+                                getattr(getattr(scorer, "artifact", None), "model_id", "?"))
             await rec.emit(AgentStep(
                 node="perceive", status="end",
-                detail=f"aday screening ({scorer.model_id}): {len(cand_spans)} aralık, "
+                detail=f"aday screening ({scorer_id}): {len(cand_spans)} aralık, "
                        f"kapsama %{100 * cov / max(duration, 1e-9):.0f} — aday dışı "
                        f"pencereler dedektör kurtarması hariç atlanacak"))
 

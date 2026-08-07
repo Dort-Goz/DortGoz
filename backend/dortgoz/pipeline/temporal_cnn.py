@@ -113,6 +113,11 @@ class TemporalCnnTrainingMetrics:
     mean_loss: float
     recall_at_half: float
     false_positive_rate_at_half: float
+    # Mimarinin gerçek sözleşmesi: histerezisli aralık kurucusundan geçen
+    # ADAY ARALIKLARIN GT olaylarını yakalama oranı. Örnek-düzeyi recall@0.5
+    # yüksek-recall interval screener için yanlış kabul ölçütüydü (2026-08-07:
+    # örnek-recall 0.16 iken aralık-recall 19/19 ölçüldü).
+    interval_event_recall: float = 0.0
 
 
 def train_temporal_cnn(
@@ -160,15 +165,25 @@ def train_temporal_cnn(
         for _ in range(kernel_size)
     ]
     bias = 0.0
+    # 2026-08-07 düzeltmeleri (ölçümle): (a) SINIF AĞIRLIĞI — örneklerin ~%93'ü
+    # negatif; ağırlıksız SGD veri/özellikten bağımsız hiç-ateşleme'ye çöküyordu
+    # (val recall 0.000-0.028). (b) EPOK-BAŞI KARIŞTIRMA — klip-sıralı gezinti
+    # son kliplerin lehine yamultuyordu. İkisiyle birlikte aynı model soak
+    # GT'sinde 19/19 aralık-recall / %47 kapsama verdi (taban: %52-68).
+    n_pos = sum(1 for _, _, label in samples if label)
+    w_pos = (len(samples) - n_pos) / max(n_pos, 1)
+    order = list(range(len(samples)))
     for _ in range(epochs):
-        for profile, index, label in samples:
+        rng.shuffle(order)
+        for sample_index in order:
+            profile, index, label = samples[sample_index]
             values = _window(profile, index, kernel_size)
             logit = bias + sum(
                 weight * value
                 for row, row_values in zip(weights, values)
                 for weight, value in zip(row, row_values)
             )
-            error = _sigmoid(logit) - float(label)
+            error = (_sigmoid(logit) - float(label)) * (w_pos if label else 1.0)
             for row, row_values in zip(weights, values):
                 for feature_index, value in enumerate(row_values):
                     row[feature_index] -= learning_rate * (
@@ -217,12 +232,29 @@ def evaluate_temporal_cnn(
           + (0.0 if label else 1.0) * _log_safe(1.0 - score))
         for label, score in labels_and_scores
     ) / len(labels_and_scores)
+    # aralık-düzeyi olay recall'u: skorlar histerezisli aralık kurucusundan
+    # geçirilir, GT aralıklarının kaçı bir adayla kesişiyor sayılır
+    from .candidate_intervals import IntervalConfig, build_candidate_intervals
+    ev_total = ev_hit = 0
+    for example in examples:
+        if not example.positive_intervals:
+            continue
+        duration = example.profile[-1].t + 1.0 if example.profile else 0.0
+        ivs = build_candidate_intervals(
+            model.score(example.profile), analysis_id="eval",
+            video_id=example.video_id, duration_seconds=max(duration, 1.0),
+            model_id=model.artifact.model_id, config=IntervalConfig())
+        for g0, g1 in example.positive_intervals:
+            ev_total += 1
+            ev_hit += any(iv.start_time <= g1 and iv.end_time >= g0 for iv in ivs)
+
     return TemporalCnnTrainingMetrics(
         sample_count=len(labels_and_scores),
         positive_count=positives,
         mean_loss=loss,
         recall_at_half=true_positive / positives if positives else 0.0,
         false_positive_rate_at_half=false_positive / negatives if negatives else 0.0,
+        interval_event_recall=ev_hit / ev_total if ev_total else 0.0,
     )
 
 

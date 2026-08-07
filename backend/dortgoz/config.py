@@ -106,6 +106,15 @@ class Settings(BaseSettings):
     # Ölçülen taban (5 soak feed): varsayılan eşikte GT recall 19/19, kapsama
     # %67,9 ⇒ ~%32 VLM tasarrufu. 0 = kapalı (eski davranış).
     candidate_screening: bool = True
+    # Screening skorlayıcısı: boş = MotionBaselineModel (el-ayarı; ölçüldü:
+    # soak GT 19/19 @ %67,9 kapsama, held-out UCF aralık olay-recall'u 0,846).
+    # Eğitilmiş temporal CNN DENENDİ ve dürüst kapı REDDETTİ (2026-08-07):
+    # düzeltilmiş eğiticiyle soak feed'lerinde 19/19 @ %47 görünse de held-out
+    # kliplerde aralık olay-recall'u 0,077 — model olayı değil YOĞUNLUĞU
+    # öğreniyor; feed sonucu olayların hareketli kesitlere gömülü olmasının
+    # artefaktı. Kapıyı (0.95 aralık-recall) geçen bir model gelirse manifest
+    # yolu buraya verilir; yükleme hash-doğrulamalı (load_candidate_scorer).
+    candidate_model_manifest: str = ""
     candidate_start_threshold: float = 0.65
     candidate_continue_threshold: float = 0.40
     candidate_end_patience: int = 3
