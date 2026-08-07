@@ -100,6 +100,12 @@ class Settings(BaseSettings):
 
     # Görev 07 candidate interval baseline. Learned model geldiğinde aynı
     # threshold sözleşmesi validation/calibration çıktısından beslenir.
+    # HİBRİT (2026-08-07): Bengisu'nun aday-aralık screening'i ana koşucuda
+    # ön-kapı olarak çalışır — aday KAPSAMAYAN pencere derin okunmaz; dedektör
+    # kurtarması (rescue_persons) hareket-görünmez sınıf için emniyet ağı kalır.
+    # Ölçülen taban (5 soak feed): varsayılan eşikte GT recall 19/19, kapsama
+    # %67,9 ⇒ ~%32 VLM tasarrufu. 0 = kapalı (eski davranış).
+    candidate_screening: bool = True
     candidate_start_threshold: float = 0.65
     candidate_continue_threshold: float = 0.40
     candidate_end_patience: int = 3

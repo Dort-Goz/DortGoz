@@ -22,6 +22,8 @@ from ..config import settings
 from ..events import AgentStep, Event, RunStatus, WindowReport
 from ..ws import ConnectionManager
 from . import ingest, interpret, perception, windowing
+from .candidate_intervals import IntervalConfig
+from .candidate_model import MotionBaselineModel
 from .interpret import SYSTEM_TR, TASK_TR, interpret_window
 
 THUMB_DIR = "_thumbs"       # media/ altında; /media mount'u üzerinden servis edilir
@@ -48,6 +50,12 @@ def resolve_media(video: str) -> Path:
     if not path.is_file():
         raise FileNotFoundError(f"video bulunamadı: {video}")
     return path
+
+
+def screening_covers(start: float, end: float,
+                     spans: list[tuple[float, float]]) -> bool:
+    """Pencere herhangi bir aday aralıkla kesişiyor mu (hibrit ön-kapı)."""
+    return any(a < end and b > start for a, b in spans)
 
 
 class RunRecorder:
@@ -210,6 +218,34 @@ async def run_video(
         else:
             wins = windowing.windows(duration, settings.window_seconds)
 
+        # HİBRİT ÖN-KAPI (2026-08-07, Bengisu'nun screening'i ana hatta):
+        # aday-aralık KAPSAMAYAN pencere derin okunmaz; dedektör kurtarması
+        # (rescue_persons) hareket-görünmez sınıf için emniyet ağı kalır.
+        # Ölçülen taban: 5 soak feed'inde GT recall 19/19, kapsama %67,9
+        # (varsayılan eşikler) ⇒ ~%32 VLM tasarrufu. dynamic_windows zaten
+        # ölü bölge atladığı için o kipte screening uygulanmaz.
+        cand_spans: list[tuple[float, float]] | None = None
+        if settings.candidate_screening and not settings.dynamic_windows:
+            scorer = MotionBaselineModel()
+            ivs = scorer.candidates(
+                profile, analysis_id=run_id, video_id=video,
+                duration_seconds=duration,
+                interval_config=IntervalConfig(
+                    start_threshold=settings.candidate_start_threshold,
+                    continue_threshold=settings.candidate_continue_threshold,
+                    end_patience=settings.candidate_end_patience,
+                    merge_gap_seconds=settings.candidate_merge_gap_seconds,
+                    min_duration_seconds=settings.candidate_min_duration_seconds,
+                    threshold_version=settings.candidate_threshold_version,
+                ))
+            cand_spans = [(iv.start_time, iv.end_time) for iv in ivs]
+            cov = sum(b - a for a, b in cand_spans)
+            await rec.emit(AgentStep(
+                node="perceive", status="end",
+                detail=f"aday screening ({scorer.model_id}): {len(cand_spans)} aralık, "
+                       f"kapsama %{100 * cov / max(duration, 1e-9):.0f} — aday dışı "
+                       f"pencereler dedektör kurtarması hariç atlanacak"))
+
         n_ctx = await context_size(effective_model)   # bağlam doluluğu için (bir kez)
         det_enabled = settings.detector_enabled       # ağırlık yoksa koşuda kapanır
         prev_end = 0.0
@@ -243,17 +279,22 @@ async def run_video(
                         detail=f"{start:.0f}-{end:.0f} sn algı hatası: {str(exc)[:100]}"))
 
             gated = not settings.dynamic_windows and peak < gate
+            screened_out = bool(cand_spans is not None
+                                and not screening_covers(start, end, cand_spans))
             # KURTARMA yalnız KİŞİ ile: park etmiş araç her ölü pencereyi
             # kurtarır ve kapı işlevsiz kalırdı; hareket eden araç zaten
             # hareket kapısından geçer. Hedef boşluk: "yerde hareketsiz kişi"
             # (kare farkı için görünmez — 2026-08-03 mimari sonucu, ölçülmüştü).
-            rescued = bool(gated and percep and percep.rescue_persons)
-            if gated and not rescued:
-                # Sert eleme yalnız burada: hareketsiz VE insansız pencere
-                # VLM'e hiç gitmez
+            # Aynı emniyet ağı hibrit screening'in de arkasında durur.
+            rescued = bool((gated or screened_out) and percep and percep.rescue_persons)
+            if (gated or screened_out) and not rescued:
+                # Sert eleme yalnız burada: (hareketsiz YA DA aday-dışı) VE
+                # insansız pencere VLM'e hiç gitmez
+                reason = (f"etkinlik {peak:.4f} < {gate:.4f}" if gated
+                          else "aday-aralık dışı (screening)")
                 await rec.emit(AgentStep(
                     node="interpret", status="end",
-                    detail=f"{start:.0f}-{end:.0f} sn atlandı (etkinlik {peak:.4f} < {gate:.4f}"
+                    detail=f"{start:.0f}-{end:.0f} sn atlandı ({reason}"
                            + (", dedektör: insan yok" if percep is not None else "")
                            + ")",
                 ))
