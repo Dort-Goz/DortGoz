@@ -55,8 +55,8 @@ def test_temporal_cnn_trains_and_scores_positive_interval_higher() -> None:
 
 
 def test_temporal_cnn_manifest_hash_loads_local_scorer(tmp_path: Path) -> None:
-    (tmp_path / "PROJECT_SPEC.md").write_text("fixture", encoding="utf-8")
     (tmp_path / "backend").mkdir()
+    (tmp_path / "backend" / "pyproject.toml").write_text("fixture", encoding="utf-8")
     model_dir = tmp_path / "models" / "candidate" / "local" / "fixture"
     model_dir.mkdir(parents=True)
     artifact = TemporalCnnArtifact(

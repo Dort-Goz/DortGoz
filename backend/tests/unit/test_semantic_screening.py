@@ -136,8 +136,8 @@ def test_manifest_loads_semantic_scorer(tmp_path: Path) -> None:
     from dortgoz.pipeline.candidate_model import load_candidate_scorer
 
     root = tmp_path
-    (root / "PROJECT_SPEC.md").write_text("x", encoding="utf-8")
     (root / "backend").mkdir()
+    (root / "backend" / "pyproject.toml").write_text("x", encoding="utf-8")
     sem = root / "models" / "semantic"
     (sem / "local").mkdir(parents=True)
     onnx = sem / "local" / "siglip2_vision.onnx"

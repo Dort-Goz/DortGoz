@@ -254,7 +254,7 @@ def _resolve_repo_file(repo_root: Path, ref: str) -> Path:
 
 def _find_repo_root(start: Path) -> Path:
     for parent in (start.parent, *start.parents):
-        if (parent / "PROJECT_SPEC.md").is_file() and (parent / "backend").is_dir():
+        if (parent / "backend" / "pyproject.toml").is_file():
             return parent
     raise ValueError("candidate manifest proje kökü altında değil")
 
