@@ -1,0 +1,23 @@
+# Third-party notices — release gate
+
+This repository is Apache-2.0. Runtime dependency versions are locked in
+`backend/uv.lock` and `frontend/bun.lock`; final release notices must be
+generated from those exact installed dependency trees, not from version ranges.
+
+## Included project artifacts
+
+| Component | License/provenance | Release state |
+|---|---|---|
+| Dörtgöz source code | Apache-2.0, repository `LICENSE` | Included |
+| `motion-baseline-v1` JSON configuration | Team-authored, MIT declaration in `models/MANIFEST.json` | Included with SHA-256 |
+| VLM weights | Not included | Must have an Apache-2.0/MIT local manifest and SHA-256 |
+| FFmpeg/ffprobe executable | Not included | Current developer GPL-enabled build is expressly excluded |
+
+## Finalization blockers
+
+This file is intentionally not a completed SBOM or legal clearance. Before an
+external release, generate notices from a fresh frozen Python/Bun installation,
+record the exact base-image digest and its notices, run the AGPL denylist scan,
+and resolve the FFmpeg/UCA license items in
+ekip içi lisans kayıt defteri. Until then, no offline bundle may be
+labelled as a redistributable final release.

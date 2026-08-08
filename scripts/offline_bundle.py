@@ -33,13 +33,10 @@ def _hashes(bundle: Path) -> None:
 
 
 def _copy_release_metadata(root: Path, bundle: Path) -> None:
-    for relative in ("docker-compose.yml", ".env.example", "models/MANIFEST.json", "THIRD_PARTY_NOTICES.md"):
+    for relative in ("docker-compose.yml", ".env.example", "models/MANIFEST.json", "NOTICE"):
         destination = bundle / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(root / relative, destination)
-    documentation = bundle / "docs"
-    documentation.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(root / "docs" / "OFFLINE_INSTALL.md", documentation / "OFFLINE_INSTALL.md")
 
 
 def main() -> None:

@@ -29,9 +29,6 @@ TRACKED_MODEL_SUFFIXES = (".gguf", ".safetensors", ".bin")
 PORTABILITY_MARKERS = ("C:\\Users\\kullanici", "~/datasets/Dort_Goz")
 PORTABILITY_FILES = (
     ".env.example",
-    "README.md",
-    "docs/ARCHITECTURE.md",
-    "docs/SETUP.md",
     "scripts/make_long_feed.py",
 )
 

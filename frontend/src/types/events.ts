@@ -1,5 +1,5 @@
 /** WS olay şeması — backend/dortgoz/events.py'nin birebir aynası.
- *  Sözleşme değişiklikleri iki dosyada birden yapılır (docs/interface_design.md). */
+ *  Sözleşme değişiklikleri iki dosyada birden yapılır. */
 
 export type Risk = "dusuk" | "orta" | "yuksek" | "kritik";
 

@@ -18,7 +18,7 @@ zamanlara anomali klipleri yerleştirir (tek kesim noktası olay sınırlarıdı
 Üçüncü taraf "açık kamera" akışlarına (insecam vb.) göre: gerçek referansı var
 (yakalama ölçülebilir), tekrarlanabilir (aynı tohum = aynı kayıt), çevrim dışı
 çalışır (final fiziki/hava boşluklu), rıza-lisans sorunu yaratmaz — klipler
-makineden çıkmaz (bkz. datasets_S3.md veri politikası).
+makineden çıkmaz (ekip içi veri politikası).
 
     python scripts/make_long_feed.py --minutes 30 --events 3
     python scripts/make_long_feed.py --minutes 60 --pure          # saf ölü hava

@@ -2,7 +2,7 @@
 
 Her olay `Event` zarfı içinde gider; `type` alanı ayrımcıdır (discriminator).
 Frontend'teki `src/types/events.ts` bu dosyanın birebir aynasıdır — birini
-değiştiren diğerini de değiştirir (bkz. docs/interface_design.md).
+değiştiren diğerini de değiştirir.
 """
 
 from __future__ import annotations

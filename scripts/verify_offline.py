@@ -17,9 +17,7 @@ REQUIRED_REPOSITORY_FILES = (
     "backend/uv.lock",
     "frontend/bun.lock",
     "models/MANIFEST.json",
-    "THIRD_PARTY_NOTICES.md",
-    "docs/OFFLINE_INSTALL.md",
-    "docs/SETUP.md",
+    "NOTICE",
     "scripts/preflight.py",
 )
 FORBIDDEN_RUNTIME_URLS = ("api.openai.com", "openai.azure.com", "api.anthropic.com")
@@ -84,8 +82,7 @@ def _verify_bundle(bundle: Path, errors: list[str]) -> None:
         "SHA256SUMS",
         "docker-compose.yml",
         "models/MANIFEST.json",
-        "docs/OFFLINE_INSTALL.md",
-    ):
+        ):
         _require_file(bundle, relative, errors)
 
 

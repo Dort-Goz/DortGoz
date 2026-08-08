@@ -4,7 +4,7 @@ Klip-düzeyi zayıf etiket ("klipte olay var mıydı") yerine gerçek soru: alar
 üreten pencereler anomalinin GERÇEK zaman aralığıyla örtüşüyor mu? Referans:
 `Temporal_Anomaly_Annotation.txt` (orijinal UCF-Crime yazarları; kare indeksli,
 yalnız test bölmesi; lisanssız → repo dışında, yerel veri kopyasının yanında —
-bkz. data/uca/README.md).
+ekip içi veri kılavuzuna bakın).
 
     cd backend && uv run python ../bench/temporal_eval.py --results ../bench/results/ab_testsplit_96k.jsonl
 
@@ -38,7 +38,7 @@ def load_ground_truth(videos_dir: Path) -> dict[str, list[tuple[float, float]]]:
     ann = videos_dir.parent / "Temporal_Anomaly_Annotation.txt"
     if not ann.is_file():
         raise SystemExit(
-            f"{ann} yok — indir: data/uca/README.md içindeki bağlantı")
+            f"{ann} yok — ekip içi veri kılavuzundaki bağlantıdan indirilir")
     gt: dict[str, list[tuple[float, float]]] = {}
     for line in ann.read_text(encoding="utf-8").splitlines():
         parts = line.split()
