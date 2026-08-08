@@ -127,7 +127,7 @@ def test_relative_model_manifest_resolves_to_repo_root(monkeypatch) -> None:
     monkeypatch.setenv("DORTGOZ_CANDIDATE_MODEL_MANIFEST", "models/semantic/manifest.json")
     resolved = Settings().candidate_model_manifest
     assert Path(resolved).is_absolute()
-    assert resolved.endswith("models/semantic/manifest.json")
+    assert Path(resolved).as_posix().endswith("models/semantic/manifest.json")
     monkeypatch.setenv("DORTGOZ_CANDIDATE_MODEL_MANIFEST", "")
     assert Settings().candidate_model_manifest == ""
 
