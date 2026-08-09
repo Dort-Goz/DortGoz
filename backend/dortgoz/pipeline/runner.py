@@ -20,7 +20,7 @@ from ..agent.llm import context_size
 from ..agent.memory import RISK_ORDER, Ledger
 from ..config import settings
 from ..events import AgentStep, Event, RunStatus, WindowReport
-from ..services.runtime_postprocess import postprocess_finalized_report
+from ..services.runtime_postprocess import RuntimeEvidenceScope, postprocess_finalized_report
 from ..ws import ConnectionManager
 from . import ingest, interpret, perception, windowing
 from .candidate_intervals import IntervalConfig, build_candidate_intervals
@@ -173,6 +173,7 @@ async def run_video(
     üretti sorusu (ablation/kanıt disiplini) her zaman cevaplanabilir kalır.
     """
     rec = RunRecorder(manager, run_id, feed=feed)
+    evidence_scope = RuntimeEvidenceScope.create(run_id)
     ctx = session.start(run_id, video, feed=feed)   # sohbet analiz sonrası buradan sürer
     ledger = ctx.ledger
     effective_model = model or settings.main_model
@@ -432,17 +433,15 @@ async def run_video(
                                     f"korundu: {str(exc)[:120]}"),
                         ))
 
-                validation_sidecar = postprocess_finalized_report(
+                postprocess_finalized_report(
                     report=report,
                     captured_frames=captured_frames,
-                    run_id=run_id,
+                    scope=evidence_scope,
                     window_index=idx,
                     video_duration=duration,
                     workspace_root=settings.runs_dir.resolve().parent,
-                    evidence_root=settings.runs_dir,
+                    evidence_root=settings.runs_dir / "_runtime_evidence",
                 )
-                if validation_sidecar is not None:
-                    ctx.validation_sidecars.append(validation_sidecar)
                 ctx.reports.append(report)
                 await rec.emit(report)
                 sev = ",".join(sorted({e.severity_hint for e in report.events})) or "—"
