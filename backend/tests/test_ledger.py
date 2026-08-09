@@ -127,17 +127,18 @@ def test_confident_incident_not_flagged():
     assert ups[0].needs_review is False and ups[0].review_reason == ""
 
 
-def test_review_pass_clears_or_keeps_flag():
+def test_review_pass_never_clears_sticky_flag():
     from dortgoz.agent.memory import Ledger
     led = Ledger()
     iid = led.ingest(_serious_report(), uncertain="sınırda")[0].incident_id
-    # bütünü gören geçiş emin → bayrak kalkar
+    # Bütünü gören model geçişi emin olsa da insan-review kararını temizleyemez.
     up = led.apply_review(iid, {"anomaly_type": "kavga", "risk": "yuksek",
                                 "zirve": "Kavga zirvesi", "zirve_t": 6.0,
                                 "baslangic": "b", "sonuc": "s", "belirsizlikler": []})
-    assert up.needs_review is False
+    assert up.needs_review is True
+    assert up.risk == "orta"
     # bütünde de belirsizse kalır
     up = led.apply_review(iid, {"anomaly_type": "kavga", "risk": "yuksek",
                                 "zirve": "Kavga", "zirve_t": 6.0, "baslangic": "b",
                                 "sonuc": "s", "belirsizlikler": ["kim başlattı belirsiz"]})
-    assert up.needs_review is True and "2. geçiş" in up.review_reason
+    assert up.needs_review is True and "sınırda" in up.review_reason

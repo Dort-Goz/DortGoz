@@ -3,12 +3,21 @@
 from __future__ import annotations
 
 import json
+from enum import StrEnum
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..domain.event import EventStatus, RiskAssessment, RiskLevel, VerifiedEvent
 from ..domain.evidence import VerifiedEventType
+
+
+class RuntimeRiskDisposition(StrEnum):
+    """Canonical event uydurmadan runtime evidence kapısının dar girdisi."""
+
+    PROVISIONAL_GROUNDED = "provisional_grounded"
+    INVALID_EVIDENCE = "invalid_evidence"
+    UNDETERMINED = "undetermined"
 
 
 class RiskRule(BaseModel):
@@ -51,6 +60,26 @@ class RiskEngine:
         rule = matches[0]
         return self._assessment(rule.level, rule.rule_id, rule.reason, review=rule.level in {RiskLevel.REVIEW_REQUIRED, RiskLevel.UNDETERMINED})
 
+    @staticmethod
+    def assess_runtime(disposition: RuntimeRiskDisposition) -> RiskAssessment:
+        """Eksik confirmation contract'ında yalnız güvenli guard sonucu üret."""
+
+        if disposition == RuntimeRiskDisposition.PROVISIONAL_GROUNDED:
+            return RiskAssessment(
+                level=RiskLevel.REVIEW_REQUIRED,
+                reasons=["Grounded runtime gözlemi automatic confirmation sözleşmesi taşımıyor."],
+                rule_ids=["RSK-RUNTIME-PROVISIONAL"],
+                review_required=True,
+                ruleset_version="runtime-policy-v1",
+            )
+        return RiskAssessment(
+            level=RiskLevel.UNDETERMINED,
+            reasons=["Runtime evidence geçerli bir risk değerlendirmesi üretmedi."],
+            rule_ids=[f"RSK-RUNTIME-{disposition.value.upper()}"],
+            review_required=True,
+            ruleset_version="runtime-policy-v1",
+        )
+
     def _assessment(self, level: RiskLevel, rule_id: str, reason: str, *, review: bool) -> RiskAssessment:
         return RiskAssessment(level=level, reasons=[reason], rule_ids=[rule_id], review_required=review, ruleset_version=self.ruleset.version)
 
@@ -64,4 +93,10 @@ def load_risk_ruleset(path: Path) -> RiskRuleset:
         raise ValueError(f"risk ruleset yüklenemedi: {path}") from exc
 
 
-__all__ = ["RiskEngine", "RiskRule", "RiskRuleset", "load_risk_ruleset"]
+__all__ = [
+    "RiskEngine",
+    "RiskRule",
+    "RiskRuleset",
+    "RuntimeRiskDisposition",
+    "load_risk_ruleset",
+]

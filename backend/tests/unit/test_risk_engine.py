@@ -6,7 +6,11 @@ from pathlib import Path
 
 from dortgoz.domain.event import EventStatus, RiskLevel, VerifiedEvent
 from dortgoz.domain.evidence import EvidenceItem, EvidenceValidationResult, VerifiedEventType
-from dortgoz.services.risk_engine import RiskEngine, load_risk_ruleset
+from dortgoz.services.risk_engine import (
+    RiskEngine,
+    RuntimeRiskDisposition,
+    load_risk_ruleset,
+)
 
 
 def _event(
@@ -42,3 +46,16 @@ def test_low_confidence_and_review_events_never_receive_automatic_risk() -> None
 
     assert (low_confidence.level, low_confidence.review_required) == (RiskLevel.UNDETERMINED, True)
     assert (review.level, review.review_required) == (RiskLevel.REVIEW_REQUIRED, True)
+
+
+def test_runtime_guard_only_returns_review_required_or_undetermined() -> None:
+    grounded = RiskEngine.assess_runtime(RuntimeRiskDisposition.PROVISIONAL_GROUNDED)
+    invalid = RiskEngine.assess_runtime(RuntimeRiskDisposition.INVALID_EVIDENCE)
+    undetermined = RiskEngine.assess_runtime(RuntimeRiskDisposition.UNDETERMINED)
+
+    assert (grounded.level, grounded.review_required) == (
+        RiskLevel.REVIEW_REQUIRED,
+        True,
+    )
+    assert {invalid.level, undetermined.level} == {RiskLevel.UNDETERMINED}
+    assert invalid.review_required and undetermined.review_required

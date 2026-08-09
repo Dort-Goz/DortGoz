@@ -19,7 +19,9 @@ from .. import session
 from ..agent.llm import context_size
 from ..agent.memory import RISK_ORDER, Ledger
 from ..config import settings
-from ..events import AgentStep, Event, RunStatus, WindowReport
+from ..domain.taxonomy import CanonicalEventType, legacy_ws_label_from_canonical
+from ..events import AgentStep, Event, RunStatus, WindowEvent, WindowReport
+from ..services.runtime_policy import decide_runtime_policy
 from ..services.runtime_postprocess import RuntimeEvidenceScope, postprocess_finalized_report
 from ..ws import ConnectionManager
 from . import ingest, interpret, perception, windowing
@@ -111,8 +113,18 @@ def perf_text(call: dict, n_ctx: int | None) -> str:
     return " · " + " · ".join(bits) if bits else ""
 
 
-async def review_if_closed(rec: RunRecorder, ledger: Ledger, path: Path,
-                           profile: list[float], update, model: str) -> None:
+async def review_if_closed(
+    rec: RunRecorder,
+    ledger: Ledger,
+    path: Path,
+    profile: list[float],
+    update,
+    model: str,
+    *,
+    evidence_scope: RuntimeEvidenceScope,
+    video_duration: float,
+    window_count: int,
+) -> None:
     """Olay KAPANDIĞINDA tüm aralığı tek bağlamda yeniden okur ve kartı düzeltir.
 
     Sınırlar ancak olay kapanınca bilinir — asıl kazanç bu: 30 sn'lik pencereler
@@ -139,21 +151,81 @@ async def review_if_closed(rec: RunRecorder, ledger: Ledger, path: Path,
     try:
         keyframes = windowing.select_keyframes(profile, start, end, frames)
         call: dict = {}
+        captured_frames = {}
         review = await interpret.review_incident(
-            path, (start, end), keyframes, inc.notes, model=model, stats=call)
-        # TODO(Patch 2): olay-geneli ikinci geçiş henüz finalized WindowReport
-        # evidence gate'inden geçmiyor; ledger.apply_review davranışı bu patch'te korunur.
-        revised = ledger.apply_review(update.incident_id, review)
+            path,
+            (start, end),
+            keyframes,
+            inc.notes,
+            model=model,
+            stats=call,
+            captured_frames=captured_frames,
+        )
+        event_type = CanonicalEventType(review["event_type"])
+        review_report = WindowReport(
+            window_start=start,
+            window_end=end,
+            anomaly_type=legacy_ws_label_from_canonical(event_type).value,
+            summary=review["zirve"],
+            events=[
+                WindowEvent(
+                    t=review["zirve_t"],
+                    desc=review["zirve"],
+                    evidence=review["evidence"],
+                    severity_hint=review["risk"],
+                    event_type=event_type,
+                )
+            ],
+            uncertainties=review["belirsizlikler"],
+        )
+        incident_index = list(ledger.incidents).index(update.incident_id)
+        validation = postprocess_finalized_report(
+            report=review_report,
+            captured_frames=captured_frames,
+            scope=evidence_scope,
+            window_index=window_count + incident_index,
+            video_duration=video_duration,
+            workspace_root=settings.runs_dir.resolve().parent,
+            evidence_root=settings.runs_dir / "_runtime_evidence",
+        )
+        policy = decide_runtime_policy(review_report, validation)
+        ledger.require_review(
+            f"2. geçiş: {policy.review_reason}",
+            incident_id=update.incident_id,
+        )
+        if policy.ledger_report is None:
+            await rec.emit(
+                AgentStep(
+                    node="oversight",
+                    status="error",
+                    detail=(
+                        "2. geçiş evidence kapısından geçmedi; mevcut incident korundu "
+                        f"({policy.risk.level.value if policy.risk else 'undetermined'})"
+                    ),
+                )
+            )
+            return
+
+        review_update = dict(review)
+        review_update["anomaly_type"] = policy.ledger_report.anomaly_type
+        revised = ledger.apply_review(update.incident_id, review_update)
         if revised is not None:
             await rec.emit(revised)
-        await rec.emit(AgentStep(
-            node="oversight", status="end",
-            detail=f"{review.get('anomaly_type','?')} / {review.get('risk','?')} "
-                   f"olarak bütünlendi" + perf_text(call, await context_size(
-                       model or settings.main_model))))
-    except Exception as exc:                 # 2. geçiş bir EK'tir, koşuyu düşürmez
-        await rec.emit(AgentStep(node="oversight", status="error",
-                                 detail=str(exc)[:160]))
+        await rec.emit(
+            AgentStep(
+                node="oversight",
+                status="end",
+                detail=f"{event_type.value} provisional olarak bütünlendi; "
+                "VLM risk ipucu final risk yapılmadı"
+                + perf_text(call, await context_size(model or settings.main_model)),
+            )
+        )
+    except Exception as exc:  # 2. geçiş bir EK'tir, koşuyu düşürmez
+        ledger.require_review(
+            f"2. geçiş çalıştırılamadı: {type(exc).__name__}",
+            incident_id=update.incident_id,
+        )
+        await rec.emit(AgentStep(node="oversight", status="error", detail=str(exc)[:160]))
 
 
 async def run_video(
@@ -294,7 +366,17 @@ async def run_video(
                         for update in ledger.ingest(WindowReport(
                                 window_start=prev_end, window_end=start, summary="")):
                             await rec.emit(update)
-                            await review_if_closed(rec, ledger, path, profile, update, model)
+                            await review_if_closed(
+                                rec,
+                                ledger,
+                                path,
+                                profile,
+                                update,
+                                model,
+                                evidence_scope=evidence_scope,
+                                video_duration=duration,
+                                window_count=len(wins),
+                            )
                 prev_end = end
             peak = windowing.window_motion(profile, start, end)
 
@@ -340,7 +422,17 @@ async def run_video(
                         window_start=start, window_end=end, summary="")):
                     await rec.emit(update)
                     # Olay burada da kapanabilir → 2. geçiş bu yolda da çalışmalı
-                    await review_if_closed(rec, ledger, path, profile, update, model)
+                    await review_if_closed(
+                        rec,
+                        ledger,
+                        path,
+                        profile,
+                        update,
+                        model,
+                        evidence_scope=evidence_scope,
+                        video_duration=duration,
+                        window_count=len(wins),
+                    )
             else:
                 hint = ledger.continuity_hint() if settings.carry_context else ""
                 await rec.emit(AgentStep(
@@ -433,7 +525,7 @@ async def run_video(
                                     f"korundu: {str(exc)[:120]}"),
                         ))
 
-                postprocess_finalized_report(
+                validation = postprocess_finalized_report(
                     report=report,
                     captured_frames=captured_frames,
                     scope=evidence_scope,
@@ -442,6 +534,7 @@ async def run_video(
                     workspace_root=settings.runs_dir.resolve().parent,
                     evidence_root=settings.runs_dir / "_runtime_evidence",
                 )
+                policy = decide_runtime_policy(report, validation)
                 ctx.reports.append(report)
                 await rec.emit(report)
                 sev = ",".join(sorted({e.severity_hint for e in report.events})) or "—"
@@ -461,7 +554,8 @@ async def run_video(
                 # İzleme satırı NE DEĞİŞTİĞİNİ yazar (eski "N olay defterde"
                 # sayacı hata ayıklamada işe yaramıyordu): açıldı/genişledi/
                 # kapandı + tolerans sayacı, yani defterin kararı görünür olur.
-                serious = ledger.serious(report)
+                ledger_report = policy.ledger_report
+                serious = ledger.serious(ledger_report) if ledger_report is not None else []
                 was_open = ledger.open_incident
                 thumb = None
                 if serious and was_open is None:
@@ -469,10 +563,29 @@ async def run_video(
                     peak = max(serious, key=lambda e: RISK_ORDER.index(e.severity_hint))
                     thumb = await save_thumbnail(path, peak.t, run_id,
                                                  f"{int(start)}")
-                updates = ledger.ingest(report, thumb, uncertain=escalated)
+                if ledger_report is None:
+                    ledger.require_review(policy.review_reason)
+                    updates = []
+                else:
+                    review_reasons = [item for item in (escalated, policy.review_reason) if item]
+                    updates = ledger.ingest(
+                        ledger_report,
+                        thumb,
+                        uncertain=" · ".join(review_reasons),
+                    )
                 for update in updates:
                     await rec.emit(update)
-                    await review_if_closed(rec, ledger, path, profile, update, model)
+                    await review_if_closed(
+                        rec,
+                        ledger,
+                        path,
+                        profile,
+                        update,
+                        model,
+                        evidence_scope=evidence_scope,
+                        video_duration=duration,
+                        window_count=len(wins),
+                    )
                 if updates:
                     u = updates[-1]
                     note = {"basladi": "olay AÇILDI", "gelisiyor": "olay genişledi",
@@ -480,9 +593,22 @@ async def run_video(
                     detail = (f"{note} #{u.incident_id} · {u.anomaly_type}/{u.risk} "
                               f"({len(serious)} ciddi gözlem)")
                 elif was_open is not None:
-                    # Sessiz pencere ama olay tolerans sayesinde açık kaldı
-                    detail = (f"olay #{was_open.incident_id} açık tutuldu "
-                              f"(tolerans {ledger.quiet_streak}/{ledger.grace})")
+                    if policy.observation_held:
+                        detail = (
+                            f"olay #{was_open.incident_id} validation eksikliği "
+                            "nedeniyle değiştirilmeden açık tutuldu"
+                        )
+                    else:
+                        # Gerçek sessiz pencere tolerans sayacını ilerletir.
+                        detail = (
+                            f"olay #{was_open.incident_id} açık tutuldu "
+                            f"(tolerans {ledger.quiet_streak}/{ledger.grace})"
+                        )
+                elif policy.observation_held:
+                    detail = (
+                        f"{len(policy.held_event_indices)} gözlem validation "
+                        "nedeniyle deftere alınmadı"
+                    )
                 else:
                     detail = ""            # anlatacak bir şey yok → satır üretme
                 if detail:
@@ -495,7 +621,17 @@ async def run_video(
 
         for update in ledger.finalize():       # video biterken açık kalan olayı kapat
             await rec.emit(update)
-            await review_if_closed(rec, ledger, path, profile, update, model)
+            await review_if_closed(
+                rec,
+                ledger,
+                path,
+                profile,
+                update,
+                model,
+                evidence_scope=evidence_scope,
+                video_duration=duration,
+                window_count=len(wins),
+            )
         ctx.finished = True
         # Koşunun nihai kararı operatöre görünür olmalı — sınıf + risk tek satırda
         await rec.emit(RunStatus(run_id=run_id, state="done", progress=1.0,

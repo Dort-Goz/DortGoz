@@ -47,3 +47,19 @@ def test_hash_mismatch_rejects_local_document(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="hash"):
         LocalProcedureIndex.load(tmp_path, tmp_path / "manifest.json")
     assert index.manifest.version == "fixture-v1"
+
+
+@pytest.mark.parametrize("level", [RiskLevel.REVIEW_REQUIRED, RiskLevel.UNDETERMINED])
+def test_runtime_guard_never_returns_procedure_actions(level: RiskLevel) -> None:
+    risk = RiskAssessment(
+        level=level,
+        reasons=["runtime guard"],
+        review_required=True,
+        ruleset_version="runtime-policy-v1",
+    )
+
+    recommendation = ProcedureService.recommend_runtime(risk)
+
+    assert recommendation.actions == []
+    assert recommendation.sources == []
+    assert recommendation.reason

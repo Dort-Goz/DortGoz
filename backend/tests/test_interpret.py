@@ -115,12 +115,20 @@ def test_continuity_hint_carries_state_and_guards_anchoring():
     assert "BİTTİYSE" in hint and "uydurma" in hint
 
 
-def test_review_schema_uses_taxonomy_from_events_module():
-    from dortgoz.events import WindowReport as WR
+def test_review_schema_uses_canonical_taxonomy_and_evidence_contract():
+    from dortgoz.domain.taxonomy import CanonicalEventType
+
     s = review_schema()
-    assert s["properties"]["anomaly_type"]["enum"] == \
-        WR.model_json_schema()["properties"]["anomaly_type"]["enum"]
-    assert set(s["required"]) >= {"baslangic", "zirve", "sonuc", "risk"}
+    assert s["properties"]["event_type"]["enum"] == [item.value for item in CanonicalEventType]
+    assert s["properties"]["evidence"]["minItems"] == 1
+    assert set(s["required"]) >= {
+        "baslangic",
+        "zirve",
+        "sonuc",
+        "event_type",
+        "risk",
+        "evidence",
+    }
 
 
 def test_apply_review_rewrites_incident():
@@ -136,7 +144,7 @@ def test_apply_review_rewrites_incident():
                                  "sonuc": "Grup dağıldı", "zirve_t": 42.0,
                                  "anomaly_type": "saldiri", "risk": "yuksek",
                                  "belirsizlikler": ["yaralı mı belirsiz"]})
-    assert rev.anomaly_type == "saldiri" and rev.risk == "yuksek"
+    assert rev.anomaly_type == "saldiri" and rev.risk == "orta"
     # Anlatı yapılandırılmış satırlar hâlinde (arayüz satır satır basar)
     assert rev.t == 42.0
     assert "Başlangıç: Grup toplandı" in rev.detail

@@ -26,11 +26,13 @@ import math
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from ..agent.llm import call_stats, create_chat, main_client
 from ..config import settings
 from ..domain.evidence import FRAME_TIMESTAMP_TOLERANCE_SECONDS
 from ..domain.taxonomy import CanonicalEventType, legacy_ws_label_from_canonical
-from ..events import FrameReference, WindowReport
+from ..events import EventEvidenceRef, FrameReference, Risk, WindowReport
 from ..tools.protocols import VlmSchemaError
 from .ingest import grab_frame
 
@@ -117,30 +119,32 @@ REVIEW_SYSTEM_TR = (
     "sonuçlandı. Türkçe, kısa ve operasyonel yaz. Yalnızca karelerde GÖRDÜĞÜNÜ "
     "yaz; emin olmadığını 'belirsizlikler'e koy. Pencere pencere bakan bir ön "
     "analiz bu olayı parçalı görmüş olabilir — sen bütünlüklü karar ver, "
-    "gerekiyorsa sınıfı ve riski düzelt."
+    "gerekiyorsa sınıfı yeniden değerlendir. Her evidence kaydında yalnız sana "
+    "verilen FRAME_ID ve VIDEO_TIMESTAMP_SECONDS değerlerini aynen kullan. "
+    "Risk alanı yalnız model ipucudur; final risk değildir."
 )
+
+
+class IncidentReviewResult(BaseModel):
+    """Incident-wide VLM çıktısının internal ve evidence-grounded sözleşmesi."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    baslangic: str
+    zirve: str
+    sonuc: str
+    zirve_t: float = Field(ge=0, allow_inf_nan=False)
+    event_type: CanonicalEventType
+    risk: Risk
+    evidence: list[EventEvidenceRef] = Field(min_length=1)
+    belirsizlikler: list[str]
 
 
 def review_schema() -> dict[str, Any]:
     """Olay-geneli ikinci geçişin şeması (Bengisu'nun öncesi-zirve-sonrası tasarımı)."""
-    return {
-        "type": "object",
-        "properties": {
-            "baslangic": {"type": "string"},     # olay nasıl başladı
-            "zirve": {"type": "string"},         # en kritik an
-            "sonuc": {"type": "string"},         # nasıl bitti
-            "zirve_t": {"type": "number"},       # zirve anının video zamanı (sn)
-            # Sınıf listesi tek kaynaktan (events.py) türetilir — taksonomi
-            # değişince burası kendiliğinden uyar
-            "anomaly_type": {"enum": WindowReport.model_json_schema()
-                             ["properties"]["anomaly_type"]["enum"]},
-            "risk": {"enum": ["dusuk", "orta", "yuksek", "kritik"]},
-            "belirsizlikler": {"type": "array", "items": {"type": "string"}},
-        },
-        "required": ["baslangic", "zirve", "sonuc", "zirve_t", "anomaly_type", "risk",
-                     "belirsizlikler"],
-        "additionalProperties": False,
-    }
+    schema = _inline_defs(IncidentReviewResult.model_json_schema())
+    schema.pop("title", None)
+    return schema
 
 
 async def review_incident(
@@ -151,10 +155,16 @@ async def review_incident(
     *,
     model: str = "",
     stats: dict[str, Any] | None = None,
+    captured_frames: dict[str, tuple[FrameReference, bytes]] | None = None,
 ) -> dict[str, Any]:
     """Kapanmış bir olayın TÜM aralığını tek bağlamda yeniden okur."""
     start, end = span
-    content = await _frame_parts(video, build_frame_references(keyframes))
+    frame_refs = build_frame_references(keyframes)
+    content = await _frame_parts(
+        video,
+        frame_refs,
+        captured_frames=captured_frames,
+    )
     task = (
         f"Yukarıdaki kareler {start:.0f}-{end:.0f} sn arasındaki TEK bir olayın "
         f"tamamını kapsıyor ({end - start:.0f} sn). Olayı bütün olarak değerlendir: "
@@ -184,12 +194,15 @@ async def review_incident(
         stats.update(call_stats(resp))
     raw = resp.choices[0].message.content or "{}"
     try:
-        return json.loads(raw)
+        payload = json.loads(raw)
     except json.JSONDecodeError:
         fixed = repair_truncated_json(raw)
         if fixed is None:
             raise
-        return json.loads(fixed)
+        payload = json.loads(fixed)
+    review = IncidentReviewResult.model_validate(payload)
+    _guard_incident_review_evidence(review, frame_refs)
+    return review.model_dump(mode="json")
 
 
 def _inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
@@ -407,6 +420,28 @@ def _guard_evidence_references(
                     f"{evidence.frame_id} için timestamp {evidence.timestamp}, "
                     f"beklenen {expected_timestamp}",
                 )
+
+
+def _guard_incident_review_evidence(
+    review: IncidentReviewResult,
+    frame_refs: list[FrameReference],
+) -> None:
+    """Second-pass evidence kimliği ve zamanını aynı request whitelist'iyle sınar."""
+
+    allowed = {frame.frame_id: frame.timestamp for frame in frame_refs}
+    for evidence_index, evidence in enumerate(review.evidence):
+        expected_timestamp = allowed.get(evidence.frame_id)
+        if expected_timestamp is None:
+            raise VlmEvidenceContractError(
+                "INVALID_INCIDENT_REVIEW_EVIDENCE_REFERENCE",
+                f"evidence[{evidence_index}] bilinmeyen frame_id kullanıyor: {evidence.frame_id}",
+            )
+        if abs(evidence.timestamp - expected_timestamp) > FRAME_TIMESTAMP_TOLERANCE_SECONDS:
+            raise VlmEvidenceContractError(
+                "INVALID_INCIDENT_REVIEW_EVIDENCE_TIMESTAMP",
+                f"{evidence.frame_id} için timestamp {evidence.timestamp}, "
+                f"beklenen {expected_timestamp}",
+            )
 
 
 def _image_part(jpeg: bytes) -> dict[str, Any]:
