@@ -65,6 +65,11 @@ async def replay_jsonl(manager: ConnectionManager, path: Path, speed: float = 1.
         if not line or line.startswith("#"):
             continue
         raw = json.loads(line)
+        payload = raw.get("payload")
+        if isinstance(payload, dict) and payload.get("type") == "run_metrics":
+            # Koşu özeti JSONL artifact'inde kalır; frontend Event union'ına
+            # ve dolayısıyla demo/replay WS sözleşmesine girmez.
+            continue
         delay = float(raw.pop("delay", 0.8)) / max(speed, 0.01)
         await asyncio.sleep(delay)
         await manager.broadcast(Event.model_validate(raw))

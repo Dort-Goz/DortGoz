@@ -23,6 +23,7 @@ import asyncio
 import base64
 import json
 import math
+import time
 from pathlib import Path
 from typing import Any
 
@@ -155,6 +156,7 @@ async def review_incident(
     *,
     model: str = "",
     stats: dict[str, Any] | None = None,
+    timing: dict[str, float | int] | None = None,
     captured_frames: dict[str, tuple[FrameReference, bytes]] | None = None,
 ) -> dict[str, Any]:
     """Kapanmış bir olayın TÜM aralığını tek bağlamda yeniden okur."""
@@ -177,19 +179,23 @@ async def review_incident(
     content.append({"type": "text", "text": task})
 
     client = main_client()
-    resp = await create_chat(client,
-        model=model or settings.main_model,
-        messages=[{"role": "system", "content": REVIEW_SYSTEM_TR},
-                  {"role": "user", "content": content}],
-        max_tokens=settings.interpret_max_tokens,
-        temperature=0,
-        response_format={"type": "json_schema",
-                         "json_schema": {"name": "incident_review", "strict": True,
-                                         "schema": review_schema()}},
-        # Görüntü isteği → spekülasyon kapalı (hız; bkz. interpret_window notu)
-        extra_body={"speculative.n_max": 0,
-                    "chat_template_kwargs": {"enable_thinking": False}},
-    )
+    started = time.monotonic()
+    try:
+        resp = await create_chat(client,
+            model=model or settings.main_model,
+            messages=[{"role": "system", "content": REVIEW_SYSTEM_TR},
+                      {"role": "user", "content": content}],
+            max_tokens=settings.interpret_max_tokens,
+            temperature=0,
+            response_format={"type": "json_schema",
+                             "json_schema": {"name": "incident_review", "strict": True,
+                                             "schema": review_schema()}},
+            # Görüntü isteği → spekülasyon kapalı (hız; bkz. interpret_window notu)
+            extra_body={"speculative.n_max": 0,
+                        "chat_template_kwargs": {"enable_thinking": False}},
+        )
+    finally:
+        _record_qwen_timing(timing, started)
     if stats is not None:
         stats.update(call_stats(resp))
     raw = resp.choices[0].message.content or "{}"
@@ -589,6 +595,7 @@ async def interpret_window(
     context: str = "",
     think: bool = False,
     stats: dict[str, Any] | None = None,
+    timing: dict[str, float | int] | None = None,
     captured_frames: dict[str, tuple[FrameReference, bytes]] | None = None,
 ) -> WindowReport:
     """Bir pencereyi tek VLM çağrısıyla yorumlar; şema-geçerli WindowReport döner.
@@ -622,41 +629,45 @@ async def interpret_window(
         system = f"{system}\n\n{tier_prompt or TIER_TR}"
 
     client = main_client()
-    resp = await create_chat(client,
-        model=model or settings.main_model,
-        messages=[{"role": "system", "content": system},
-                  {"role": "user", "content": content}],
-        max_tokens=(max(4000, settings.interpret_max_tokens) if think
-                    else settings.interpret_max_tokens),
-        temperature=0,
-        # stats isteniyorsa dal token olasılığı da toplanır (yanıt gövdesine
-        # birkaç KB ekler, üretimi değiştirmez — grammar maskesi öncesi inanç)
-        logprobs=stats is not None,
-        top_logprobs=8 if stats is not None else None,
-        response_format={
-            "type": "json_schema",
-            "json_schema": {"name": "window_report", "strict": True,
-                            "schema": tier_schema() if settings.two_tier
-                                      else report_schema()},
-        },
-        extra_body={
-            # Görüntü isteklerinde spekülasyonu KAPAT — çökme için değil HIZ için:
-            # MTP taslakları görü token'larında tutmuyor (ölçüm 2026-08-06,
-            # thinkingcap-27b-vision: korumasız 41 t/s vs korumalı 52 t/s).
-            # ⚠ METİN yolunda (agent/graph.py sohbeti) GÖNDERİLMEZ — orada MTP
-            # 36 → 75 t/s kazandırıyor. Eski "mmproj+MTP çöker" notu b10234'te
-            # ARTIK GEÇERLİ DEĞİL (korumasız görüntü isteği sorunsuz çalıştı).
-            "speculative.n_max": 0,
-            "chat_template_kwargs": {"enable_thinking": think},
-            # Düşünme BÜTÇESİ (yalnız tırmandırma yolu): 24-akış soak ölçümü
-            # (2026-08-07) — bütçesiz düşünme 4000-token tavanı yiyip JSON'u
-            # yarıda bırakıyor, tırmandırmaların %45'i şema hatasıyla TÜM
-            # maliyeti çöpe atıyordu. 2500'de zorla kapanır; kalan ~1500 token
-            # şema-geçerli rapora yeter (rapor ~200-400 token). Kırpılmış
-            # düşünce < başarısız çağrı.
-            **({"reasoning_budget_tokens": 2500} if think else {}),
-        },
-    )
+    started = time.monotonic()
+    try:
+        resp = await create_chat(client,
+            model=model or settings.main_model,
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": content}],
+            max_tokens=(max(4000, settings.interpret_max_tokens) if think
+                        else settings.interpret_max_tokens),
+            temperature=0,
+            # stats isteniyorsa dal token olasılığı da toplanır (yanıt gövdesine
+            # birkaç KB ekler, üretimi değiştirmez — grammar maskesi öncesi inanç)
+            logprobs=stats is not None,
+            top_logprobs=8 if stats is not None else None,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": "window_report", "strict": True,
+                                "schema": tier_schema() if settings.two_tier
+                                          else report_schema()},
+            },
+            extra_body={
+                # Görüntü isteklerinde spekülasyonu KAPAT — çökme için değil HIZ için:
+                # MTP taslakları görü token'larında tutmuyor (ölçüm 2026-08-06,
+                # thinkingcap-27b-vision: korumasız 41 t/s vs korumalı 52 t/s).
+                # ⚠ METİN yolunda (agent/graph.py sohbeti) GÖNDERİLMEZ — orada MTP
+                # 36 → 75 t/s kazandırıyor. Eski "mmproj+MTP çöker" notu b10234'te
+                # ARTIK GEÇERLİ DEĞİL (korumasız görüntü isteği sorunsuz çalıştı).
+                "speculative.n_max": 0,
+                "chat_template_kwargs": {"enable_thinking": think},
+                # Düşünme BÜTÇESİ (yalnız tırmandırma yolu): 24-akış soak ölçümü
+                # (2026-08-07) — bütçesiz düşünme 4000-token tavanı yiyip JSON'u
+                # yarıda bırakıyor, tırmandırmaların %45'i şema hatasıyla TÜM
+                # maliyeti çöpe atıyordu. 2500'de zorla kapanır; kalan ~1500 token
+                # şema-geçerli rapora yeter (rapor ~200-400 token). Kırpılmış
+                # düşünce < başarısız çağrı.
+                **({"reasoning_budget_tokens": 2500} if think else {}),
+            },
+        )
+    finally:
+        _record_qwen_timing(timing, started)
     if stats is not None:                    # token sayıları + PP/gen hızları
         stats.update(call_stats(resp))
         if settings.two_tier and (p := _dikkat_probability(resp)) is not None:
@@ -670,4 +681,17 @@ async def interpret_window(
         raw,
         truncated=resp.choices[0].finish_reason == "length",
         frame_refs=frame_refs,
+    )
+
+
+def _record_qwen_timing(
+    timing: dict[str, float | int] | None,
+    started: float,
+) -> None:
+    if timing is None:
+        return
+    timing["calls"] = int(timing.get("calls", 0)) + 1
+    timing["total_ms"] = float(timing.get("total_ms", 0.0)) + max(
+        0.0,
+        (time.monotonic() - started) * 1000.0,
     )

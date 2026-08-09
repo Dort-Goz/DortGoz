@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 from .. import session
@@ -21,6 +23,7 @@ from ..agent.memory import RISK_ORDER, Ledger
 from ..config import settings
 from ..domain.taxonomy import CanonicalEventType, legacy_ws_label_from_canonical
 from ..events import AgentStep, Event, RunStatus, WindowEvent, WindowReport
+from ..services.runtime_metrics import CanonicalRunMetrics
 from ..services.runtime_policy import decide_runtime_policy
 from ..services.runtime_postprocess import RuntimeEvidenceScope, postprocess_finalized_report
 from ..ws import ConnectionManager
@@ -30,6 +33,7 @@ from .candidate_model import MotionBaselineModel
 from .interpret import SYSTEM_TR, TASK_TR, interpret_window
 
 THUMB_DIR = "_thumbs"       # media/ altında; /media mount'u üzerinden servis edilir
+LOGGER = logging.getLogger(__name__)
 
 
 async def save_thumbnail(video: Path, t: float, run_id: str, name: str) -> str | None:
@@ -68,19 +72,42 @@ class RunRecorder:
     göre ayırır; tek akışta boş kalır ve davranış eskisiyle birebir aynıdır.
     """
 
-    def __init__(self, manager: ConnectionManager, run_id: str,
-                 feed: str = "") -> None:
+    def __init__(
+        self,
+        manager: ConnectionManager,
+        run_id: str,
+        metrics: CanonicalRunMetrics,
+        feed: str = "",
+    ) -> None:
         self.manager = manager
         self.feed = feed
+        self.metrics = metrics
         self.path = settings.runs_dir / f"{run_id}.jsonl"
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._fh = self.path.open("w", encoding="utf-8")
+        self._metrics_written = False
 
     async def emit(self, payload) -> None:
         event = Event.wrap(payload, feed=self.feed)
         await self.manager.broadcast(event)
         self._fh.write(event.model_dump_json() + "\n")
         self._fh.flush()
+        self.metrics.observe_emitted(payload)
+
+    def record_metrics(self) -> None:
+        """Metrics'i mevcut JSONL zarfında sakla; WS/frontend'e yayınlama."""
+
+        if self._metrics_written:
+            return
+        envelope = {
+            "seq": 0,
+            "ts": time.time(),
+            "feed": self.feed,
+            "payload": self.metrics.to_payload(),
+        }
+        self._fh.write(json.dumps(envelope, ensure_ascii=False, separators=(",", ":")) + "\n")
+        self._fh.flush()
+        self._metrics_written = True
 
     def close(self) -> None:
         self._fh.close()
@@ -124,6 +151,7 @@ async def review_if_closed(
     evidence_scope: RuntimeEvidenceScope,
     video_duration: float,
     window_count: int,
+    metrics: CanonicalRunMetrics | None = None,
 ) -> None:
     """Olay KAPANDIĞINDA tüm aralığı tek bağlamda yeniden okur ve kartı düzeltir.
 
@@ -150,17 +178,26 @@ async def review_if_closed(
                                     f"({frames} kare)"))
     try:
         keyframes = windowing.select_keyframes(profile, start, end, frames)
+        if metrics is not None:
+            metrics.keyframes_selected_total += len(keyframes)
         call: dict = {}
+        qwen_timing: dict[str, float | int] = {}
         captured_frames = {}
-        review = await interpret.review_incident(
-            path,
-            (start, end),
-            keyframes,
-            inc.notes,
-            model=model,
-            stats=call,
-            captured_frames=captured_frames,
-        )
+        try:
+            with metrics.second_pass_call() if metrics is not None else nullcontext():
+                review = await interpret.review_incident(
+                    path,
+                    (start, end),
+                    keyframes,
+                    inc.notes,
+                    model=model,
+                    stats=call,
+                    timing=qwen_timing,
+                    captured_frames=captured_frames,
+                )
+        finally:
+            if metrics is not None:
+                metrics.record_qwen_timing(qwen_timing)
         event_type = CanonicalEventType(review["event_type"])
         review_report = WindowReport(
             window_start=start,
@@ -188,6 +225,8 @@ async def review_if_closed(
             workspace_root=settings.runs_dir.resolve().parent,
             evidence_root=settings.runs_dir / "_runtime_evidence",
         )
+        if metrics is not None:
+            metrics.record_validation(validation)
         policy = decide_runtime_policy(review_report, validation)
         ledger.require_review(
             f"2. geçiş: {policy.review_reason}",
@@ -244,7 +283,8 @@ async def run_video(
     yapılandırması `runs/<id>.meta.json`'a yazılır — hangi istem hangi çıktıyı
     üretti sorusu (ablation/kanıt disiplini) her zaman cevaplanabilir kalır.
     """
-    rec = RunRecorder(manager, run_id, feed=feed)
+    metrics = CanonicalRunMetrics(run_id)
+    rec = RunRecorder(manager, run_id, metrics, feed=feed)
     evidence_scope = RuntimeEvidenceScope.create(run_id)
     ctx = session.start(run_id, video, feed=feed)   # sohbet analiz sonrası buradan sürer
     ledger = ctx.ledger
@@ -314,8 +354,9 @@ async def run_video(
             # Anlamsal scorer kare akışı ister; hata koşuyu düşürmez, tabana döner
             if hasattr(scorer, "score_video"):
                 try:
-                    screen_samples = await asyncio.to_thread(
-                        scorer.score_video, profile, path)
+                    with metrics.siglip_call():
+                        screen_samples = await asyncio.to_thread(
+                            scorer.score_video, profile, path)
                 except Exception as exc:
                     await rec.emit(AgentStep(
                         node="perceive", status="error",
@@ -359,6 +400,10 @@ async def run_video(
         det_enabled = settings.detector_enabled       # ağırlık yoksa koşuda kapanır
         prev_end = 0.0
         for idx, (start, end) in enumerate(wins):
+            metrics.windows_seen += 1
+            # Her canonical pencere motion/candidate pre-VLM kararından geçer.
+            # Gerçek tasarruf yalnız `windows_skipped_before_vlm` alanıdır.
+            metrics.windows_screened += 1
             if settings.dynamic_windows:
                 # Pencereler arası boşluk = sürekli sessizlik → defter olayı kapatmalı
                 if start - prev_end > 0:
@@ -376,6 +421,7 @@ async def run_video(
                                 evidence_scope=evidence_scope,
                                 video_duration=duration,
                                 window_count=len(wins),
+                                metrics=metrics,
                             )
                 prev_end = end
             peak = windowing.window_motion(profile, start, end)
@@ -385,8 +431,9 @@ async def run_video(
             percep = None
             if det_enabled:
                 try:
-                    percep = await perception.scan_window(
-                        path, start, end, settings.detector_samples)
+                    with metrics.dfine_call():
+                        percep = await perception.scan_window(
+                            path, start, end, settings.detector_samples)
                 except FileNotFoundError as exc:
                     det_enabled = False
                     await rec.emit(AgentStep(
@@ -406,7 +453,12 @@ async def run_video(
             # (kare farkı için görünmez — 2026-08-03 mimari sonucu, ölçülmüştü).
             # Aynı emniyet ağı hibrit screening'in de arkasında durur.
             rescued = bool((gated or screened_out) and percep and percep.rescue_persons)
+            if rescued:
+                metrics.dfine_rescue_count += 1
             if (gated or screened_out) and not rescued:
+                # Coverage değil, D-FINE kurtarmasından SONRA gerçekten VLM'e
+                # gitmeyen pencere sayılır.
+                metrics.windows_skipped_before_vlm += 1
                 # Sert eleme yalnız burada: (hareketsiz YA DA aday-dışı) VE
                 # insansız pencere VLM'e hiç gitmez
                 reason = (f"etkinlik {peak:.4f} < {gate:.4f}" if gated
@@ -432,6 +484,7 @@ async def run_video(
                         evidence_scope=evidence_scope,
                         video_duration=duration,
                         window_count=len(wins),
+                        metrics=metrics,
                     )
             else:
                 hint = ledger.continuity_hint() if settings.carry_context else ""
@@ -446,6 +499,7 @@ async def run_video(
                 keyframes = windowing.select_keyframes(
                     profile, start, end, settings.keyframes_per_window
                 )
+                metrics.keyframes_selected_total += len(keyframes)
                 # Bu pencerenin VLM çağrısı beklenirken bir SONRAKİ canlı
                 # pencerenin kareleri arka planda çıkarılır (GPU/ffmpeg
                 # örtüşmesi; defter sırası değişmez — yalnız G/Ç ısınması)
@@ -456,6 +510,7 @@ async def run_video(
                             profile, nstart, nend, settings.keyframes_per_window))
                         break
                 call: dict = {}
+                qwen_timing: dict[str, float | int] = {}
                 captured_frames = {}
                 try:
                     report = await interpret_window(
@@ -468,6 +523,7 @@ async def run_video(
                         # Süregelen olayın bağlamı bir sonraki pencereye taşınır
                         context=hint,
                         stats=call,
+                        timing=qwen_timing,
                         captured_frames=captured_frames,
                     )
                 except asyncio.CancelledError:
@@ -486,6 +542,8 @@ async def run_video(
                         speed=end / max(time.time() - t_wall, 1e-6),
                     ))
                     continue
+                finally:
+                    metrics.record_qwen_timing(qwen_timing)
 
                 # Sınırda kalan pencere: karar `olagan` ama modelin ham inancı
                 # dikkat dalında kayda değer kütle bırakmış → BİR düşünmeli
@@ -494,6 +552,7 @@ async def run_video(
                 escalated = ""
                 if (settings.escalate_p and not report.events
                         and call.get("durum_p", 0.0) >= settings.escalate_p):
+                    escalation_timing: dict[str, float | int] = {}
                     try:
                         escalation_frames = {}
                         esc = await interpret_window(
@@ -502,6 +561,7 @@ async def run_video(
                             model=model, system_prompt=system_prompt,
                             task_prompt=task_prompt, context=hint,
                             think=True,
+                            timing=escalation_timing,
                             captured_frames=escalation_frames,
                         )
                         if esc.events:
@@ -524,6 +584,8 @@ async def run_video(
                             detail=(f"tırmandırma başarısız, taban karar "
                                     f"korundu: {str(exc)[:120]}"),
                         ))
+                    finally:
+                        metrics.record_qwen_timing(escalation_timing)
 
                 validation = postprocess_finalized_report(
                     report=report,
@@ -534,6 +596,7 @@ async def run_video(
                     workspace_root=settings.runs_dir.resolve().parent,
                     evidence_root=settings.runs_dir / "_runtime_evidence",
                 )
+                metrics.record_validation(validation)
                 policy = decide_runtime_policy(report, validation)
                 ctx.reports.append(report)
                 await rec.emit(report)
@@ -585,6 +648,7 @@ async def run_video(
                         evidence_scope=evidence_scope,
                         video_duration=duration,
                         window_count=len(wins),
+                        metrics=metrics,
                     )
                 if updates:
                     u = updates[-1]
@@ -631,6 +695,7 @@ async def run_video(
                 evidence_scope=evidence_scope,
                 video_duration=duration,
                 window_count=len(wins),
+                metrics=metrics,
             )
         ctx.finished = True
         # Koşunun nihai kararı operatöre görünür olmalı — sınıf + risk tek satırda
@@ -647,7 +712,14 @@ async def run_video(
         await rec.emit(AgentStep(node="interpret", status="error", detail=detail))
         await rec.emit(RunStatus(run_id=run_id, state="error", video=video, detail=detail))
     finally:
-        rec.close()
+        try:
+            rec.record_metrics()
+        except Exception:
+            # Observability, canonical run sonucunu veya cancellation semantiğini
+            # değiştiremez. JSONL yazma sorunu mevcut uygulama logunda görünür.
+            LOGGER.exception("canonical_run_metrics_write_failed", extra={"run_id": run_id})
+        finally:
+            rec.close()
 
 
 def load_run(run_id: str) -> list[dict]:
