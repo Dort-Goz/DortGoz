@@ -1,8 +1,7 @@
 """Canonical local REST uçları.
 
-Uzun analizler yalnızca ``asyncio.create_task`` ile başlatılır; HTTP isteği
-video analizinin bitmesini beklemez. WebSocket'in mevcut run akışı ayrı tutulur,
-ancak yeni REST sonuçları aynı in-memory repository'den okunur.
+REST ve WebSocket analiz başlatma yolları aynı process-local canonical job
+servisini kullanır. Legacy event repository uçları ayrı sözleşme olarak korunur.
 """
 
 from __future__ import annotations
@@ -11,9 +10,9 @@ import asyncio
 import os
 import tempfile
 from pathlib import Path
-from uuid import uuid4
+from typing import cast
 
-from fastapi import APIRouter, File, Query, UploadFile
+from fastapi import APIRouter, File, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from ..config import settings
@@ -21,9 +20,7 @@ from ..domain.event import VerifiedEvent
 from ..domain.evidence import EvidenceItem, VerifiedEventType
 from ..domain.memory import AnalysisStatus
 from ..domain.provenance import (
-    AnalysisProvenance,
     HumanReview,
-    ModelRunRef,
     ProcedureSource,
     ReviewDecision,
 )
@@ -35,14 +32,20 @@ from ..repositories.errors import RepositoryNotFoundError
 from ..repositories.memory import InMemoryEventRepository
 from ..repositories.procedure_index import LocalProcedureIndex
 from ..repositories.sqlite import SqliteEventRepository
+from ..services.analysis_job import (
+    AnalysisJobCapacityError,
+    AnalysisJobConflict,
+    AnalysisJobExecutionDisabled,
+    AnalysisJobStartError,
+    CanonicalAnalysisJobService,
+)
 from ..services.event_service import EventMemoryService
 from ..services.ingest_service import VideoIngestService
 from ..services.mock_vertical import MockVerticalAnalysisService
 from ..services.procedure_service import ProcedureService
 from ..services.risk_engine import RiskEngine, load_risk_ruleset
 from ..tools.local_agent import LocalVlmAgentTools
-from ..tools.local_vlm import LocalVlmManifest, load_local_vlm_manifest
-from ..tools.protocols import ToolExecutionError
+from ..tools.local_vlm import LocalVlmManifest
 from ..tools.screening import LocalCandidateScreeningTool
 from .contracts import (
     AnalysisAccepted,
@@ -79,7 +82,9 @@ class ApiRuntime:
         # yalnız türetilmiş skorları taşır, ham medya veya tensor saklamaz.
         self.candidate_cache = JsonFeatureCache(settings.candidate_cache_dir)
         project_root = settings.media_dir.parent
-        self.risk_engine = RiskEngine(load_risk_ruleset(project_root / "configs" / "risk_rules.yaml"))
+        self.risk_engine = RiskEngine(
+            load_risk_ruleset(project_root / "configs" / "risk_rules.yaml")
+        )
         self.procedure_service = ProcedureService(
             LocalProcedureIndex.load(
                 project_root / "data" / "procedures",
@@ -91,6 +96,13 @@ class ApiRuntime:
 
 runtime = ApiRuntime()
 router = APIRouter(prefix="/api")
+
+
+def _canonical_analysis_jobs(request: Request) -> CanonicalAnalysisJobService:
+    jobs = getattr(request.app.state, "analysis_jobs", None)
+    if jobs is None:
+        raise RuntimeError("canonical analysis job service yapılandırılmadı")
+    return cast(CanonicalAnalysisJobService, jobs)
 
 
 @router.post("/videos", response_model=VideoMetadata, status_code=201)
@@ -141,102 +153,70 @@ async def get_video(video_id: str) -> VideoMetadata:
 
 
 @router.post("/videos/{video_id}/analyze", response_model=AnalysisAccepted, status_code=202)
-async def analyze_video(video_id: str, request: AnalyzeRequest) -> AnalysisAccepted | JSONResponse:
+async def analyze_video(
+    video_id: str,
+    body: AnalyzeRequest,
+    request: Request,
+) -> AnalysisAccepted | JSONResponse:
     video = runtime.repository.get_video(video_id)
     if video is None:
         raise RepositoryNotFoundError(f"video bulunamadı: {video_id}")
-    if request.profile not in {"mock", "candidate", "local_vlm"}:
+
+    jobs = _canonical_analysis_jobs(request)
+    try:
+        snapshot = await jobs.start(
+            video.stored_filename,
+            feed=body.feed,
+            model=body.model,
+            system_prompt=body.system_prompt,
+            task_prompt=body.task_prompt,
+        )
+    except AnalysisJobConflict as exc:
         return error_response(
-            "MODEL_UNAVAILABLE",
-            "Bu analiz profili local backend'de kayıtlı değil.",
-            status_code=503,
+            "ANALYSIS_CONFLICT",
+            str(exc),
+            status_code=409,
+        )
+    except AnalysisJobCapacityError as exc:
+        return error_response(
+            "ANALYSIS_CAPACITY_EXCEEDED",
+            str(exc),
+            status_code=409,
             retryable=True,
         )
-    vlm_manifest: LocalVlmManifest | None = None
-    if request.profile == "local_vlm":
-        if settings.mock:
-            return error_response(
-                "MODEL_UNAVAILABLE",
-                "Gerçek local VLM profili DORTGOZ_MOCK=1 iken açılamaz.",
-                status_code=503,
-                retryable=False,
-            )
-        if settings.vlm_manifest_path is None:
-            return error_response(
-                "MODEL_UNAVAILABLE",
-                "Yerel VLM manifest yolu yapılandırılmamış.",
-                status_code=503,
-                retryable=False,
-            )
-        try:
-            vlm_manifest = await asyncio.to_thread(
-                load_local_vlm_manifest, settings.vlm_manifest_path
-            )
-        except ToolExecutionError as exc:
-            return error_response(
-                "MODEL_UNAVAILABLE",
-                str(exc),
-                status_code=503,
-                details={"reason": exc.code},
-                retryable=exc.code in {"MODEL_MANIFEST_MISSING", "MODEL_ARTIFACT_MISSING"},
-            )
+    except AnalysisJobExecutionDisabled as exc:
+        return error_response(
+            "ANALYSIS_EXECUTION_DISABLED",
+            str(exc),
+            status_code=503,
+        )
+    except AnalysisJobStartError as exc:
+        return error_response(
+            "ANALYSIS_START_FAILED",
+            str(exc),
+            status_code=500,
+            retryable=True,
+        )
+    except Exception as exc:
+        return error_response(
+            "ANALYSIS_START_FAILED",
+            "Canonical analiz başlatılamadı.",
+            status_code=500,
+            details={"reason": type(exc).__name__},
+            retryable=True,
+        )
 
-    for record in (runtime.repository.get_analysis(analysis_id) for analysis_id in runtime.jobs):
-        if record and record.status in {
-            AnalysisStatus.QUEUED,
-            AnalysisStatus.RUNNING,
-        }:
-            return error_response(
-                "ANALYSIS_ALREADY_RUNNING",
-                "Local backend tek analiz sınırı nedeniyle başka bir analiz çalışıyor.",
-                status_code=409,
-            )
-
-    analysis_id = str(uuid4())
-    provenance = AnalysisProvenance(
-        contract_version="1.0.0",
-        config_version=request.config_version,
-        code_revision="task-06-v1",
-        model_runs=[
-            ModelRunRef(
-                model_id=(
-                    runtime.candidate_scorer.model_id
-                    if request.profile in {"candidate", "local_vlm"}
-                    else "mock-screening-v1"
-                ),
-                role="screening",
-                config_version=request.config_version,
-                code_revision="task-06-v1",
-            )
-        ]
-        + (
-            [
-                ModelRunRef(
-                    model_id=vlm_manifest.model_id,
-                    role="vlm",
-                    prompt_version=vlm_manifest.prompt_version,
-                    config_version=request.config_version,
-                    code_revision="task-08-v1",
-                    artifact_sha256=vlm_manifest.artifact_sha256,
-                    model_license=vlm_manifest.license,
-                    model_source=vlm_manifest.source,
-                )
-            ]
-            if vlm_manifest is not None
-            else []
-        ),
-    )
-    runtime.events.start_analysis(video, provenance, analysis_id=analysis_id)
-    task = asyncio.create_task(_run_analysis(analysis_id, video, request.profile, vlm_manifest))
-    runtime.jobs[analysis_id] = task
     return AnalysisAccepted(
-        analysis_id=analysis_id,
+        analysis_id=snapshot.analysis_id,
         video_id=video_id,
-        status=AnalysisStatus.QUEUED,
-        status_url=f"/api/analyses/{analysis_id}/status",
+        status=snapshot.status,
+        status_url=f"/api/analyses/{snapshot.analysis_id}/status",
+        result_url=f"/api/runs/{snapshot.analysis_id}",
     )
 
 
+# Legacy vertical helper: Patch C'ye kadar doğrudan test/uyumluluk için tutulur;
+# production REST route'larının hiçbirinden çağrılmaz.
 async def _run_analysis(
     analysis_id: str,
     video: VideoMetadata,
@@ -267,9 +247,7 @@ async def _run_analysis(
             projected = EventMemoryService._event_from_state(state)
             risk = runtime.risk_engine.assess(projected)
             recommendation = runtime.procedure_service.recommend(projected, risk)
-            state = state.model_copy(
-                update={"risk": risk, "procedures": recommendation.actions}
-            )
+            state = state.model_copy(update={"risk": risk, "procedures": recommendation.actions})
             runtime.events.persist_terminal_state(
                 state,
                 update_analysis=False,
@@ -295,11 +273,19 @@ async def _run_analysis(
 
 
 @router.get("/analyses/{analysis_id}/status", response_model=AnalysisProgress)
-async def analysis_status(analysis_id: str) -> AnalysisProgress:
-    record = runtime.repository.get_analysis(analysis_id)
-    if record is None:
+async def analysis_status(analysis_id: str, request: Request) -> AnalysisProgress:
+    status = await _canonical_analysis_jobs(request).status(analysis_id)
+    if status is None:
         raise RepositoryNotFoundError(f"analysis bulunamadı: {analysis_id}")
-    return AnalysisProgress.from_record(record)
+    return AnalysisProgress(analysis_id=analysis_id, status=status)
+
+
+@router.post("/analyses/{analysis_id}/cancel", response_model=AnalysisProgress)
+async def cancel_analysis(analysis_id: str, request: Request) -> AnalysisProgress:
+    status = await _canonical_analysis_jobs(request).cancel(analysis_id)
+    if status is None:
+        raise RepositoryNotFoundError(f"analysis bulunamadı: {analysis_id}")
+    return AnalysisProgress(analysis_id=analysis_id, status=status)
 
 
 @router.get("/analyses/{analysis_id}/events", response_model=list[VerifiedEvent])
@@ -362,9 +348,7 @@ async def query_analysis(analysis_id: str, request: QueryRequest) -> QueryRespon
     if request.referenced_event_id:
         referenced = runtime.repository.get_event(request.referenced_event_id)
         if referenced is None or referenced.analysis_id != analysis_id:
-            raise RepositoryNotFoundError(
-                f"event bulunamadı: {request.referenced_event_id}"
-            )
+            raise RepositoryNotFoundError(f"event bulunamadı: {request.referenced_event_id}")
     events = runtime.events.query(analysis_id, request.question)
     if request.referenced_event_id:
         events = [event for event in events if event.event_id == request.referenced_event_id]
@@ -372,7 +356,12 @@ async def query_analysis(analysis_id: str, request: QueryRequest) -> QueryRespon
     evidence_refs = [item.evidence_id for event in events for item in event.evidence]
     procedure_sources = list(
         {
-            (action.document_id, action.section, action.version, action.content_hash): ProcedureSource(
+            (
+                action.document_id,
+                action.section,
+                action.version,
+                action.content_hash,
+            ): ProcedureSource(
                 document_id=action.document_id,
                 section=action.section,
                 version=action.version,
@@ -384,10 +373,7 @@ async def query_analysis(analysis_id: str, request: QueryRequest) -> QueryRespon
     )
     uncertainties = [item for event in events for item in event.uncertainties]
     labels = ", ".join(event.event_type.value for event in events)
-    answer = (
-        f"{len(events)} eşleşen olay bulundu"
-        + (f": {labels}." if labels else ".")
-    )
+    answer = f"{len(events)} eşleşen olay bulundu" + (f": {labels}." if labels else ".")
     return QueryResponse(
         answer_tr=answer,
         event_refs=event_refs,

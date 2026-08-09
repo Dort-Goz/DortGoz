@@ -67,8 +67,8 @@ analysis_jobs = CanonicalAnalysisJobService(
     max_active=MAX_FEEDS,
     enabled=lambda: not settings.mock,
 )
-# REST migration Patch B'de yapılacak; tek instance şimdiden app composition
-# sınırında görünür ki router daha sonra circular import olmadan kullanabilsin.
+# REST ve WS bu app composition sınırındaki aynı canonical job instance'ını kullanır;
+# router servisi ``app.state`` üzerinden alır ve ``main`` modülünü import etmez.
 app.state.analysis_jobs = analysis_jobs
 
 

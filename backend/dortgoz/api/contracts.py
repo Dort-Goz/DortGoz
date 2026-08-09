@@ -7,21 +7,25 @@ JSON'a güvenli biçimde taşır.
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..domain.event import VerifiedEvent
-from ..domain.memory import AnalysisRecord, AnalysisResult, AnalysisStatus
+from ..domain.memory import AnalysisResult
 from ..domain.provenance import ProcedureSource, TraceRecord
+from ..services.analysis_job import AnalysisJobStatus
 
 
 class AnalyzeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    profile: str = Field(default="mock", min_length=1)
-    config_version: str = Field(default="task-06-v1", min_length=1)
+    profile: str = Field(default="mock", min_length=1, deprecated=True)
+    config_version: str = Field(default="task-06-v1", min_length=1, deprecated=True)
+    feed: str = Field(default="", max_length=120)
+    model: str = Field(default="", max_length=500)
+    system_prompt: str = Field(default="", max_length=20_000)
+    task_prompt: str = Field(default="", max_length=20_000)
 
 
 class AnalysisAccepted(BaseModel):
@@ -29,32 +33,16 @@ class AnalysisAccepted(BaseModel):
 
     analysis_id: str = Field(min_length=1)
     video_id: str = Field(min_length=1)
-    status: AnalysisStatus = AnalysisStatus.QUEUED
+    status: AnalysisJobStatus = AnalysisJobStatus.QUEUED
     status_url: str = Field(min_length=1)
+    result_url: str = Field(min_length=1)
 
 
 class AnalysisProgress(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     analysis_id: str = Field(min_length=1)
-    video_id: str = Field(min_length=1)
-    status: AnalysisStatus
-    progress: float = Field(ge=0, le=1)
-    error: str | None = None
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
-
-    @classmethod
-    def from_record(cls, record: AnalysisRecord) -> AnalysisProgress:
-        return cls(
-            analysis_id=record.analysis_id,
-            video_id=record.video_id,
-            status=record.status,
-            progress=record.progress,
-            error=record.error,
-            started_at=record.started_at,
-            finished_at=record.finished_at,
-        )
+    status: AnalysisJobStatus
 
 
 class HumanReviewInput(BaseModel):
