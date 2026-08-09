@@ -1,12 +1,16 @@
 from dortgoz.benchmark_metrics import (
     agent_metrics,
     agreement_rate,
+    binary_cohens_kappa,
     candidate_metrics,
     e2e_metrics,
     event_has_valid_evidence,
+    evidence_count,
     evidence_metrics,
     evidence_precision,
+    evidence_set_recall,
     grounding_metrics,
+    raw_binary_agreement,
     temporal_absolute_error,
     vlm_metrics,
 )
@@ -19,6 +23,13 @@ def test_evidence_precision_and_event_valid_evidence() -> None:
     assert event_has_valid_evidence(chosen, valid) is True
     assert evidence_precision(set(), valid) == 0.0
     assert event_has_valid_evidence({1}, valid) is False
+
+
+def test_evidence_count_and_diagnostic_set_recall() -> None:
+    chosen = [1, 3]
+    assert evidence_count(chosen) == 2
+    assert evidence_set_recall(chosen, {1, 2, 3, 4}) == 0.5
+    assert evidence_set_recall(chosen, set()) is None
 
 
 def test_temporal_absolute_error_uses_peak_or_nearest_interval_boundary() -> None:
@@ -47,6 +58,25 @@ def test_agreement_rate_is_paired_and_requires_equal_lengths() -> None:
         agreement_rate(["a"], [])
 
 
+def test_binary_annotator_raw_agreement_and_kappa() -> None:
+    left = [True, True, False, False]
+    right = [True, False, False, False]
+    assert raw_binary_agreement(left, right) == 0.75
+    result = binary_cohens_kappa(left, right)
+    assert result["status"] == "defined"
+    assert result["value"] == 0.5
+    assert result["reason"] is None
+
+
+def test_binary_kappa_is_typed_undefined_for_degenerate_distribution() -> None:
+    assert raw_binary_agreement([True, True], [True, True]) == 1.0
+    assert binary_cohens_kappa([True, True], [True, True]) == {
+        "status": "undefined",
+        "value": None,
+        "reason": "DEGENERATE_CLASS_DISTRIBUTION",
+    }
+
+
 def test_grounding_metrics_reports_quality_guardrails_and_cost() -> None:
     result = grounding_metrics(
         [
@@ -55,6 +85,8 @@ def test_grounding_metrics_reports_quality_guardrails_and_cost() -> None:
                 "contract_valid": True,
                 "evidence_precision": 1.0,
                 "event_has_valid_evidence": True,
+                "evidence_count": 1,
+                "evidence_set_recall": 0.5,
                 "temporal_absolute_error": 2.0,
                 "event_detected": True,
                 "event_type_correct": True,
@@ -68,6 +100,8 @@ def test_grounding_metrics_reports_quality_guardrails_and_cost() -> None:
                 "contract_valid": True,
                 "evidence_precision": 0.0,
                 "event_has_valid_evidence": False,
+                "evidence_count": 3,
+                "evidence_set_recall": 0.0,
                 "temporal_absolute_error": 6.0,
                 "event_detected": False,
                 "event_type_correct": False,
@@ -86,6 +120,8 @@ def test_grounding_metrics_reports_quality_guardrails_and_cost() -> None:
     )
     assert result["evidence_frame_correctness"] == 0.5
     assert result["event_has_valid_evidence_rate"] == 0.5
+    assert result["mean_evidence_count"] == 2.0
+    assert result["mean_evidence_set_recall"] == 0.25
     assert result["median_temporal_absolute_error"] == 4.0
     assert result["event_recall"] == 0.5
     assert result["event_type_correctness"] == 0.5

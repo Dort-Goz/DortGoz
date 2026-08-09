@@ -5,7 +5,7 @@ Bu dosya production pipeline'ını değiştirmez. Aynı seçilmiş JPEG payload'
 
 * A: ordinal ``image_index``
 * B: explicit ``frame_id``
-* C: explicit ``frame_id`` + video timestamp
+* C: explicit ``frame_id`` + input-only video timestamp
 
 Önce yalnız planı doğrulamak için ``--dry-run`` kullanın. Model çağrısı güvenlik
 amacıyla ancak açık ``--execute`` bayrağıyla yapılır.
@@ -40,9 +40,13 @@ if str(BACKEND) not in sys.path:
 from dortgoz.agent.llm import call_stats, create_chat, main_client  # noqa: E402
 from dortgoz.benchmark_metrics import (  # noqa: E402
     agreement_rate,
+    binary_cohens_kappa,
     event_has_valid_evidence,
+    evidence_count,
     evidence_precision,
+    evidence_set_recall,
     grounding_metrics,
+    raw_binary_agreement,
     temporal_absolute_error,
 )
 from dortgoz.config import settings  # noqa: E402
@@ -59,10 +63,19 @@ from dortgoz.pipeline.interpret import (  # noqa: E402
 
 DEFAULT_SEED = 20260809
 TEMPERATURE = 0
+GROUNDING_EVALUATION_CONDITION = "at_least_one_valid_selected_frame"
+EXCLUDED_KEYFRAME_FAILURE = "EXCLUDED_KEYFRAME_FAILURE"
+PERMUTATION_SCOPE = "single_controlled_order_perturbation_sensitivity"
+PRODUCTION_EVIDENCE_CONTRACT = ("frame_id", "timestamp", "claim")
+BENCHMARK_EVIDENCE_CONTRACTS = {
+    "A": ("image_index", "claim"),
+    "B": ("frame_id", "claim"),
+    "C": ("frame_id", "claim"),
+}
 GROUNDING_REPRESENTATIONS = {
     "A": "ordinal_image_index",
     "B": "explicit_frame_id",
-    "C": "explicit_frame_id_and_timestamp",
+    "C": "explicit_frame_id_with_input_timestamp",
 }
 PREREGISTERED_CRITERIA = {
     "evidence_correctness_gain_pp_vs_a": 5.0,
@@ -80,6 +93,8 @@ FAIRNESS_INVARIANTS = (
     "same_token_budget",
     "same_temperature_and_sampling",
     "same_system_semantics_event_task_and_taxonomy",
+    "same_event_output_semantics",
+    "same_number_of_evidence_semantic_fields",
 )
 
 _C_SYSTEM_CLAUSE = (
@@ -97,17 +112,20 @@ _ARM_SYSTEM_CLAUSE = {
     ),
     "C": _C_SYSTEM_CLAUSE,
 }
-_C_TASK_CLAUSE = (
+_PRODUCTION_TASK_CLAUSE = (
     "Her evidence kaydında yalnız ilgili karenin FRAME_ID ve "
     "VIDEO_TIMESTAMP_SECONDS değerini aynen kullan."
+)
+_NORMALIZED_FRAME_TASK_CLAUSE = (
+    "Her evidence kaydında yalnız ilgili karenin FRAME_ID değerini aynen kullan."
 )
 _ARM_TASK_CLAUSE = {
     "A": (
         "Her evidence kaydında yalnız ilgili görüntünün gösterim sırasındaki image_index "
         "değerini kullan; ilk görüntü 0'dır."
     ),
-    "B": "Her evidence kaydında yalnız ilgili karenin FRAME_ID değerini aynen kullan.",
-    "C": _C_TASK_CLAUSE,
+    "B": _NORMALIZED_FRAME_TASK_CLAUSE,
+    "C": _NORMALIZED_FRAME_TASK_CLAUSE,
 }
 
 
@@ -115,6 +133,11 @@ class Arm(StrEnum):
     A = "A"
     B = "B"
     C = "C"
+
+
+class EvaluationStage(StrEnum):
+    PILOT = "pilot"
+    FINAL = "final"
 
 
 class HarnessFailure(ValueError):
@@ -149,11 +172,22 @@ class EvidenceSample:
     gt_end: float | None
     selected_frames: tuple[SelectedFrame, ...]
     valid_evidence_frames: frozenset[int]
+    evaluation_stage: EvaluationStage
     boundary_near: bool
     short_event: bool
     visually_ambiguous: bool
     notes: str
     source_label: str | None = None
+
+    @property
+    def grounding_evaluation_eligible(self) -> bool:
+        return self.gt_event_type == CanonicalEventType.NORMAL.value or bool(
+            self.valid_evidence_frames
+        )
+
+    @property
+    def grounding_exclusion_reason(self) -> str | None:
+        return None if self.grounding_evaluation_eligible else EXCLUDED_KEYFRAME_FAILURE
 
 
 @dataclass(frozen=True)
@@ -179,6 +213,14 @@ class FramePayload:
     timestamp: float
     jpeg: bytes
     sha256: str
+
+
+@dataclass(frozen=True)
+class AnnotatorLabel:
+    sample_id: str
+    frame_index: int
+    annotator_slot: str
+    is_valid_evidence: bool
 
 
 def _failure(code: str, message: str, *, line_number: int | None = None) -> HarnessFailure:
@@ -371,6 +413,15 @@ def parse_sample(payload: dict[str, Any], *, line_number: int | None = None) -> 
         )
     sample_id = _as_nonempty_string(payload, "sample_id", line_number=line_number)
     video_id = _as_nonempty_string(payload, "video_id", line_number=line_number)
+    raw_evaluation_stage = _as_nonempty_string(payload, "evaluation_stage", line_number=line_number)
+    try:
+        evaluation_stage = EvaluationStage(raw_evaluation_stage)
+    except ValueError as exc:
+        raise _failure(
+            "INVALID_ANNOTATION",
+            "evaluation_stage yalnız pilot veya final olabilir",
+            line_number=line_number,
+        ) from exc
     window_start = float(_as_float(payload, "window_start", line_number=line_number))
     window_end = float(_as_float(payload, "window_end", line_number=line_number))
     if window_end <= window_start:
@@ -435,12 +486,6 @@ def parse_sample(payload: dict[str, Any], *, line_number: int | None = None) -> 
                 "gt_peak GT interval içinde olmalı",
                 line_number=line_number,
             )
-        if not valid_frames:
-            raise _failure(
-                "INVALID_ANNOTATION",
-                "non-normal sample en az bir valid evidence frame içermeli",
-                line_number=line_number,
-            )
         if gt_end < window_start or gt_start > window_end:
             raise _failure(
                 "INVALID_ANNOTATION",
@@ -470,6 +515,7 @@ def parse_sample(payload: dict[str, Any], *, line_number: int | None = None) -> 
         gt_end=float(gt_end) if gt_end is not None else None,
         selected_frames=frames,
         valid_evidence_frames=valid_frames,
+        evaluation_stage=evaluation_stage,
         boundary_near=_as_bool(payload, "boundary_near", line_number=line_number),
         short_event=_as_bool(payload, "short_event", line_number=line_number),
         visually_ambiguous=_as_bool(payload, "visually_ambiguous", line_number=line_number),
@@ -508,6 +554,126 @@ def load_samples(path: Path) -> list[EvidenceSample]:
     return samples
 
 
+def parse_annotator_label(
+    payload: dict[str, Any], *, line_number: int | None = None
+) -> AnnotatorLabel:
+    """Kişisel veri taşımayan ayrı binary per-frame annotation satırını doğrular."""
+
+    allowed_fields = {"sample_id", "frame_index", "annotator_slot", "is_valid_evidence"}
+    if not isinstance(payload, dict) or set(payload) != allowed_fields:
+        raise _failure(
+            "INVALID_ANNOTATOR_ANNOTATION",
+            "annotator satırı yalnız sample_id, frame_index, annotator_slot ve "
+            "is_valid_evidence alanlarını içermeli",
+            line_number=line_number,
+        )
+    sample_id = _as_nonempty_string(payload, "sample_id", line_number=line_number)
+    frame_index = payload["frame_index"]
+    if isinstance(frame_index, bool) or not isinstance(frame_index, int) or frame_index < 0:
+        raise _failure(
+            "INVALID_ANNOTATOR_ANNOTATION",
+            "frame_index negatif olmayan integer olmalı",
+            line_number=line_number,
+        )
+    annotator_slot = _as_nonempty_string(payload, "annotator_slot", line_number=line_number)
+    if annotator_slot not in {"ann_1", "ann_2"}:
+        raise _failure(
+            "INVALID_ANNOTATOR_ANNOTATION",
+            "annotator_slot yalnız ann_1 veya ann_2 olabilir",
+            line_number=line_number,
+        )
+    is_valid_evidence = payload["is_valid_evidence"]
+    if not isinstance(is_valid_evidence, bool):
+        raise _failure(
+            "INVALID_ANNOTATOR_ANNOTATION",
+            "is_valid_evidence boolean olmalı",
+            line_number=line_number,
+        )
+    return AnnotatorLabel(
+        sample_id=sample_id,
+        frame_index=frame_index,
+        annotator_slot=annotator_slot,
+        is_valid_evidence=is_valid_evidence,
+    )
+
+
+def load_annotator_labels(path: Path) -> list[AnnotatorLabel]:
+    """Anonim annotator JSONL dosyasını duplicate-safe biçimde okur."""
+
+    if not path.is_file():
+        raise HarnessFailure("ANNOTATOR_FILE_NOT_FOUND", f"annotator kaydı bulunamadı: {path}")
+    labels: list[AnnotatorLabel] = []
+    seen: set[tuple[str, int, str]] = set()
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise _failure(
+                "INVALID_ANNOTATOR_ANNOTATION",
+                f"geçersiz JSON: {exc.msg}",
+                line_number=line_number,
+            ) from exc
+        label = parse_annotator_label(payload, line_number=line_number)
+        key = (label.sample_id, label.frame_index, label.annotator_slot)
+        if key in seen:
+            raise _failure(
+                "INVALID_ANNOTATOR_ANNOTATION",
+                f"duplicate annotator kararı: {key}",
+                line_number=line_number,
+            )
+        seen.add(key)
+        labels.append(label)
+    if not labels:
+        raise HarnessFailure("INVALID_ANNOTATOR_ANNOTATION", "annotator dosyası boş")
+    return labels
+
+
+def annotator_agreement_report(
+    labels: Sequence[AnnotatorLabel], samples: Sequence[EvidenceSample]
+) -> dict[str, Any]:
+    """Tam ann_1/ann_2 frame çiftlerinde raw agreement ve kappa üretir."""
+
+    valid_units = {
+        (sample.sample_id, frame.frame_index)
+        for sample in samples
+        for frame in sample.selected_frames
+    }
+    decisions: dict[tuple[str, int], dict[str, bool]] = defaultdict(dict)
+    for label in labels:
+        unit = (label.sample_id, label.frame_index)
+        if unit not in valid_units:
+            raise HarnessFailure(
+                "INVALID_ANNOTATOR_ANNOTATION",
+                f"annotator kararı canonical selected frame'e bağlı değil: {unit}",
+            )
+        if label.annotator_slot in decisions[unit]:
+            raise HarnessFailure(
+                "INVALID_ANNOTATOR_ANNOTATION",
+                f"duplicate annotator kararı: {unit}/{label.annotator_slot}",
+            )
+        decisions[unit][label.annotator_slot] = label.is_valid_evidence
+
+    paired = [
+        (unit, slots)
+        for unit, slots in sorted(decisions.items())
+        if set(slots) == {"ann_1", "ann_2"}
+    ]
+    left = [slots["ann_1"] for _, slots in paired]
+    right = [slots["ann_2"] for _, slots in paired]
+    return {
+        "annotation_unit": "binary_per_selected_frame",
+        "annotator_slots": ["ann_1", "ann_2"],
+        "paired_frame_count": len(paired),
+        "incomplete_frame_count": len(decisions) - len(paired),
+        "raw_agreement": raw_binary_agreement(left, right),
+        "cohens_kappa": binary_cohens_kappa(left, right),
+        "adjudicated_canonical_annotation": "separate_sample_jsonl",
+        "contains_personal_identifiers": False,
+    }
+
+
 def deterministic_order(
     sample: EvidenceSample, permutation_id: str, *, seed: int = DEFAULT_SEED
 ) -> tuple[int, ...]:
@@ -544,6 +710,8 @@ def build_plans(
         raise HarnessFailure("INVALID_ARMS", "en az bir arm seçilmeli")
     plans: list[ExperimentPlan] = []
     for sample in samples:
+        if not sample.grounding_evaluation_eligible:
+            continue
         for permutation_id in orders:
             order = deterministic_order(sample, permutation_id, seed=seed)
             for repeat_number in range(1, repeats + 1):
@@ -562,11 +730,47 @@ def build_plans(
     return plans
 
 
-def _semantic_signature() -> str:
-    system = SYSTEM_TR.replace(_C_SYSTEM_CLAUSE, "<GROUNDING_REPRESENTATION>", 1)
-    task = TASK_TR.replace(_C_TASK_CLAUSE, "<GROUNDING_REPRESENTATION>", 1)
-    tier = TIER_TR if settings.two_tier else ""
-    return hashlib.sha256(f"{system}\n{tier}\n{task}".encode()).hexdigest()
+def _normalized_benchmark_contract(plan: ExperimentPlan) -> str:
+    """Grounding encoding dışındaki prompt/schema yapısını canonicalize eder."""
+
+    evidence_schema = _evidence_schema(plan.arm)
+    expected_fields = BENCHMARK_EVIDENCE_CONTRACTS[plan.arm.value]
+    properties = evidence_schema.get("properties", {})
+    required = evidence_schema.get("required", [])
+    if (
+        tuple(properties) != expected_fields
+        or set(required) != set(expected_fields)
+        or len(properties) != 2
+        or evidence_schema.get("additionalProperties") is not False
+    ):
+        raise HarnessFailure(
+            "FAIRNESS_INVARIANT_VIOLATION",
+            f"arm {plan.arm.value} normalized evidence contract yapısı farklı",
+        )
+
+    system_clause = _ARM_SYSTEM_CLAUSE[plan.arm.value]
+    task_clause = _ARM_TASK_CLAUSE[plan.arm.value]
+    system = arm_system_prompt(plan.arm)
+    task = arm_task_prompt(plan)
+    if system.count(system_clause) != 1 or task.count(task_clause) != 1:
+        raise HarnessFailure(
+            "FAIRNESS_INVARIANT_VIOLATION",
+            f"arm {plan.arm.value} grounding clause canonicalize edilemedi",
+        )
+    system = system.replace(system_clause, "<GROUNDING_REFERENCE_ENCODING>", 1)
+    task = task.replace(task_clause, "<GROUNDING_REFERENCE_ENCODING>", 1)
+
+    schema = schema_for_arm(plan.arm)
+    branches = schema["oneOf"] if "oneOf" in schema else [schema]
+    attention = next(branch for branch in branches if "events" in branch.get("properties", {}))
+    item_schema = attention["properties"]["events"]["items"]["properties"]["evidence"]["items"]
+    item_schema["properties"] = {
+        "grounding_reference": {"type": "benchmark_grounding_reference"},
+        "claim": copy.deepcopy(properties["claim"]),
+    }
+    item_schema["required"] = ["grounding_reference", "claim"]
+    contract = {"system": system, "task": task, "schema": schema}
+    return json.dumps(contract, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _fairness_signature(
@@ -587,7 +791,7 @@ def _fairness_signature(
         plan.model_id,
         plan.max_tokens,
         plan.temperature,
-        _semantic_signature(),
+        _normalized_benchmark_contract(plan),
         settings.two_tier,
     )
 
@@ -622,12 +826,12 @@ def arm_system_prompt(arm: Arm) -> str:
 
 
 def arm_task_prompt(plan: ExperimentPlan) -> str:
-    if TASK_TR.count(_C_TASK_CLAUSE) != 1:
+    if TASK_TR.count(_PRODUCTION_TASK_CLAUSE) != 1:
         raise HarnessFailure(
             "PROMPT_TEMPLATE_MISMATCH",
             "production TASK_TR grounding cümlesi tekil bulunamadı",
         )
-    task = TASK_TR.replace(_C_TASK_CLAUSE, _ARM_TASK_CLAUSE[plan.arm.value], 1)
+    task = TASK_TR.replace(_PRODUCTION_TASK_CLAUSE, _ARM_TASK_CLAUSE[plan.arm.value], 1)
     return task.replace("{start}", f"{plan.sample.window_start:.0f}").replace(
         "{end}", f"{plan.sample.window_end:.0f}"
     )
@@ -639,15 +843,9 @@ def _evidence_schema(arm: Arm) -> dict[str, Any]:
             "image_index": {"type": "integer", "minimum": 0},
             "claim": {"type": "string", "minLength": 5, "maxLength": 500},
         }
-    elif arm is Arm.B:
-        properties = {
-            "frame_id": {"type": "string", "pattern": "^f_[0-9]{3,}$"},
-            "claim": {"type": "string", "minLength": 5, "maxLength": 500},
-        }
     else:
         properties = {
             "frame_id": {"type": "string", "pattern": "^f_[0-9]{3,}$"},
-            "timestamp": {"type": "number", "minimum": 0},
             "claim": {"type": "string", "minLength": 5, "maxLength": 500},
         }
     return {
@@ -812,6 +1010,7 @@ def _base_row(
     row: dict[str, Any] = {
         "experiment_id": experiment_id,
         "sample_id": plan.sample.sample_id,
+        "evaluation_stage": plan.sample.evaluation_stage.value,
         "pairing_key": (f"{plan.sample.sample_id}:{plan.permutation_id}:repeat-{plan.repeat}"),
         "arm": plan.arm.value,
         "permutation_id": plan.permutation_id,
@@ -821,6 +1020,15 @@ def _base_row(
         "window_end": plan.sample.window_end,
         "selected_frames": selected,
         "grounding_representation": plan.grounding_representation,
+        "GROUNDING_EVALUATION_CONDITION": GROUNDING_EVALUATION_CONDITION,
+        "permutation_scope": PERMUTATION_SCOPE,
+        "contracts": {
+            "production": list(PRODUCTION_EVIDENCE_CONTRACT),
+            "benchmark_normalized": {
+                arm: list(fields) for arm, fields in BENCHMARK_EVIDENCE_CONTRACTS.items()
+            },
+            "production_contract_changed": False,
+        },
         "predicted_event_type": None,
         "predicted_start": None,
         "predicted_peak": None,
@@ -900,15 +1108,6 @@ def normalize_evidence(plan: ExperimentPlan, data: dict[str, Any]) -> list[dict[
                 frame_index = _frame_index_from_id(evidence.get("frame_id"), plan.sample)
                 position = plan.order.index(frame_index)
             frame = by_index[frame_index]
-            if plan.arm is Arm.C:
-                raw_timestamp = evidence.get("timestamp")
-                if isinstance(raw_timestamp, bool) or not isinstance(raw_timestamp, int | float):
-                    raise HarnessFailure("INVALID_EVIDENCE_TIMESTAMP", "timestamp sayı değil")
-                if abs(float(raw_timestamp) - frame.timestamp) > FRAME_TIMESTAMP_TOLERANCE_SECONDS:
-                    raise HarnessFailure(
-                        "INVALID_EVIDENCE_TIMESTAMP",
-                        f"{frame.frame_id} timestamp eşleşmiyor: {raw_timestamp}",
-                    )
             claim = evidence.get("claim")
             if not isinstance(claim, str) or not 5 <= len(claim) <= 500:
                 raise HarnessFailure("INVALID_EVIDENCE_CLAIM", "claim uzunluğu geçersiz")
@@ -930,6 +1129,8 @@ def apply_prediction_metrics(row: dict[str, Any], sample: EvidenceSample) -> Non
     chosen = [item["frame_index"] for item in row["predicted_evidence"]]
     row["evidence_precision"] = evidence_precision(chosen, sample.valid_evidence_frames)
     row["event_has_valid_evidence"] = event_has_valid_evidence(chosen, sample.valid_evidence_frames)
+    row["evidence_count"] = evidence_count(chosen)
+    row["evidence_set_recall"] = evidence_set_recall(chosen, sample.valid_evidence_frames)
     errors: list[float] = []
     if sample.gt_start is not None and sample.gt_end is not None:
         for item in row["predicted_evidence"]:
@@ -1140,18 +1341,56 @@ def consistency_metrics(records: Sequence[dict[str, Any]]) -> dict[str, float]:
     }
 
 
+def evaluation_metadata(samples: Sequence[EvidenceSample]) -> dict[str, Any]:
+    excluded = [
+        {
+            "sample_id": sample.sample_id,
+            "evaluation_stage": sample.evaluation_stage.value,
+            "reason": sample.grounding_exclusion_reason,
+        }
+        for sample in samples
+        if not sample.grounding_evaluation_eligible
+    ]
+    return {
+        "evaluation_stage_counts": {
+            stage.value: sum(sample.evaluation_stage is stage for sample in samples)
+            for stage in EvaluationStage
+        },
+        "GROUNDING_EVALUATION_CONDITION": GROUNDING_EVALUATION_CONDITION,
+        "measures_end_to_end_keyframe_selection": False,
+        "eligible_grounding_sample_count": sum(
+            sample.grounding_evaluation_eligible for sample in samples
+        ),
+        "excluded_keyframe_failure_count": len(excluded),
+        "excluded_samples": excluded,
+        "permutation_scope": PERMUTATION_SCOPE,
+        "contracts": {
+            "production": list(PRODUCTION_EVIDENCE_CONTRACT),
+            "benchmark_normalized": {
+                arm: list(fields) for arm, fields in BENCHMARK_EVIDENCE_CONTRACTS.items()
+            },
+            "production_contract_changed": False,
+        },
+    }
+
+
 def dry_run_summary(
     samples: Sequence[EvidenceSample],
     plans: Sequence[ExperimentPlan],
     *,
     output_path: Path,
     seed: int,
+    annotator_agreement: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     mappings: dict[str, Any] = {}
+    plan_orders = sorted({plan.permutation_id for plan in plans})
     for sample in samples:
         mappings[sample.sample_id] = {
             "video_id": sample.video_id,
             "source_label": sample.source_label,
+            "evaluation_stage": sample.evaluation_stage.value,
+            "grounding_evaluation_eligible": sample.grounding_evaluation_eligible,
+            "exclusion_reason": sample.grounding_exclusion_reason,
             "selected_frames": [
                 {
                     "frame_index": frame.frame_index,
@@ -1162,10 +1401,11 @@ def dry_run_summary(
             ],
             "orders": {
                 order: list(deterministic_order(sample, order, seed=seed))
-                for order in sorted({plan.permutation_id for plan in plans})
+                for order in plan_orders
+                if sample.grounding_evaluation_eligible
             },
         }
-    return {
+    summary = {
         "mode": "dry-run",
         "sample_count": len(samples),
         "arms": sorted({plan.arm.value for plan in plans}),
@@ -1179,7 +1419,11 @@ def dry_run_summary(
         "preregistered_criteria": PREREGISTERED_CRITERIA,
         "frame_mappings": mappings,
         "model_calls_made": 0,
+        **evaluation_metadata(samples),
     }
+    if annotator_agreement is not None:
+        summary["annotator_agreement"] = annotator_agreement
+    return summary
 
 
 async def execute(
@@ -1198,6 +1442,8 @@ async def execute(
         )
     payloads_by_sample: dict[str, tuple[FramePayload, ...]] = {}
     for sample in samples:
+        if not sample.grounding_evaluation_eligible:
+            continue
         payloads_by_sample[sample.sample_id] = await load_frame_payloads(
             sample, annotation_path=annotation_path, media_root=media_root
         )
@@ -1233,6 +1479,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--samples", type=Path, required=True, help="Annotation JSONL")
     parser.add_argument(
+        "--annotator-labels",
+        type=Path,
+        help="Opsiyonel, anonim ann_1/ann_2 binary per-frame annotation JSONL",
+    )
+    parser.add_argument(
         "--arms", nargs="+", choices=[arm.value for arm in Arm], default=["A", "B", "C"]
     )
     parser.add_argument(
@@ -1259,6 +1510,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         samples = load_samples(args.samples.resolve())
+        annotator_agreement = None
+        if args.annotator_labels is not None:
+            labels = load_annotator_labels(args.annotator_labels.resolve())
+            annotator_agreement = annotator_agreement_report(labels, samples)
         arms = [Arm(value) for value in args.arms]
         plans = build_plans(
             samples,
@@ -1271,7 +1526,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         assert_fairness(plans)
         if args.dry_run:
-            summary = dry_run_summary(samples, plans, output_path=args.out, seed=args.seed)
+            summary = dry_run_summary(
+                samples,
+                plans,
+                output_path=args.out,
+                seed=args.seed,
+                annotator_agreement=annotator_agreement,
+            )
         else:
             experiment_id = args.experiment_id or (
                 "phase-b-grounding-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -1299,7 +1560,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                     for arm in arms
                 },
                 "preregistered_criteria": PREREGISTERED_CRITERIA,
+                **evaluation_metadata(samples),
             }
+            if annotator_agreement is not None:
+                summary["annotator_agreement"] = annotator_agreement
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
     except HarnessFailure as exc:

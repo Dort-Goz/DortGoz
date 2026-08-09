@@ -22,6 +22,24 @@ def event_has_valid_evidence[T](chosen: Collection[T], valid: Collection[T]) -> 
     return bool(set(chosen) & set(valid))
 
 
+def evidence_count[T](chosen: Collection[T]) -> int:
+    """Modelin ürettiği evidence kayıtlarının sayısı."""
+
+    return len(chosen)
+
+
+def evidence_set_recall[T](chosen: Collection[T], valid: Collection[T]) -> float | None:
+    """Geçerli evidence kümesinin ne kadarının seçildiğini diagnostic olarak ölçer.
+
+    Geçerli küme boşsa oran matematiksel olarak tanımsızdır. Normal kontrollerde
+    sahte bir sıfır veya bir üretmek yerine ``None`` döndürülür.
+    """
+
+    if not valid:
+        return None
+    return len(set(chosen) & set(valid)) / len(set(valid))
+
+
 def temporal_absolute_error(
     predicted_timestamp: float | None,
     *,
@@ -62,6 +80,49 @@ def agreement_rate[T](left: Sequence[T], right: Sequence[T]) -> float:
     return sum(a == b for a, b in zip(left, right, strict=True)) / len(left)
 
 
+def raw_binary_agreement(left: Sequence[bool], right: Sequence[bool]) -> float | None:
+    """İki annotator'ın eşlenmiş binary frame kararlarında ham anlaşması."""
+
+    if len(left) != len(right):
+        raise ValueError("annotator dizileri aynı uzunlukta olmalı")
+    if not left:
+        return None
+    return sum(a is b for a, b in zip(left, right, strict=True)) / len(left)
+
+
+def binary_cohens_kappa(
+    left: Sequence[bool], right: Sequence[bool]
+) -> dict[str, float | str | None]:
+    """İki annotator için dependency'siz Cohen's kappa hesabı.
+
+    Beklenen anlaşma 1 olduğunda payda sıfırdır. Bu degenerate class dağılımı
+    typed ``undefined`` sonucu ile gösterilir; uydurma 0/1 üretilmez.
+    """
+
+    if len(left) != len(right):
+        raise ValueError("annotator dizileri aynı uzunlukta olmalı")
+    if not left:
+        return {"status": "undefined", "value": None, "reason": "NO_PAIRED_ANNOTATIONS"}
+
+    observed = raw_binary_agreement(left, right)
+    assert observed is not None
+    count = len(left)
+    left_positive = sum(left) / count
+    right_positive = sum(right) / count
+    expected = left_positive * right_positive + (1 - left_positive) * (1 - right_positive)
+    if expected == 1.0:
+        return {
+            "status": "undefined",
+            "value": None,
+            "reason": "DEGENERATE_CLASS_DISTRIBUTION",
+        }
+    return {
+        "status": "defined",
+        "value": (observed - expected) / (1 - expected),
+        "reason": None,
+    }
+
+
 def grounding_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
     """Phase B grounding satırlarından arm-seviyesi kalite ve maliyet özeti."""
 
@@ -85,6 +146,12 @@ def grounding_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
         for record in records
         if record.get("completion_tokens") is not None
     ]
+    evidence_counts = [int(record.get("evidence_count", 0)) for record in positives]
+    set_recalls = [
+        float(record["evidence_set_recall"])
+        for record in positives
+        if record.get("evidence_set_recall") is not None
+    ]
 
     def mean(values: Sequence[float | int]) -> float | None:
         return sum(values) / len(values) if values else None
@@ -96,6 +163,8 @@ def grounding_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
             [float(record.get("evidence_precision", 0.0)) for record in positives]
         ),
         "event_has_valid_evidence_rate": _rate(positives, "event_has_valid_evidence"),
+        "mean_evidence_count": mean(evidence_counts),
+        "mean_evidence_set_recall": mean(set_recalls),
         "median_temporal_absolute_error": median(temporal_errors) if temporal_errors else None,
         "event_recall": _rate(positives, "event_detected"),
         "event_type_correctness": _rate(positives, "event_type_correct"),
@@ -289,12 +358,16 @@ def _rate(records: list[dict[str, Any]], key: str) -> float:
 __all__ = [
     "agent_metrics",
     "agreement_rate",
+    "binary_cohens_kappa",
     "candidate_metrics",
     "e2e_metrics",
     "event_has_valid_evidence",
+    "evidence_count",
     "evidence_metrics",
     "evidence_precision",
+    "evidence_set_recall",
     "grounding_metrics",
+    "raw_binary_agreement",
     "temporal_absolute_error",
     "vlm_metrics",
 ]
