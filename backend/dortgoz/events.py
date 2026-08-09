@@ -12,6 +12,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from .domain.taxonomy import CanonicalEventType, canonical_event_type_from_ws_label
+
 Risk = Literal["dusuk", "orta", "yuksek", "kritik"]
 
 # A1 kararının olay taksonomisi (UCF-Crime sınıflarını kapsar).
@@ -51,6 +53,12 @@ class WindowReport(BaseModel):
     events: list[WindowEvent] = []
     uncertainties: list[str] = []
 
+    @property
+    def canonical_event_type(self) -> CanonicalEventType:
+        """Legacy WS label'ını değiştirmeden canonical tipe erişim sağlar."""
+
+        return canonical_event_type_from_ws_label(self.anomaly_type)
+
 
 class AgentStep(BaseModel):
     """LangGraph düğüm geçişi — ajan konsolu bu olaylarla canlanır."""
@@ -86,6 +94,12 @@ class IncidentUpdate(BaseModel):
     # operator_review_required durumu). Gerekçesi operatöre gösterilir.
     needs_review: bool = False
     review_reason: str = ""
+
+    @property
+    def canonical_event_type(self) -> CanonicalEventType:
+        """Legacy WS label'ını değiştirmeden canonical tipe erişim sağlar."""
+
+        return canonical_event_type_from_ws_label(self.anomaly_type)
 
 
 class ActuatorRequest(BaseModel):

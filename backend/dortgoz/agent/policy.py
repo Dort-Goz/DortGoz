@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..config import Settings
 from ..domain.candidate import CandidateType
 from ..domain.evidence import VLMStatus
+from ..domain.taxonomy import requires_human_review
 from .actions import AgentAction
 from .state import EventAgentState
 from .trace import AgentDecision
@@ -102,6 +103,15 @@ def decide_next_action(
     confidence = state.proposal_confidence or 0.0
     validation = state.validation
     if validation is not None:
+        if state.proposal_event_type is not None and requires_human_review(
+            state.proposal_event_type
+        ):
+            return _decision(
+                AgentAction.REQUEST_HUMAN_REVIEW,
+                "Silaha benzeyen nesne iddiası evidence ile kaydedildi; otomatik hüküm verilmez.",
+                "P20",
+                priority=10,
+            )
         if (
             status == VLMStatus.CONFIRMED
             and validation.permits_confirmation

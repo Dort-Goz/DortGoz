@@ -20,6 +20,21 @@ from .provenance import (
     ReviewDecision,
     TraceRecord,
 )
+from .taxonomy import (
+    CANONICAL_UI_LABEL_TR,
+    LEGACY_WS_TO_CANONICAL,
+    PRODUCTION_SUPPORTED_EVENT_TYPES,
+    REQUIRES_HUMAN_REVIEW_EVENT_TYPES,
+    CanonicalEventType,
+    DatasetEventMapping,
+    LegacyWsEventType,
+    UnknownEventTypeError,
+    canonical_event_type_from_domain,
+    canonical_event_type_from_ws_label,
+    is_production_supported,
+    map_dataset_source_label,
+    requires_human_review,
+)
 from .video import VideoErrorCode, VideoIngestError, VideoMetadata, VideoProbe
 
 __all__ = [
@@ -33,6 +48,19 @@ __all__ = [
     "EvidenceValidationResult",
     "ValidationIssue",
     "VerifiedEventType",
+    "CanonicalEventType",
+    "LegacyWsEventType",
+    "DatasetEventMapping",
+    "UnknownEventTypeError",
+    "CANONICAL_UI_LABEL_TR",
+    "LEGACY_WS_TO_CANONICAL",
+    "PRODUCTION_SUPPORTED_EVENT_TYPES",
+    "REQUIRES_HUMAN_REVIEW_EVENT_TYPES",
+    "canonical_event_type_from_domain",
+    "canonical_event_type_from_ws_label",
+    "is_production_supported",
+    "map_dataset_source_label",
+    "requires_human_review",
     "VLMResult",
     "VLMStatus",
     "EventStatus",

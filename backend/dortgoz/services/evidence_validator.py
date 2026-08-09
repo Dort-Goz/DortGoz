@@ -23,6 +23,7 @@ CRITICAL_EVENT_TYPES = {
     VerifiedEventType.PERSON_ON_GROUND,
     VerifiedEventType.FIRE_SMOKE,
     VerifiedEventType.VEHICLE_COLLISION,
+    VerifiedEventType.POSSIBLE_ARMED_INCIDENT,
 }
 UNSUPPORTED_CRITICAL_TERMS = re.compile(
     r"\b(kimlik\w*|isim\w*|suçlu\w*|fail\w*|niyet\w*|kasıt\w*|yaral\w*|silah\w*|bıçak\w*|tabanca\w*|öld\w*)\b",
@@ -33,6 +34,9 @@ NON_TURKISH_TERMS = re.compile(
     flags=re.IGNORECASE,
 )
 VAGUE_CLAIMS = {"olay var", "hareket var", "anormallik var", "normal değil"}
+OBSERVABLE_WEAPON_LIKE_OBJECT = re.compile(
+    r"\bsilaha\s+benzeyen\s+(?:bir\s+)?nesne\b", flags=re.IGNORECASE
+)
 
 
 def validate_evidence(
@@ -219,7 +223,7 @@ def _validate_claims(
             claims_valid = False
             language_valid = False
             continue
-        if UNSUPPORTED_CRITICAL_TERMS.search(claim_text):
+        if _has_unsupported_critical_claim(claim_text):
             _issue(issues, "UNSUPPORTED_CRITICAL_CLAIM", index, "claim", "Kimlik, niyet, yaralanma veya silah iddiası doğrulanmış evidence olmadan kullanılamaz.")
             claims_valid = False
             unsupported_claim = True
@@ -282,6 +286,25 @@ def _issue(
 def _is_vague(claim: str) -> bool:
     normalized = claim.casefold().rstrip(".!?")
     return normalized in VAGUE_CLAIMS or len(re.findall(r"\w+", normalized)) < 3
+
+
+def _has_unsupported_critical_claim(claim: str) -> bool:
+    """Gözlemlenebilir silah-benzeri nesneyi hukukî hükümden ayırır.
+
+    ``possible_armed_incident`` yine otomatik confirmed olamaz; bu dar istisna
+    yalnız "silaha benzeyen bir nesne" gözleminin evidence olarak kaybolmasını
+    önler. Kimlik, niyet, yaralanma ve kesin silah ifadeleri yasak kalır.
+    """
+
+    if not UNSUPPORTED_CRITICAL_TERMS.search(claim):
+        return False
+    allowed = OBSERVABLE_WEAPON_LIKE_OBJECT.search(claim)
+    forbidden = re.compile(
+        r"\b(kimlik\w*|isim\w*|suçlu\w*|fail\w*|niyet\w*|kasıt\w*|"
+        r"yaral\w*|bıçak\w*|tabanca\w*|öld\w*)\b",
+        flags=re.IGNORECASE,
+    )
+    return allowed is None or forbidden.search(claim) is not None
 
 
 def _file_hash(path: Path) -> str:

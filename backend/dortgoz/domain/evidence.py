@@ -8,27 +8,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .taxonomy import VerifiedEventType
+
 
 class VLMStatus(StrEnum):
     CONFIRMED = "confirmed"
     REJECTED = "rejected"
-    UNCERTAIN = "uncertain"
-
-
-class VerifiedEventType(StrEnum):
-    PHYSICAL_FIGHT = "physical_fight"
-    NORMAL_INTERACTION = "normal_interaction"
-    PLAY_FIGHTING = "play_fighting"
-    ASSAULT = "assault"
-    FALL = "fall"
-    CONTROLLED_SITTING = "controlled_sitting"
-    PERSON_ON_GROUND = "person_on_ground"
-    FIRE_SMOKE = "fire_smoke"
-    VEHICLE_COLLISION = "vehicle_collision"
-    CAMERA_BLACKOUT = "camera_blackout"
-    CAMERA_FREEZE = "camera_freeze"
-    CAMERA_OCCLUSION = "camera_occlusion"
-    UNKNOWN_ANOMALY = "unknown_anomaly"
     UNCERTAIN = "uncertain"
 
 

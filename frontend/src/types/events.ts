@@ -8,6 +8,13 @@ export type AnomalyType =
   | "kavga" | "saldiri" | "hirsizlik" | "silahli_olay" | "yangin"
   | "patlama" | "arac_kazasi" | "vandalizm" | "normal" | "bilinmeyen";
 
+/** Canonical internal taxonomy'nin frontend aynası; WS legacy Türkçe değer taşır. */
+export type CanonicalEventType =
+  | "normal" | "uncertain" | "unknown_anomaly"
+  | "physical_fight" | "assault"
+  | "possible_theft" | "possible_armed_incident"
+  | "fire_smoke" | "explosion" | "vehicle_collision" | "vandalism";
+
 export interface BoundingBox {
   x1: number; y1: number; x2: number; y2: number;
   label: string;

@@ -158,3 +158,23 @@ def test_single_frame_critical_event_requires_human_review(tmp_path: Path) -> No
 
     assert not validation.critical_evidence_sufficient
     assert decide_next_action(validated_state, RoutingConfig()).policy_rule_id == "P13"
+
+
+def test_possible_armed_incident_keeps_observable_claim_but_requires_human_review(
+    tmp_path: Path,
+) -> None:
+    state = _state(
+        tmp_path,
+        evidence=[
+            _claim("before", 2, "Silaha benzeyen bir nesne görünmektedir."),
+            _claim("peak", 4, "Silaha benzeyen bir nesne görünmektedir."),
+        ],
+        event_type=VerifiedEventType.POSSIBLE_ARMED_INCIDENT,
+    )
+
+    validation = validate_evidence(state, workspace_root=tmp_path)
+    decision = decide_next_action(state.model_copy(update={"validation": validation}), RoutingConfig())
+
+    assert validation.permits_confirmation
+    assert "UNSUPPORTED_CRITICAL_CLAIM" not in {issue.code for issue in validation.validation_errors}
+    assert decision.policy_rule_id == "P20"
