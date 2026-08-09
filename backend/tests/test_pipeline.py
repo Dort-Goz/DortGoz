@@ -34,12 +34,15 @@ def test_report_schema_fields():
     schema = report_schema()
     assert set(schema["required"]) == {"anomaly_type", "summary", "events", "uncertainties"}
     # Sınıflandırma GBNF'de enum olarak kısıtlanmalı — serbest metin değil
-    assert "kavga" in schema["properties"]["anomaly_type"]["enum"]
+    assert "physical_fight" in schema["properties"]["anomaly_type"]["enum"]
+    assert "kavga" not in schema["properties"]["anomaly_type"]["enum"]
     assert "window_start" not in schema["properties"]
     assert "type" not in schema["properties"]
     assert schema["additionalProperties"] is False
     event = schema["properties"]["events"]["items"]
-    assert set(event["required"]) == {"t", "desc", "severity_hint"}
+    assert set(event["required"]) == {
+        "t", "desc", "evidence", "severity_hint", "event_type",
+    }
 
 
 def test_schema_output_validates_as_window_report():

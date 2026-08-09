@@ -10,7 +10,7 @@ from __future__ import annotations
 import time
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .domain.taxonomy import CanonicalEventType, canonical_event_type_from_ws_label
 
@@ -34,12 +34,34 @@ class BoundingBox(BaseModel):
     conf: float | None = None
 
 
+class FrameReference(BaseModel):
+    """Uygulamanın tek VLM isteği içinde ürettiği kare kimliği."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    frame_id: str = Field(pattern=r"^f_[0-9]{3,}$")
+    timestamp: float = Field(ge=0, allow_inf_nan=False)
+
+
+class EventEvidenceRef(BaseModel):
+    """VLM olay iddiasını kendisine gösterilen tek kareye bağlar."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    frame_id: str = Field(pattern=r"^f_[0-9]{3,}$")
+    timestamp: float = Field(ge=0, allow_inf_nan=False)
+    claim: str = Field(min_length=5, max_length=500)
+
+
 class WindowEvent(BaseModel):
     """Pencere içinde tespit edilen tek olay — GBNF şemasının yaprak düğümü."""
 
     t: float                          # video zamanı (sn)
     desc: str                         # Türkçe kısa betim
+    evidence: list[EventEvidenceRef] = Field(default_factory=list)
     severity_hint: Risk               # modelin ilk risk sezgisi (defter yeniden değerlendirir)
+    # Eski WS fixture'ları bu alanı taşımayabilir; gerçek VLM şeması zorunlu kılar.
+    event_type: CanonicalEventType | None = None
 
 
 class WindowReport(BaseModel):

@@ -28,7 +28,9 @@ from typing import Any
 
 from ..agent.llm import call_stats, create_chat, main_client
 from ..config import settings
-from ..events import WindowReport
+from ..domain.taxonomy import CanonicalEventType, legacy_ws_label_from_canonical
+from ..events import FrameReference, WindowReport
+from ..tools.protocols import VlmSchemaError
 from .ingest import grab_frame
 
 SYSTEM_TR = (
@@ -36,7 +38,14 @@ SYSTEM_TR = (
     "aynı zaman penceresinden alınmış kareler zaman damgalarıyla veriliyor. "
     "Gördüklerini Türkçe, kısa ve operasyonel dille raporla. Yalnızca karelerde "
     "GÖRDÜĞÜNÜ yaz; emin olmadığın çıkarımları 'uncertainties' alanına koy. "
-    "Olay yoksa 'events' boş kalsın — olay uydurma.\n\n"
+    "Olay yoksa 'events' boş kalsın — olay uydurma. Her olayın `evidence` "
+    "alanında yalnızca sana verilen FRAME_ID değerlerini kullan; yeni kare kimliği "
+    "uydurma. Kanıt iddiası kısa, Türkçe ve yalnız gözlemlenebilir olmalı; niyet, "
+    "kimlik veya hukukî sonuç ileri sürme. Her event için `event_type` alanında "
+    "yalnız canonical şemadaki değerlerden birini kullan. Mümkünse iki ayrı "
+    "destekleyici kare, "
+    "tek kare yeterliyse en az bir kare göster; kanıt yoksa olayı kesinleştirme, "
+    "belirsizliği `uncertainties` alanına yaz.\n\n"
     # ⚠ GÖRSEL PROMPT-INJECTION KORUMASI DENENDİ ve GERİ ALINDI (2026-08-07 A/B):
     # koruma cümlesi ("...yalnızca sahne bulgusu olarak betimleyebilirsin")
     # genel çekingenlik aşılayıp determinist p1 bench'te yakalamayı 15/16 →
@@ -51,9 +60,9 @@ SYSTEM_TR = (
     # dükkân önünde motosikletle gelip hızla ayrılan iki kişi) 4/4 koşuda
     # `normal`e düştü, yani tek Vandalism yakalaması kayboldu. Sınıf hatasını
     # şema alan SIRASI çözüyor (aşağıdaki report_schema notu), istem değil.
-    "`anomaly_type` pencerenin baskın olay sınıfıdır ve olayları yazdıktan "
+    "`anomaly_type` pencerenin baskın canonical olay sınıfıdır ve olayları yazdıktan "
     "SONRA seçilir. Dikkat gerektiren bir durum yoksa `normal` yaz. Bir şey "
-    "oluyor ama listedeki sınıflardan hiçbirine oturmuyorsa `bilinmeyen` yaz "
+    "oluyor ama listedeki sınıflardan hiçbirine oturmuyorsa `unknown_anomaly` yaz "
     "— zorlama sınıflandırma yapma.\n\n"
     "`severity_hint` ölçeği: `dusuk` = olağan hareketlilik (yürüyen insan, park "
     "eden araç, sahne/ışık değişimi) — bunlar ALARM DEĞİLDİR; `orta` ve üstünü "
@@ -82,8 +91,19 @@ TIER_TR = (
 TASK_TR = (
     "Yukarıdaki kareler {start}-{end} sn penceresine aittir. "
     "Pencereyi özetle ve dikkat gerektiren olayları zaman damgasıyla listele. "
-    "Zaman damgaları kareler üzerinde yazan saniyelerle tutarlı olmalı."
+    "Her evidence kaydında yalnız ilgili karenin FRAME_ID ve "
+    "VIDEO_TIMESTAMP_SECONDS değerini aynen kullan."
 )
+
+
+FRAME_TIMESTAMP_TOLERANCE_SECONDS = 0.01
+
+
+class VlmEvidenceContractError(VlmSchemaError):
+    """VLM'nin request'e ait olmayan veya yanlış zamanlı kare referansı."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message, code=code)
 
 
 # ---- [5] OLAY ÜZERİNDEN İKİNCİ GEÇİŞ (2026-08-05) ----
@@ -136,7 +156,7 @@ async def review_incident(
 ) -> dict[str, Any]:
     """Kapanmış bir olayın TÜM aralığını tek bağlamda yeniden okur."""
     start, end = span
-    content = await _frame_parts(video, keyframes)
+    content = await _frame_parts(video, build_frame_references(keyframes))
     task = (
         f"Yukarıdaki kareler {start:.0f}-{end:.0f} sn arasındaki TEK bir olayın "
         f"tamamını kapsıyor ({end - start:.0f} sn). Olayı bütün olarak değerlendir: "
@@ -206,6 +226,17 @@ def report_schema() -> dict[str, Any]:
     props = schema.get("properties", {})
     for field in ("type", "window_start", "window_end"):
         props.pop(field, None)
+    # VLM yalnız canonical taxonomy üretir; Türkçe legacy WS etiketi parse
+    # sonrasında application adapter'ıyla oluşturulur. WindowEvent'in defaults'u
+    # eski WS fixture'larını korurken model-facing şema evidence ve canonical
+    # event_type alanlarını her gerçek olayda zorunlu tutar.
+    props["anomaly_type"] = {"enum": [item.value for item in CanonicalEventType]}
+    event_schema = props["events"]["items"]
+    event_props = event_schema["properties"]
+    event_props["event_type"] = {"enum": [item.value for item in CanonicalEventType]}
+    event_props["evidence"]["minItems"] = 1
+    event_schema["required"] = list(event_props)
+    event_schema["additionalProperties"] = False
     # ⚠ ALAN SIRASI ÜRETİM SIRASIDIR (GBNF şemayı sırayla dilbilgisine çevirir).
     # `anomaly_type` en SONA alındı: sınıf, olaylar SAYILDIKTAN sonra seçilsin.
     # Önceki sırada (sınıf ikinci alan) model tek cümlelik özetten sonra sınıfa
@@ -283,8 +314,13 @@ def repair_truncated_json(raw: str) -> str | None:
     return raw[:cut] + "".join(reversed(cut_stack))
 
 
-def _to_report(start: float, end: float, raw: str,
-               truncated: bool = False) -> WindowReport:
+def _to_report(
+    start: float,
+    end: float,
+    raw: str,
+    truncated: bool = False,
+    frame_refs: list[FrameReference] | None = None,
+) -> WindowReport:
     """Model JSON'ını WindowReport'a çevirir; iki kademeli `durum` dalını düzler.
 
     Tel sözleşmesi (events.py) DEĞİŞMEZ: `olagan` dalı normal/boş-olaylı
@@ -309,11 +345,70 @@ def _to_report(start: float, end: float, raw: str,
     else:
         data.setdefault("events", [])
         data.setdefault("uncertainties", [])
+        raw_anomaly_type = data.get("anomaly_type")
+        try:
+            canonical_type = CanonicalEventType(raw_anomaly_type)
+        except (TypeError, ValueError) as exc:
+            # frame_refs'in varlığı gerçek VLM parse yolunu gösterir. Legacy
+            # test/fixture çağrılarında eski Türkçe değerler hâlâ kabul edilir.
+            if frame_refs is not None:
+                raise VlmSchemaError(
+                    f"canonical olmayan VLM anomaly_type: {raw_anomaly_type}",
+                    code="INVALID_VLM_EVENT_TYPE",
+                ) from exc
+        else:
+            data["anomaly_type"] = legacy_ws_label_from_canonical(canonical_type).value
         report = WindowReport(window_start=start, window_end=end, **data)
+        if frame_refs is not None:
+            _guard_evidence_references(report, frame_refs)
     if note:
         # Kesilme operatörden GİZLENMEZ: belirsizlik alanı tam da bunun için var
         report.uncertainties.append(note)
     return report
+
+
+def build_frame_references(keyframes: list[float]) -> list[FrameReference]:
+    """Seçilen karelere istek-içi, deterministik ve path içermeyen kimlik verir."""
+
+    return [
+        FrameReference(frame_id=f"f_{index:03d}", timestamp=timestamp)
+        for index, timestamp in enumerate(keyframes)
+    ]
+
+
+def _guard_evidence_references(
+    report: WindowReport,
+    frame_refs: list[FrameReference],
+) -> None:
+    """Yalnız request provenance'ını doğrular; tam EvidenceValidator değildir."""
+
+    allowed = {frame.frame_id: frame.timestamp for frame in frame_refs}
+    for event_index, event in enumerate(report.events):
+        if event.event_type is None:
+            raise VlmEvidenceContractError(
+                "MISSING_VLM_EVENT_TYPE",
+                f"events[{event_index}] canonical event_type içermiyor",
+            )
+        if not event.evidence:
+            raise VlmEvidenceContractError(
+                "MISSING_VLM_EVIDENCE_REFERENCE",
+                f"events[{event_index}] en az bir evidence referansı içermeli",
+            )
+        for evidence_index, evidence in enumerate(event.evidence):
+            expected_timestamp = allowed.get(evidence.frame_id)
+            if expected_timestamp is None:
+                raise VlmEvidenceContractError(
+                    "INVALID_VLM_EVIDENCE_REFERENCE",
+                    f"events[{event_index}].evidence[{evidence_index}] bilinmeyen "
+                    f"frame_id kullanıyor: {evidence.frame_id}",
+                )
+            if abs(evidence.timestamp - expected_timestamp) > \
+                    FRAME_TIMESTAMP_TOLERANCE_SECONDS:
+                raise VlmEvidenceContractError(
+                    "INVALID_VLM_EVIDENCE_TIMESTAMP",
+                    f"{evidence.frame_id} için timestamp {evidence.timestamp}, "
+                    f"beklenen {expected_timestamp}",
+                )
 
 
 def _image_part(jpeg: bytes) -> dict[str, Any]:
@@ -321,17 +416,28 @@ def _image_part(jpeg: bytes) -> dict[str, Any]:
     return {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
 
 
-async def _frame_parts(video: Path, keyframes: list[float]) -> list[dict[str, Any]]:
+async def _frame_parts(
+    video: Path,
+    frame_refs: list[FrameReference],
+) -> list[dict[str, Any]]:
     """Kareleri EŞZAMANLI çeker, zaman damgası + görüntü çifti olarak dizer.
 
     Sıralı ffmpeg çağrıları pencere başına ~0,5-1 sn CPU beklemesiydi ve GPU bu
     sürede boş kalıyordu (2026-08-06 ölçümü, tam bölme koşusu). Kareler kısa
     ömürlü bağımsız süreçler — 6-16'lık pencere için sınırlama gerekmez.
     """
-    jpegs = await asyncio.gather(*(grab_frame(video, t) for t in keyframes))
+    jpegs = await asyncio.gather(
+        *(grab_frame(video, frame.timestamp) for frame in frame_refs)
+    )
     parts: list[dict[str, Any]] = []
-    for t, jpeg in zip(keyframes, jpegs):
-        parts.append({"type": "text", "text": f"[t={t:.1f}s]"})
+    for frame, jpeg in zip(frame_refs, jpegs):
+        parts.append({
+            "type": "text",
+            "text": (
+                f"FRAME_ID: {frame.frame_id}\n"
+                f"VIDEO_TIMESTAMP_SECONDS: {frame.timestamp:.3f}"
+            ),
+        })
         parts.append(_image_part(jpeg))
     return parts
 
@@ -366,7 +472,7 @@ async def glance_window(
     onu düşürürdü. Eşik çağıran tarafta, recall'a göre ayarlanır.
     """
     start, end = window
-    content = await _frame_parts(video, keyframes)
+    content = await _frame_parts(video, build_frame_references(keyframes))
     question = GLANCE_QUESTION
     if meta:
         question += f"\n\nDetector data:\n{meta}"
@@ -461,7 +567,8 @@ async def interpret_window(
     sınırda kalan pencerenin yeniden sorgusu ve olay-geneli 2. geçiş için.
     """
     start, end = window
-    content = await _frame_parts(video, keyframes)
+    frame_refs = build_frame_references(keyframes)
+    content = await _frame_parts(video, frame_refs)
 
     task = ((task_prompt or TASK_TR)
             .replace("{start}", f"{start:.0f}")
@@ -519,5 +626,10 @@ async def interpret_window(
     raw = resp.choices[0].message.content or "{}"
     # GBNF üretim anında garanti eder; Pydantic ikinci savunma katmanı (A6).
     # finish_reason "length" = çıktı bütçeye sığmadı → kesilmiş olabilir.
-    return _to_report(start, end, raw,
-                      truncated=resp.choices[0].finish_reason == "length")
+    return _to_report(
+        start,
+        end,
+        raw,
+        truncated=resp.choices[0].finish_reason == "length",
+        frame_refs=frame_refs,
+    )

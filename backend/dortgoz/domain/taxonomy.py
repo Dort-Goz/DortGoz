@@ -94,6 +94,21 @@ LEGACY_WS_TO_CANONICAL: dict[LegacyWsEventType, CanonicalEventType] = {
     LegacyWsEventType.UNKNOWN: CanonicalEventType.UNKNOWN_ANOMALY,
 }
 
+CANONICAL_TO_LEGACY_WS: dict[CanonicalEventType, LegacyWsEventType] = {
+    CanonicalEventType.NORMAL: LegacyWsEventType.NORMAL,
+    CanonicalEventType.UNCERTAIN: LegacyWsEventType.UNKNOWN,
+    CanonicalEventType.UNKNOWN_ANOMALY: LegacyWsEventType.UNKNOWN,
+    CanonicalEventType.PHYSICAL_FIGHT: LegacyWsEventType.FIGHT,
+    CanonicalEventType.ASSAULT: LegacyWsEventType.ASSAULT,
+    CanonicalEventType.POSSIBLE_THEFT: LegacyWsEventType.THEFT,
+    CanonicalEventType.POSSIBLE_ARMED_INCIDENT: LegacyWsEventType.ARMED_INCIDENT,
+    CanonicalEventType.FIRE_SMOKE: LegacyWsEventType.FIRE,
+    CanonicalEventType.EXPLOSION: LegacyWsEventType.EXPLOSION,
+    CanonicalEventType.VEHICLE_COLLISION: LegacyWsEventType.VEHICLE_COLLISION,
+    CanonicalEventType.VANDALISM: LegacyWsEventType.VANDALISM,
+}
+"""Canonical VLM kararını mevcut WS tel değerine indiren uyumluluk adapter'ı."""
+
 _DOMAIN_TO_CANONICAL: dict[VerifiedEventType, CanonicalEventType] = {
     VerifiedEventType.NORMAL: CanonicalEventType.NORMAL,
     VerifiedEventType.UNCERTAIN: CanonicalEventType.UNCERTAIN,
@@ -173,6 +188,19 @@ def canonical_event_type_from_ws_label(
         return CanonicalEventType.UNKNOWN_ANOMALY
 
 
+def legacy_ws_label_from_canonical(
+    event_type: str | CanonicalEventType,
+) -> LegacyWsEventType:
+    """Canonical production tipini mevcut Türkçe WS değerine çevirir."""
+
+    try:
+        return CANONICAL_TO_LEGACY_WS[CanonicalEventType(event_type)]
+    except ValueError as exc:
+        raise UnknownEventTypeError(
+            f"bilinmeyen canonical olay tipi: {event_type}"
+        ) from exc
+
+
 def canonical_event_type_from_domain(
     event_type: str | VerifiedEventType, *, strict: bool = False
 ) -> CanonicalEventType:
@@ -218,6 +246,7 @@ def requires_human_review(event_type: str | VerifiedEventType) -> bool:
 
 
 __all__ = [
+    "CANONICAL_TO_LEGACY_WS",
     "CANONICAL_UI_LABEL_TR",
     "LEGACY_WS_TO_CANONICAL",
     "PRODUCTION_SUPPORTED_EVENT_TYPES",
@@ -229,6 +258,7 @@ __all__ = [
     "VerifiedEventType",
     "canonical_event_type_from_domain",
     "canonical_event_type_from_ws_label",
+    "legacy_ws_label_from_canonical",
     "is_production_supported",
     "map_dataset_source_label",
     "requires_human_review",

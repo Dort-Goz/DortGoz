@@ -22,10 +22,20 @@ export interface BoundingBox {
   conf?: number | null;
 }
 
+export interface EventEvidenceRef {
+  frame_id: string;
+  timestamp: number;
+  claim: string;
+}
+
 export interface WindowEvent {
   t: number;
   desc: string;
+  /** Eski WS kayıtlarında bulunmayabilir; gerçek VLM olaylarında doludur. */
+  evidence?: EventEvidenceRef[];
   severity_hint: Risk;
+  /** Canonical internal tip; eski WS kayıtlarında bulunmayabilir. */
+  event_type?: CanonicalEventType | null;
 }
 
 export interface WindowReport {
