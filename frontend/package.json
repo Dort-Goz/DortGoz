@@ -6,6 +6,7 @@
   "license": "Apache-2.0",
   "scripts": {
     "dev": "vite",
+    "test": "bun test",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },
