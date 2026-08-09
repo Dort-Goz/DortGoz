@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
@@ -11,6 +12,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from ..ws import ConnectionManager
+
+LOGGER = logging.getLogger(__name__)
 
 RunVideoCallable = Callable[..., Awaitable[None]]
 EnabledPredicate = Callable[[], bool]
@@ -112,6 +115,21 @@ def _video_identity(video: str) -> str:
     return Path(video).as_posix()
 
 
+def _retrieve_task_exception(task: asyncio.Task[None]) -> None:
+    """Retrieve and log an unexpected task failure without changing its semantics."""
+
+    try:
+        error = task.exception()
+    except asyncio.CancelledError:
+        return
+    if error is not None:
+        LOGGER.error(
+            "canonical analysis job task failed: %s",
+            task.get_name(),
+            exc_info=(type(error), error, error.__traceback__),
+        )
+
+
 class CanonicalAnalysisJobService:
     """Own exactly one ``run_video`` task for each active feed/config identity."""
 
@@ -190,7 +208,7 @@ class CanonicalAnalysisJobService:
             )
             self._records[analysis_id] = record
             self._active_by_feed[feed] = analysis_id
-            record.task = asyncio.create_task(
+            task = asyncio.create_task(
                 self._execute(
                     record,
                     model=model,
@@ -199,6 +217,8 @@ class CanonicalAnalysisJobService:
                 ),
                 name=f"dortgoz-analysis-{analysis_id}",
             )
+            record.task = task
+            task.add_done_callback(_retrieve_task_exception)
             return record.snapshot()
 
     async def cancel(self, analysis_id: str) -> AnalysisJobStatus | None:
@@ -295,12 +315,23 @@ class CanonicalAnalysisJobService:
         except Exception:
             parsed = resolve_jsonl_status(self.runs_dir, record.analysis_id, active=False)
             record.status = parsed or AnalysisJobStatus.FAILED
+        except BaseException:
+            record.status = (
+                resolve_jsonl_status(self.runs_dir, record.analysis_id, active=False)
+                or AnalysisJobStatus.INTERRUPTED
+            )
+            raise
         else:
             record.status = (
                 resolve_jsonl_status(self.runs_dir, record.analysis_id, active=False)
                 or AnalysisJobStatus.INTERRUPTED
             )
         finally:
+            if record.status in {AnalysisJobStatus.QUEUED, AnalysisJobStatus.RUNNING}:
+                record.status = (
+                    resolve_jsonl_status(self.runs_dir, record.analysis_id, active=False)
+                    or AnalysisJobStatus.INTERRUPTED
+                )
             async with self._lock:
                 if self._active_by_feed.get(record.feed) == record.analysis_id:
                     self._active_by_feed.pop(record.feed, None)

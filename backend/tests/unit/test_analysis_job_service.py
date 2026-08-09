@@ -235,6 +235,89 @@ async def test_task_completion_uses_jsonl_error_not_task_success(tmp_path: Path)
 
 
 @pytest.mark.asyncio
+async def test_successful_task_keeps_jsonl_done_terminal_semantics(tmp_path: Path) -> None:
+    async def completed_runner(
+        _manager: FakeManager,
+        _video: str,
+        run_id: str,
+        **_kwargs: str,
+    ) -> None:
+        write_status(tmp_path / f"{run_id}.jsonl", run_id, "done")
+
+    jobs = CanonicalAnalysisJobService(
+        FakeManager(),
+        runs_dir=tmp_path,
+        max_active=1,
+        run_video=completed_runner,
+        defaults=defaults,
+    )
+    snapshot = await jobs.start("camera.mp4")
+
+    await wait_for_status(jobs, snapshot.analysis_id, AnalysisJobStatus.COMPLETED)
+    assert await jobs.active_count() == 0
+
+
+@pytest.mark.asyncio
+async def test_fatal_task_is_interrupted_and_exception_is_retrieved(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class FatalTaskError(BaseException):
+        pass
+
+    async def fatal_runner(
+        _manager: FakeManager,
+        _video: str,
+        _run_id: str,
+        **_kwargs: str,
+    ) -> None:
+        raise FatalTaskError("fatal runner exit")
+
+    jobs = CanonicalAnalysisJobService(
+        FakeManager(),
+        runs_dir=tmp_path,
+        max_active=1,
+        run_video=fatal_runner,
+        defaults=defaults,
+    )
+    snapshot = await jobs.start("camera.mp4")
+
+    await wait_for_status(jobs, snapshot.analysis_id, AnalysisJobStatus.INTERRUPTED)
+    await asyncio.sleep(0)
+
+    assert await jobs.active_count() == 0
+    assert await jobs.status(snapshot.analysis_id) not in {
+        AnalysisJobStatus.QUEUED,
+        AnalysisJobStatus.RUNNING,
+    }
+    assert "canonical analysis job task failed" in caplog.text
+    assert "Task exception was never retrieved" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_ordinary_exception_keeps_failed_terminal_semantics(tmp_path: Path) -> None:
+    async def failing_runner(
+        _manager: FakeManager,
+        _video: str,
+        _run_id: str,
+        **_kwargs: str,
+    ) -> None:
+        raise RuntimeError("ordinary runner failure")
+
+    jobs = CanonicalAnalysisJobService(
+        FakeManager(),
+        runs_dir=tmp_path,
+        max_active=1,
+        run_video=failing_runner,
+        defaults=defaults,
+    )
+    snapshot = await jobs.start("camera.mp4")
+
+    await wait_for_status(jobs, snapshot.analysis_id, AnalysisJobStatus.FAILED)
+    assert await jobs.active_count() == 0
+
+
+@pytest.mark.asyncio
 async def test_existing_run_artifacts_are_never_overwritten(tmp_path: Path) -> None:
     existing_jsonl = tmp_path / "existing-jsonl.jsonl"
     existing_jsonl.write_bytes(b"sentinel-jsonl")
