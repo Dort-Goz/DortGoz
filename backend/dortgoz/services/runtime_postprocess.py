@@ -544,18 +544,18 @@ def _validation_status(
     event_type: VerifiedEventType,
 ) -> RuntimeValidationStatus:
     if (
+        not validation.schema_valid
+        or not validation.timestamps_valid
+        or not validation.evidence_valid
+    ):
+        return RuntimeValidationStatus.INVALID_EVIDENCE
+    if (
         not validation.language_valid
         or validation.unsupported_critical_claim
         or not validation.critical_evidence_sufficient
         or requires_human_review(event_type)
     ):
         return RuntimeValidationStatus.HUMAN_REVIEW
-    if (
-        not validation.schema_valid
-        or not validation.timestamps_valid
-        or not validation.evidence_valid
-    ):
-        return RuntimeValidationStatus.INVALID_EVIDENCE
     return RuntimeValidationStatus.VALIDATED
 
 

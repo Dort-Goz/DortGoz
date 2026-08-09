@@ -58,8 +58,15 @@ def decide_runtime_policy(
         if status in {
             RuntimeValidationStatus.VALIDATED,
             RuntimeValidationStatus.HUMAN_REVIEW,
-        } and (item is None or item.event_type is None):
-            status = RuntimeValidationStatus.UNDETERMINED
+        }:
+            if item is None or item.event_type is None:
+                status = RuntimeValidationStatus.UNDETERMINED
+            elif not (
+                item.validation.schema_valid
+                and item.validation.timestamps_valid
+                and item.validation.evidence_valid
+            ):
+                status = RuntimeValidationStatus.INVALID_EVIDENCE
         statuses[event_index] = status
         if status in {
             RuntimeValidationStatus.VALIDATED,

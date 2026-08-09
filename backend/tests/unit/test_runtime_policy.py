@@ -26,6 +26,7 @@ from dortgoz.services.runtime_postprocess import (
     RuntimeEvidenceScope,
     RuntimeValidationStatus,
     RuntimeWindowValidation,
+    postprocess_finalized_report,
 )
 
 
@@ -35,17 +36,23 @@ def _event(
     event_type: str = "possible_theft",
     severity: str = "orta",
     timestamp: float = 5,
+    claim: str = "Kişinin raftaki nesneyi aldığı görülüyor.",
+    with_evidence: bool = True,
 ) -> WindowEvent:
     return WindowEvent(
         t=timestamp,
         desc="Bir kişi raftaki nesneyi alıyor.",
-        evidence=[
-            EventEvidenceRef(
-                frame_id=frame_id,
-                timestamp=timestamp,
-                claim="Kişinin raftaki nesneyi aldığı görülüyor.",
-            )
-        ],
+        evidence=(
+            [
+                EventEvidenceRef(
+                    frame_id=frame_id,
+                    timestamp=timestamp,
+                    claim=claim,
+                )
+            ]
+            if with_evidence
+            else []
+        ),
         severity_hint=severity,
         event_type=event_type,
     )
@@ -78,9 +85,21 @@ def _validation(
                 status=status,
                 validation=EvidenceValidationResult(
                     candidate_id=f"candidate-{index}",
-                    schema_valid=status == RuntimeValidationStatus.VALIDATED,
-                    timestamps_valid=status == RuntimeValidationStatus.VALIDATED,
-                    evidence_valid=status == RuntimeValidationStatus.VALIDATED,
+                    schema_valid=status
+                    in {
+                        RuntimeValidationStatus.VALIDATED,
+                        RuntimeValidationStatus.HUMAN_REVIEW,
+                    },
+                    timestamps_valid=status
+                    in {
+                        RuntimeValidationStatus.VALIDATED,
+                        RuntimeValidationStatus.HUMAN_REVIEW,
+                    },
+                    evidence_valid=status
+                    in {
+                        RuntimeValidationStatus.VALIDATED,
+                        RuntimeValidationStatus.HUMAN_REVIEW,
+                    },
                     validator_version="fixture",
                 ),
             )
@@ -104,6 +123,37 @@ def _ingest(decision, ledger: Ledger):
         decision.ledger_report,
         uncertain=decision.review_reason,
     )
+
+
+def _captured(
+    *,
+    frame_id: str = "f_000",
+    timestamp: float = 5,
+) -> dict[str, tuple[FrameReference, bytes]]:
+    return {
+        frame_id: (
+            FrameReference(frame_id=frame_id, timestamp=timestamp),
+            b"\xff\xd8runtime-policy\xff\xd9",
+        )
+    }
+
+
+def _postprocessed_decision(
+    tmp_path: Path,
+    report: WindowReport,
+    captured_frames: dict[str, tuple[FrameReference, bytes]],
+):
+    validation = postprocess_finalized_report(
+        report=report,
+        captured_frames=captured_frames,
+        scope=RuntimeEvidenceScope.create("runtime-policy-hardening"),
+        window_index=0,
+        video_duration=30,
+        workspace_root=tmp_path,
+        evidence_root=tmp_path / "runtime-evidence",
+    )
+    assert validation is not None
+    return validation, decide_runtime_policy(report, validation)
 
 
 def test_validated_event_is_admitted_only_as_provisional_review() -> None:
@@ -148,6 +198,129 @@ def test_human_review_is_admitted_and_second_pass_cannot_clear_sticky_flag() -> 
     assert revised is not None and revised.needs_review
     assert ledger.incidents[incident_id].needs_review
     assert revised.risk == "orta"
+
+
+def test_critical_event_with_empty_evidence_is_not_admitted(tmp_path: Path) -> None:
+    report = _report(
+        _event(
+            event_type="assault",
+            severity="kritik",
+            with_evidence=False,
+        )
+    )
+
+    validation, decision = _postprocessed_decision(tmp_path, report, {})
+
+    assert validation.events[0].status == RuntimeValidationStatus.INVALID_EVIDENCE
+    assert not validation.events[0].validation.evidence_valid
+    assert decision.ledger_report is None
+
+
+def test_human_review_label_with_invalid_evidence_is_not_admitted() -> None:
+    report = _report(_event(event_type="possible_armed_incident", severity="kritik"))
+    validation = _validation(report, RuntimeValidationStatus.HUMAN_REVIEW)
+    item = validation.events[0]
+    validation = validation.model_copy(
+        update={
+            "events": [
+                item.model_copy(
+                    update={
+                        "validation": item.validation.model_copy(update={"evidence_valid": False})
+                    }
+                )
+            ]
+        }
+    )
+
+    decision = decide_runtime_policy(report, validation)
+
+    assert decision.ledger_report is None
+    assert decision.held_event_indices == (0,)
+    assert "INVALID_EVIDENCE" in decision.review_reason
+
+
+def test_human_review_trigger_with_invalid_frame_id_is_not_admitted(tmp_path: Path) -> None:
+    report = _report(
+        _event(
+            frame_id="f_999",
+            event_type="possible_armed_incident",
+            severity="kritik",
+        )
+    )
+
+    validation, decision = _postprocessed_decision(tmp_path, report, _captured())
+
+    assert validation.events[0].status == RuntimeValidationStatus.INVALID_EVIDENCE
+    assert decision.ledger_report is None
+
+
+def test_human_review_trigger_with_timestamp_mismatch_is_not_admitted(
+    tmp_path: Path,
+) -> None:
+    report = _report(
+        _event(
+            event_type="possible_armed_incident",
+            severity="kritik",
+            timestamp=5,
+        )
+    )
+
+    validation, decision = _postprocessed_decision(
+        tmp_path,
+        report,
+        _captured(timestamp=6),
+    )
+
+    assert validation.events[0].status == RuntimeValidationStatus.INVALID_EVIDENCE
+    assert not validation.events[0].validation.timestamps_valid
+    assert decision.ledger_report is None
+
+
+def test_valid_but_critical_insufficient_human_review_is_provisionally_admitted(
+    tmp_path: Path,
+) -> None:
+    report = _report(
+        _event(
+            event_type="possible_armed_incident",
+            severity="kritik",
+        )
+    )
+
+    validation, decision = _postprocessed_decision(tmp_path, report, _captured())
+    ledger = Ledger()
+    updates = _ingest(decision, ledger)
+
+    item = validation.events[0]
+    assert item.status == RuntimeValidationStatus.HUMAN_REVIEW
+    assert item.validation.evidence_valid
+    assert not item.validation.critical_evidence_sufficient
+    assert decision.ledger_report is not None
+    assert updates[0].needs_review
+
+
+def test_invalid_human_review_does_not_change_open_incident(tmp_path: Path) -> None:
+    ledger = Ledger(grace_windows=0)
+    opened = ledger.ingest(_report(_event(severity="orta")))[0]
+    initial = ledger.incidents[opened.incident_id]
+    initial_risk = initial.risk
+    invalid_report = _report(
+        _event(
+            event_type="assault",
+            severity="kritik",
+            with_evidence=False,
+        )
+    )
+    validation, decision = _postprocessed_decision(tmp_path, invalid_report, {})
+
+    ledger.require_review(decision.review_reason)
+
+    assert validation.events[0].status == RuntimeValidationStatus.INVALID_EVIDENCE
+    assert decision.ledger_report is None
+    assert ledger.quiet_streak == 0
+    assert ledger.open_incident is not None
+    assert ledger.open_incident.incident_id == opened.incident_id
+    assert ledger.open_incident.risk == initial_risk
+    assert ledger.open_incident.phase == "basladi"
 
 
 @pytest.mark.parametrize(
@@ -275,19 +448,24 @@ def _closed_incident() -> tuple[Ledger, object]:
     return ledger, ledger.finalize()[0]
 
 
-def _review_payload(*, frame_id: str) -> dict:
+def _review_payload(
+    *,
+    frame_id: str,
+    event_type: str = "physical_fight",
+    claim: str = "İki kişinin fiziksel olarak itiştiği görülüyor.",
+) -> dict:
     return {
         "baslangic": "Bir kişi diğerine yaklaştı.",
         "zirve": "İki kişi fiziksel olarak itişti.",
         "sonuc": "Kişiler birbirinden ayrıldı.",
         "zirve_t": 6,
-        "event_type": "physical_fight",
+        "event_type": event_type,
         "risk": "kritik",
         "evidence": [
             {
                 "frame_id": frame_id,
                 "timestamp": 6,
-                "claim": "İki kişinin fiziksel olarak itiştiği görülüyor.",
+                "claim": claim,
             }
         ],
         "belirsizlikler": [],
@@ -310,7 +488,11 @@ async def test_invalid_second_pass_never_calls_apply_review(
             FrameReference(frame_id="f_000", timestamp=6),
             b"\xff\xd8second-pass\xff\xd9",
         )
-        return _review_payload(frame_id="f_999")
+        return _review_payload(
+            frame_id="f_000",
+            event_type="possible_armed_incident",
+            claim="olay var",
+        )
 
     def unexpected_apply(*_args, **_kwargs):
         raise AssertionError("invalid second pass apply_review çağırmamalı")
