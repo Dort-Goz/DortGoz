@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from ..agent.state import EventAgentState
+from ..domain.context import KeyframeRef
 from ..domain.evidence import (
+    FRAME_TIMESTAMP_TOLERANCE_SECONDS,
+    EvidenceClaim,
     EvidenceItem,
     EvidenceValidationResult,
     ValidationIssue,
@@ -74,17 +79,10 @@ def validate_evidence(
         )
 
     critical_evidence_sufficient = True
-    if result is not None and status == VLMStatus.CONFIRMED and result.event_type in CRITICAL_EVENT_TYPES:
-        unique_frames = {claim.frame_id for claim in state.proposal_evidence}
-        critical_evidence_sufficient = len(unique_frames) >= 2
-        if not critical_evidence_sufficient:
-            issues.append(
-                ValidationIssue(
-                    code="CRITICAL_EVIDENCE_INSUFFICIENT",
-                    field="evidence",
-                    message="Kritik olay otomatik doğrulama için iki farklı frame evidence ister.",
-                )
-            )
+    if result is not None and status == VLMStatus.CONFIRMED:
+        critical_evidence_sufficient = _critical_evidence_sufficient(
+            result.event_type, state.proposal_evidence, issues
+        )
 
     evidence_valid = (
         claims_valid and artifact_valid and bool(validated)
@@ -101,6 +99,66 @@ def validate_evidence(
         critical_evidence_sufficient=critical_evidence_sufficient,
         validation_errors=issues,
         validated_evidence=validated,
+        validator_version=VALIDATOR_VERSION,
+    )
+
+
+def validate_runtime_evidence(
+    *,
+    candidate_id: str,
+    event_type: VerifiedEventType,
+    evidence: Sequence[EvidenceClaim],
+    keyframes: Sequence[KeyframeRef],
+    video_duration: float,
+    workspace_root: Path,
+) -> EvidenceValidationResult:
+    """Gerçek runner gözlemini confidence veya olay sınırı uydurmadan doğrula.
+
+    Bu giriş, ``EventAgentState`` üretmez: WindowReport event-level confidence ile
+    start/end taşımadığı için onu ``VLMResult.CONFIRMED`` biçimine sokmak güvenli
+    değildir. Aynı claim, timestamp, dosya ve hash kuralları paylaşılır; doğrulanan
+    kareler yalnız runtime sidecar'ında kalır ve ``permits_confirmation`` bilinçli
+    olarak false kalır.
+    """
+
+    issues: list[ValidationIssue] = []
+    root = workspace_root.resolve()
+    checked, claims_valid, language_valid, unsupported_claim = _check_claims(
+        evidence,
+        {frame.frame_id: frame for frame in keyframes},
+        video_duration,
+        root,
+        issues,
+        timestamp_tolerance=FRAME_TIMESTAMP_TOLERANCE_SECONDS,
+    )
+    if not evidence:
+        issues.append(
+            ValidationIssue(
+                code="MISSING_EVIDENCE",
+                field="evidence",
+                message="Runtime olayı en az bir frame evidence taşımalıdır.",
+            )
+        )
+        claims_valid = False
+
+    timestamps_valid = not any(
+        issue.code == "EVIDENCE_TIMESTAMP_MISMATCH" for issue in issues
+    )
+    critical_evidence_sufficient = _critical_evidence_sufficient(
+        event_type, evidence, issues
+    )
+    return EvidenceValidationResult(
+        candidate_id=candidate_id,
+        schema_valid=True,
+        timestamps_valid=timestamps_valid,
+        evidence_valid=claims_valid and bool(checked),
+        language_valid=language_valid,
+        unsupported_critical_claim=unsupported_claim,
+        critical_evidence_sufficient=critical_evidence_sufficient,
+        validation_errors=issues,
+        # WindowReport'ta confidence/start/end yoktur. EvidenceItem üretmemek,
+        # bu sonucun yanlışlıkla auto-confirm kapısını açmasını da engeller.
+        validated_evidence=[],
         validator_version=VALIDATOR_VERSION,
     )
 
@@ -187,63 +245,147 @@ def _context_artifact_valid(
     return _artifact_matches(root, context.clip_path, context.hash_sha256, "clip", issues)
 
 
-def _validate_claims(
-    state: EventAgentState,
-    frame_by_id: dict[str, object],
+@dataclass(frozen=True)
+class _CheckedClaim:
+    index: int
+    claim: EvidenceClaim
+    frame: KeyframeRef
+
+
+def _check_claims(
+    claims: Sequence[EvidenceClaim],
+    frame_by_id: dict[str, KeyframeRef],
+    video_duration: float,
     root: Path | None,
     issues: list[ValidationIssue],
-) -> tuple[list[EvidenceItem], bool, bool, bool]:
-    validated: list[EvidenceItem] = []
+    timestamp_tolerance: float = 0.5,
+) -> tuple[list[_CheckedClaim], bool, bool, bool]:
+    checked: list[_CheckedClaim] = []
     claims_valid = True
     language_valid = True
     unsupported_claim = False
-    for index, claim in enumerate(state.proposal_evidence, start=1):
+    for index, claim in enumerate(claims, start=1):
         frame = frame_by_id.get(claim.frame_id)
         if frame is None:
-            _issue(issues, "UNKNOWN_FRAME_ID", index, "frame_id", "Evidence claim gerçek bir keyframe'e bağlı değil.")
+            _issue(
+                issues,
+                "UNKNOWN_FRAME_ID",
+                index,
+                "frame_id",
+                "Evidence claim gerçek bir keyframe'e bağlı değil.",
+            )
             claims_valid = False
             continue
-        frame_timestamp = getattr(frame, "timestamp")
-        frame_path = getattr(frame, "frame_path")
-        frame_hash = getattr(frame, "hash_sha256")
-        if not 0 <= claim.timestamp <= state.video_duration or abs(frame_timestamp - claim.timestamp) > 0.5:
-            _issue(issues, "EVIDENCE_TIMESTAMP_MISMATCH", index, "timestamp", "Evidence zamanı keyframe veya video sınırıyla eşleşmiyor.")
+        if not 0 <= claim.timestamp <= video_duration or abs(
+            frame.timestamp - claim.timestamp
+        ) > timestamp_tolerance:
+            _issue(
+                issues,
+                "EVIDENCE_TIMESTAMP_MISMATCH",
+                index,
+                "timestamp",
+                "Evidence zamanı keyframe veya video sınırıyla eşleşmiyor.",
+            )
             claims_valid = False
             continue
-        if root is not None and not _artifact_matches(root, frame_path, frame_hash, "frame", issues, index):
+        if root is not None and not _artifact_matches(
+            root, frame.frame_path, frame.hash_sha256, "frame", issues, index
+        ):
             claims_valid = False
             continue
         claim_text = claim.claim.strip()
         if _is_vague(claim_text):
-            _issue(issues, "EVIDENCE_CLAIM_VAGUE", index, "claim", "Evidence claim gözlenebilir ayrıntı içermiyor.")
+            _issue(
+                issues,
+                "EVIDENCE_CLAIM_VAGUE",
+                index,
+                "claim",
+                "Evidence claim gözlenebilir ayrıntı içermiyor.",
+            )
             claims_valid = False
             continue
         if NON_TURKISH_TERMS.search(claim_text):
-            _issue(issues, "EVIDENCE_CLAIM_LANGUAGE", index, "claim", "Evidence claim Türkçe operasyonel dilde olmalı.")
+            _issue(
+                issues,
+                "EVIDENCE_CLAIM_LANGUAGE",
+                index,
+                "claim",
+                "Evidence claim Türkçe operasyonel dilde olmalı.",
+            )
             claims_valid = False
             language_valid = False
             continue
         if _has_unsupported_critical_claim(claim_text):
-            _issue(issues, "UNSUPPORTED_CRITICAL_CLAIM", index, "claim", "Kimlik, niyet, yaralanma veya silah iddiası doğrulanmış evidence olmadan kullanılamaz.")
+            _issue(
+                issues,
+                "UNSUPPORTED_CRITICAL_CLAIM",
+                index,
+                "claim",
+                "Kimlik, niyet, yaralanma veya silah iddiası doğrulanmış evidence olmadan kullanılamaz.",
+            )
             claims_valid = False
             unsupported_claim = True
             continue
+        checked.append(_CheckedClaim(index=index, claim=claim, frame=frame))
+    return checked, claims_valid, language_valid, unsupported_claim
+
+
+def _validate_claims(
+    state: EventAgentState,
+    frame_by_id: dict[str, KeyframeRef],
+    root: Path | None,
+    issues: list[ValidationIssue],
+) -> tuple[list[EvidenceItem], bool, bool, bool]:
+    checked, claims_valid, language_valid, unsupported_claim = _check_claims(
+        state.proposal_evidence,
+        frame_by_id,
+        state.video_duration,
+        root,
+        issues,
+    )
+    validated: list[EvidenceItem] = []
+    for item in checked:
         context = state.context_clip
-        clip_path = context.clip_path if context else f"runs/{state.analysis_id}/{state.candidate_id}/candidate.mp4"
+        clip_path = (
+            context.clip_path
+            if context
+            else f"runs/{state.analysis_id}/{state.candidate_id}/candidate.mp4"
+        )
         validated.append(
             EvidenceItem(
-                evidence_id=f"{state.candidate_id}-evidence-{index}",
-                timestamp=claim.timestamp,
-                frame_id=claim.frame_id,
-                frame_path=frame_path,
+                evidence_id=f"{state.candidate_id}-evidence-{item.index}",
+                timestamp=item.claim.timestamp,
+                frame_id=item.claim.frame_id,
+                frame_path=item.frame.frame_path,
                 clip_path=clip_path,
-                claim=claim_text,
-                source_model=(state.vlm_result.model_id if state.vlm_result else "mock-cv-v1"),
+                claim=item.claim.claim.strip(),
+                source_model=(
+                    state.vlm_result.model_id if state.vlm_result else "mock-cv-v1"
+                ),
                 validated=True,
                 validation_notes=["frame_id, timestamp, path ve hash doğrulandı"],
             )
         )
     return validated, claims_valid, language_valid, unsupported_claim
+
+
+def _critical_evidence_sufficient(
+    event_type: VerifiedEventType,
+    evidence: Sequence[EvidenceClaim],
+    issues: list[ValidationIssue],
+) -> bool:
+    if event_type not in CRITICAL_EVENT_TYPES:
+        return True
+    sufficient = len({claim.frame_id for claim in evidence}) >= 2
+    if not sufficient:
+        issues.append(
+            ValidationIssue(
+                code="CRITICAL_EVIDENCE_INSUFFICIENT",
+                field="evidence",
+                message="Kritik olay otomatik doğrulama için iki farklı frame evidence ister.",
+            )
+        )
+    return sufficient
 
 
 def _artifact_matches(

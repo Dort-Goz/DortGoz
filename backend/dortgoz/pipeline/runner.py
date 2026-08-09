@@ -20,6 +20,7 @@ from ..agent.llm import context_size
 from ..agent.memory import RISK_ORDER, Ledger
 from ..config import settings
 from ..events import AgentStep, Event, RunStatus, WindowReport
+from ..services.runtime_postprocess import postprocess_finalized_report
 from ..ws import ConnectionManager
 from . import ingest, interpret, perception, windowing
 from .candidate_intervals import IntervalConfig, build_candidate_intervals
@@ -140,6 +141,8 @@ async def review_if_closed(rec: RunRecorder, ledger: Ledger, path: Path,
         call: dict = {}
         review = await interpret.review_incident(
             path, (start, end), keyframes, inc.notes, model=model, stats=call)
+        # TODO(Patch 2): olay-geneli ikinci geçiş henüz finalized WindowReport
+        # evidence gate'inden geçmiyor; ledger.apply_review davranışı bu patch'te korunur.
         revised = ledger.apply_review(update.incident_id, review)
         if revised is not None:
             await rec.emit(revised)
@@ -360,6 +363,7 @@ async def run_video(
                             profile, nstart, nend, settings.keyframes_per_window))
                         break
                 call: dict = {}
+                captured_frames = {}
                 try:
                     report = await interpret_window(
                         path, (start, end), keyframes,
@@ -371,6 +375,7 @@ async def run_video(
                         # Süregelen olayın bağlamı bir sonraki pencereye taşınır
                         context=hint,
                         stats=call,
+                        captured_frames=captured_frames,
                     )
                 except asyncio.CancelledError:
                     raise
@@ -397,15 +402,18 @@ async def run_video(
                 if (settings.escalate_p and not report.events
                         and call.get("durum_p", 0.0) >= settings.escalate_p):
                     try:
+                        escalation_frames = {}
                         esc = await interpret_window(
                             path, (start, end), keyframes,
                             meta=percep.meta_text() if percep else "",
                             model=model, system_prompt=system_prompt,
                             task_prompt=task_prompt, context=hint,
                             think=True,
+                            captured_frames=escalation_frames,
                         )
                         if esc.events:
                             report = esc
+                            captured_frames = escalation_frames
                             # Tırmandırmayla kurtarılan pencere tanımı gereği
                             # SINIRDA — olay insan incelemesine işaretlenir
                             escalated = (f"sınırda pencereden tırmandırmayla "
@@ -424,6 +432,17 @@ async def run_video(
                                     f"korundu: {str(exc)[:120]}"),
                         ))
 
+                validation_sidecar = postprocess_finalized_report(
+                    report=report,
+                    captured_frames=captured_frames,
+                    run_id=run_id,
+                    window_index=idx,
+                    video_duration=duration,
+                    workspace_root=settings.runs_dir.resolve().parent,
+                    evidence_root=settings.runs_dir,
+                )
+                if validation_sidecar is not None:
+                    ctx.validation_sidecars.append(validation_sidecar)
                 ctx.reports.append(report)
                 await rec.emit(report)
                 sev = ",".join(sorted({e.severity_hint for e in report.events})) or "—"

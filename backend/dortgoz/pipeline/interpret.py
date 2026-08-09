@@ -28,6 +28,7 @@ from typing import Any
 
 from ..agent.llm import call_stats, create_chat, main_client
 from ..config import settings
+from ..domain.evidence import FRAME_TIMESTAMP_TOLERANCE_SECONDS
 from ..domain.taxonomy import CanonicalEventType, legacy_ws_label_from_canonical
 from ..events import FrameReference, WindowReport
 from ..tools.protocols import VlmSchemaError
@@ -94,9 +95,6 @@ TASK_TR = (
     "Her evidence kaydında yalnız ilgili karenin FRAME_ID ve "
     "VIDEO_TIMESTAMP_SECONDS değerini aynen kullan."
 )
-
-
-FRAME_TIMESTAMP_TOLERANCE_SECONDS = 0.01
 
 
 class VlmEvidenceContractError(VlmSchemaError):
@@ -419,6 +417,8 @@ def _image_part(jpeg: bytes) -> dict[str, Any]:
 async def _frame_parts(
     video: Path,
     frame_refs: list[FrameReference],
+    *,
+    captured_frames: dict[str, tuple[FrameReference, bytes]] | None = None,
 ) -> list[dict[str, Any]]:
     """Kareleri EŞZAMANLI çeker, zaman damgası + görüntü çifti olarak dizer.
 
@@ -431,6 +431,8 @@ async def _frame_parts(
     )
     parts: list[dict[str, Any]] = []
     for frame, jpeg in zip(frame_refs, jpegs):
+        if captured_frames is not None:
+            captured_frames[frame.frame_id] = (frame, jpeg)
         parts.append({
             "type": "text",
             "text": (
@@ -552,6 +554,7 @@ async def interpret_window(
     context: str = "",
     think: bool = False,
     stats: dict[str, Any] | None = None,
+    captured_frames: dict[str, tuple[FrameReference, bytes]] | None = None,
 ) -> WindowReport:
     """Bir pencereyi tek VLM çağrısıyla yorumlar; şema-geçerli WindowReport döner.
 
@@ -568,7 +571,7 @@ async def interpret_window(
     """
     start, end = window
     frame_refs = build_frame_references(keyframes)
-    content = await _frame_parts(video, frame_refs)
+    content = await _frame_parts(video, frame_refs, captured_frames=captured_frames)
 
     task = ((task_prompt or TASK_TR)
             .replace("{start}", f"{start:.0f}")

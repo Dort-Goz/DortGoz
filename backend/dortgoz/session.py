@@ -12,10 +12,14 @@ Tek koşuluk, süreç içi (A4: minimal backend). Kalıcılık gerekirse zaten
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from .agent.memory import Incident, Ledger
 from .config import settings
 from .events import WindowReport
+
+if TYPE_CHECKING:
+    from .services.runtime_postprocess import RuntimeWindowValidation
 
 TYPE_TR: dict[str, str] = {
     "kavga": "kavga", "saldiri": "saldırı", "hirsizlik": "hırsızlık",
@@ -44,6 +48,7 @@ class RunContext:
     duration: float = 0.0
     finished: bool = False
     reports: list[WindowReport] = field(default_factory=list)
+    validation_sidecars: list[RuntimeWindowValidation] = field(default_factory=list)
     ledger: Ledger = field(
         default_factory=lambda: Ledger(settings.incident_grace_windows))
 

@@ -176,9 +176,18 @@ async def test_thinking_escalation_uses_same_evidence_schema(monkeypatch):
     monkeypatch.setattr(interpret, "main_client", lambda: object())
     monkeypatch.setattr(settings, "two_tier", True)
 
-    report = await interpret_window(Path("unused.mp4"), (0, 30), [12.5], think=True)
+    evidence_frames = {}
+    report = await interpret_window(
+        Path("unused.mp4"),
+        (0, 30),
+        [12.5],
+        think=True,
+        captured_frames=evidence_frames,
+    )
 
     assert report.events[0].evidence[0].frame_id == "f_000"
+    assert evidence_frames["f_000"][0].timestamp == 12.5
+    assert evidence_frames["f_000"][1] == b"jpeg"
     assert captured["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
     schema = captured["response_format"]["json_schema"]["schema"]
     event_schema = schema["oneOf"][1]["properties"]["events"]["items"]

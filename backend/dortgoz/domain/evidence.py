@@ -10,6 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from .taxonomy import VerifiedEventType
 
+FRAME_TIMESTAMP_TOLERANCE_SECONDS = 0.01
+
 
 class VLMStatus(StrEnum):
     CONFIRMED = "confirmed"
