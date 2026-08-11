@@ -174,12 +174,14 @@ async def review_if_closed(
     # çürüdü (2026-08-06, Stealing095 ×3: araca girip çalma tutarlı biçimde
     # arac_kazasi sınıflandı) — 2. geçiş 6 yerine ≥8 kareyle ve sınıfı yeniden
     # karar veren istemle bakar; sınıf düzeltme ölçülmüş tek mekanizmamız bu.
-    start = max(0.0, inc.first_seen - 5.0)
-    # Video sonu kelepçesi (2026-08-11): kelepçesiz dolgu süre ötesi kare
-    # zamanı üretiyor, EOF ötesi grab boş JPEG veriyor ve sınır aşan bir atıf
-    # EVIDENCE_TIMESTAMP_MISMATCH ile tüm 2. geçişi düşürüyordu.
+    # Video sınırı kelepçeleri (2026-08-11): (a) kelepçesiz dolgu süre ötesi
+    # kare üretiyor, EOF ötesi grab boş JPEG veriyor ve sınır aşan bir atıf
+    # tüm 2. geçişi düşürüyordu; (b) bozuk first_seen (model `t` halüsinasyonu)
+    # aralığı boşaltıp boş kare kümesine yol açıyordu — start her zaman
+    # end'in gerisine kelepçelenir.
     end = min(inc.last_seen + 5.0, video_duration) if video_duration > 0 \
         else inc.last_seen + 5.0
+    start = max(0.0, min(inc.first_seen - 5.0, end - 1.0))
     frames = min(16, max(8, int(span // 12)))
     await rec.emit(AgentStep(node="oversight", status="start",
                              detail=f"olay geneli 2. geçiş {start:.0f}-{end:.0f} sn "

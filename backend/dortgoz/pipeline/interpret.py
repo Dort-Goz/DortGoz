@@ -178,6 +178,29 @@ def _drop_evidence_timestamp(evidence_schema: dict[str, Any]) -> None:
         item["required"] = [k for k in item["required"] if k != "timestamp"]
 
 
+def _anchor_event_time(event: dict[str, Any], start: float, end: float) -> None:
+    """Model `t`sini pencereye çıpalar; pencere dışıysa kanıt karesinden türetir.
+
+    B-biçiminde model kare zamanı GÖRMEZ; serbest bırakılan `t` alanına
+    görüntüdeki gömülü saati (152806) veya epoch benzeri sayılar yazdığı canlı
+    ölçüldü (2026-08-11, Assault011: t=1715078282 → defter first_seen bozuldu →
+    2. geçiş aralığı boş kaldı → boş enum → uydurma frame_id zinciri). Kanıt
+    kareleri artık uygulama-doğrulanmış zaman taşıyor — pencere dışı `t` ilk
+    kanıt karesinin zamanıyla değiştirilir.
+    """
+    raw_t = event.get("t")
+    tolerance = 2.0
+    if isinstance(raw_t, int | float) and start - tolerance <= raw_t <= end + tolerance:
+        return
+    evidence = event.get("evidence") or []
+    anchored = next(
+        (ref["timestamp"] for ref in evidence
+         if isinstance(ref, dict) and isinstance(ref.get("timestamp"), int | float)),
+        (start + end) / 2,
+    )
+    event["t"] = float(anchored)
+
+
 def _fill_evidence_timestamps(
     evidence_dicts: list[Any],
     frame_refs: list[FrameReference],
@@ -208,6 +231,13 @@ async def review_incident(
     """Kapanmış bir olayın TÜM aralığını tek bağlamda yeniden okur."""
     start, end = span
     frame_refs = build_frame_references(keyframes)
+    if not frame_refs:
+        # Boş kare kümesiyle VLM çağrısı anlamsız ve TEHLİKELİ: boş enum
+        # grammar kısıtını sessizce düşürür, model serbest kimlik uydurur
+        # (2026-08-11 canlı zincir). Çağıran incident'ı olduğu gibi korur.
+        raise VlmEvidenceContractError(
+            "NO_REVIEW_FRAMES", "2. geçiş için seçilebilir kare yok"
+        )
     content = await _frame_parts(
         video,
         frame_refs,
@@ -225,9 +255,10 @@ async def review_incident(
         # possible_armed_incident, arac_kazasi → physical_fight). Ön analiz
         # sınıfı varsayılan kabul edilir; değişim açık kare kanıtı ister.
         task += (
-            f"\n\nÖn analizin sınıfı: {current_type}. Karelerde bu sınıfla "
-            "çelişen AÇIK kanıt görmedikçe sınıfı koru; açık kanıt varsa düzelt "
-            "ve kanıt karelerini evidence alanında göster."
+            f"\n\nÖn analiz bu olayı {current_type} olarak sınıfladı. Bütünü "
+            "gördükten sonra en doğru sınıfı sen seç: ön analiz doğruysa koru, "
+            "kareler farklı bir sınıfı gösteriyorsa düzelt. Kararını kanıt "
+            "kareleriyle destekle."
         )
     if notes:
         joined = " · ".join(notes[:12])
@@ -267,6 +298,16 @@ async def review_incident(
         payload = json.loads(fixed)
     if isinstance(payload, dict):
         _fill_evidence_timestamps(payload.get("evidence") or [], frame_refs)
+        # zirve_t de model üretimi — B-biçiminde kare zamanı görünmediği için
+        # aralık dışına kayabilir; kanıt karesine (yoksa aralık ortasına) çıpala.
+        zirve = payload.get("zirve_t")
+        if not (isinstance(zirve, int | float) and start <= zirve <= end):
+            ev = payload.get("evidence") or []
+            payload["zirve_t"] = next(
+                (r["timestamp"] for r in ev
+                 if isinstance(r, dict) and isinstance(r.get("timestamp"), int | float)),
+                (start + end) / 2,
+            )
     review = IncidentReviewResult.model_validate(payload)
     _guard_incident_review_evidence(review, frame_refs)
     return review.model_dump(mode="json")
@@ -433,6 +474,7 @@ def _to_report(
             for event in data["events"]:
                 if isinstance(event, dict):
                     _fill_evidence_timestamps(event.get("evidence") or [], frame_refs)
+                    _anchor_event_time(event, start, end)
             if note is not None:
                 # Kesilmiş çıktının kuyruğunda yarım evidence kaydı kalabilir;
                 # sağlam kanıtı olan olayları koru, kuyruk artıklarını at —
