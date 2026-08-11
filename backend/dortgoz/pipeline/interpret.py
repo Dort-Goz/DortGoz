@@ -44,8 +44,15 @@ SYSTEM_TR = (
     "GÖRDÜĞÜNÜ yaz; emin olmadığın çıkarımları 'uncertainties' alanına koy. "
     "Olay yoksa 'events' boş kalsın — olay uydurma. Her olayın `evidence` "
     "alanında yalnızca sana verilen FRAME_ID değerlerini kullan; yeni kare kimliği "
-    "uydurma. Kanıt iddiası kısa, Türkçe ve yalnız gözlemlenebilir olmalı; niyet, "
-    "kimlik veya hukukî sonuç ileri sürme. Her event için `event_type` alanında "
+    # ⚠ "niyet/hukukî sonuç ileri sürme" cümlesi hırsızlık raporlamayı da
+    # bastırıyordu (2026-08-11 pencere teşhisi: model "kasa çekmecesinden para
+    # alan" kişiyi BETİMLEYİP P=0,012 verdi). Davranış-temelli istisna ölçüldü:
+    # Shoplifting028 0,001→0,885 yakalama; 10 normal pencerede FA etkisi yok.
+    "uydurma. Kanıt iddiası kısa, Türkçe ve yalnız gözlemlenebilir olmalı; kimlik "
+    "iddiası kurma, hukukî hüküm verme. Ancak şüpheli davranış SOMUT gözlemse "
+    "raporla: ürünü ödeme yapmadan çantaya/cebe koyma, kasadan izinsiz para "
+    "alma gibi davranışlar `possible_theft` kapsamında dikkat gerektirir. "
+    "Her event için `event_type` alanında "
     "yalnız canonical şemadaki değerlerden birini kullan. Mümkünse iki ayrı "
     "destekleyici kare, "
     "tek kare yeterliyse en az bir kare göster; kanıt yoksa olayı kesinleştirme, "
