@@ -113,7 +113,10 @@ export default function App() {
     if (!run?.state) return;
     startPendingRef.current = false;
     setStartPending(false);
-  }, [run?.state]);
+    // Bağımlılık nesne kimliği: reducer her run_status'ta yeni nesne koyar;
+    // yalnız state string'ine bağlanmak art arda aynı durumda (ör. iki kez
+    // "idle") kilidi asılı bırakıyordu (2026-08-11 bulgu A1).
+  }, [run]);
 
   // Demo: KAM-1..N etiketleriyle EŞZAMANLI koşar (kapasite ~10 @1×).
   // Uzun `kamera*` kayıtları (make_long_feed üretimi) öncelikli — demo kısa

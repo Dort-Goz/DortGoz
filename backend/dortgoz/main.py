@@ -262,12 +262,23 @@ async def start_run(msg: OperatorMessage) -> None:
         )
     except AnalysisJobExecutionDisabled:
         # Mock WS bağlantısı fixture'ı zaten oynatıyor. start_run'ın ayrıca gerçek
-        # runner/model yolunu açması çift akış ve GPU erişimi üretmemeli.
+        # runner/model yolunu açması çift akış ve GPU erişimi üretmemeli. Sessiz
+        # dönüş UI'daki başlatma kilidini süresiz bırakıyordu (2026-08-11 bulgu
+        # A1) — durum yayını kilidi çözer.
+        await manager.broadcast(
+            Event.wrap(
+                RunStatus(run_id="-", state="idle",
+                          detail="Mock kipte gerçek analiz başlatılmaz — kayıt zaten oynuyor."),
+                feed=msg.feed,
+            )
+        )
         return
     except AnalysisJobStartError as exc:
+        # `feed` Event.wrap'ın parametresi; broadcast'e geçirilirse TypeError
+        # bağlantıyı düşürüyordu (2026-08-11 bulgu BUG-1).
         await manager.broadcast(
-            Event.wrap(RunStatus(run_id="-", state="error", detail=str(exc))),
-            feed=msg.feed,
+            Event.wrap(RunStatus(run_id="-", state="error", detail=str(exc)),
+                       feed=msg.feed)
         )
 
 

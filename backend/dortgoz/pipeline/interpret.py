@@ -95,8 +95,7 @@ TIER_TR = (
 TASK_TR = (
     "Yukarıdaki kareler {start}-{end} sn penceresine aittir. "
     "Pencereyi özetle ve dikkat gerektiren olayları zaman damgasıyla listele. "
-    "Her evidence kaydında yalnız ilgili karenin FRAME_ID ve "
-    "VIDEO_TIMESTAMP_SECONDS değerini aynen kullan."
+    "Her evidence kaydında yalnız ilgili karenin FRAME_ID değerini aynen kullan."
 )
 
 
@@ -121,7 +120,7 @@ REVIEW_SYSTEM_TR = (
     "yaz; emin olmadığını 'belirsizlikler'e koy. Pencere pencere bakan bir ön "
     "analiz bu olayı parçalı görmüş olabilir — sen bütünlüklü karar ver, "
     "gerekiyorsa sınıfı yeniden değerlendir. Her evidence kaydında yalnız sana "
-    "verilen FRAME_ID ve VIDEO_TIMESTAMP_SECONDS değerlerini aynen kullan. "
+    "verilen FRAME_ID değerlerini aynen kullan. "
     "Risk alanı yalnız model ipucudur; final risk değildir."
 )
 
@@ -141,11 +140,57 @@ class IncidentReviewResult(BaseModel):
     belirsizlikler: list[str]
 
 
-def review_schema() -> dict[str, Any]:
+def review_schema(frame_ids: list[str] | None = None) -> dict[str, Any]:
     """Olay-geneli ikinci geçişin şeması (Bengisu'nun öncesi-zirve-sonrası tasarımı)."""
     schema = _inline_defs(IncidentReviewResult.model_json_schema())
     schema.pop("title", None)
+    evidence = schema.get("properties", {}).get("evidence")
+    if evidence is not None:
+        _drop_evidence_timestamp(evidence)
+        _constrain_evidence_frame_ids(evidence, frame_ids)
     return schema
+
+
+def _constrain_evidence_frame_ids(
+    evidence_schema: dict[str, Any],
+    frame_ids: list[str] | None,
+) -> None:
+    """Evidence `frame_id` alanını isteğin gerçek kare kimliklerine kilitler."""
+    if not frame_ids:
+        return
+    item = evidence_schema.get("items", {})
+    props = item.get("properties")
+    if props is not None and "frame_id" in props:
+        props["frame_id"] = {"enum": list(frame_ids)}
+
+
+def _drop_evidence_timestamp(evidence_schema: dict[str, Any]) -> None:
+    """Model-facing evidence şemasından `timestamp` alanını çıkarır (B-biçimi).
+
+    Model yalnız FRAME_ID + claim üretir; timestamp parse SONRASINDA
+    `_fill_evidence_timestamps` ile frame_id→timestamp sözlüğünden doldurulur.
+    Böylece internal sözleşme (EventEvidenceRef) değişmez, model zaman kopyalama
+    yükünden ve tolerans hatalarından kurtulur.
+    """
+    item = evidence_schema.get("items", {})
+    item.get("properties", {}).pop("timestamp", None)
+    if "required" in item:
+        item["required"] = [k for k in item["required"] if k != "timestamp"]
+
+
+def _fill_evidence_timestamps(
+    evidence_dicts: list[Any],
+    frame_refs: list[FrameReference],
+) -> None:
+    """Parse edilmiş evidence kayıtlarına timestamp'i uygulama tarafından yazar.
+
+    Bilinmeyen frame_id 0.0 alır — `_guard_evidence_references` /
+    `_guard_incident_review_evidence` bilinmeyen kimliği zaten ayrıca reddeder.
+    """
+    allowed = {frame.frame_id: frame.timestamp for frame in frame_refs}
+    for item in evidence_dicts:
+        if isinstance(item, dict) and "timestamp" not in item:
+            item["timestamp"] = allowed.get(item.get("frame_id"), 0.0)
 
 
 async def review_incident(
@@ -158,6 +203,7 @@ async def review_incident(
     stats: dict[str, Any] | None = None,
     timing: dict[str, float | int] | None = None,
     captured_frames: dict[str, tuple[FrameReference, bytes]] | None = None,
+    current_type: str = "",
 ) -> dict[str, Any]:
     """Kapanmış bir olayın TÜM aralığını tek bağlamda yeniden okur."""
     start, end = span
@@ -166,12 +212,23 @@ async def review_incident(
         video,
         frame_refs,
         captured_frames=captured_frames,
+        include_timestamps=True,
     )
     task = (
         f"Yukarıdaki kareler {start:.0f}-{end:.0f} sn arasındaki TEK bir olayın "
         f"tamamını kapsıyor ({end - start:.0f} sn). Olayı bütün olarak değerlendir: "
         "nasıl başladı, zirve anı hangisi, nasıl sonuçlandı."
     )
+    if current_type:
+        # Sınıf kararlılığı (2026-08-11 canlı bulgu): serbest bırakılan ikinci
+        # geçiş 3 olaydan 2'sinde sınıfı yanlış tarafa çevirdi (yangin →
+        # possible_armed_incident, arac_kazasi → physical_fight). Ön analiz
+        # sınıfı varsayılan kabul edilir; değişim açık kare kanıtı ister.
+        task += (
+            f"\n\nÖn analizin sınıfı: {current_type}. Karelerde bu sınıfla "
+            "çelişen AÇIK kanıt görmedikçe sınıfı koru; açık kanıt varsa düzelt "
+            "ve kanıt karelerini evidence alanında göster."
+        )
     if notes:
         joined = " · ".join(notes[:12])
         task += (f"\n\nPencere pencere yapılmış ÖN gözlemler (parçalı olabilir, "
@@ -189,7 +246,9 @@ async def review_incident(
             temperature=0,
             response_format={"type": "json_schema",
                              "json_schema": {"name": "incident_review", "strict": True,
-                                             "schema": review_schema()}},
+                                             "schema": review_schema(
+                                                 [f.frame_id for f in frame_refs]
+                                             )}},
             # Görüntü isteği → spekülasyon kapalı (hız; bkz. interpret_window notu)
             extra_body={"speculative.n_max": 0,
                         "chat_template_kwargs": {"enable_thinking": False}},
@@ -206,6 +265,8 @@ async def review_incident(
         if fixed is None:
             raise
         payload = json.loads(fixed)
+    if isinstance(payload, dict):
+        _fill_evidence_timestamps(payload.get("evidence") or [], frame_refs)
     review = IncidentReviewResult.model_validate(payload)
     _guard_incident_review_evidence(review, frame_refs)
     return review.model_dump(mode="json")
@@ -233,11 +294,15 @@ def _inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
     return walk(schema)
 
 
-def report_schema() -> dict[str, Any]:
+def report_schema(frame_ids: list[str] | None = None) -> dict[str, Any]:
     """WindowReport'tan modelin üreteceği alanların şemasını türetir.
 
     `type`, `window_start`, `window_end` çıkarılır: bunlar bizde zaten kesin
     olarak var — modele ürettirmek hem token harcar hem hata yüzeyi açar.
+    `frame_ids` verilirse evidence `frame_id` alanı o isteğin GERÇEK kare
+    kimliklerine enum ile sabitlenir — uydurma kimlik (ör. dedup sonrası
+    var olmayan f_006) dilbilgisi düzeyinde imkânsızlaşır (2026-08-11 canlı
+    bulgu: tek uydurma kimlik tüm 2. geçişi düşürüyordu).
     """
     schema = _inline_defs(WindowReport.model_json_schema())
     props = schema.get("properties", {})
@@ -252,6 +317,8 @@ def report_schema() -> dict[str, Any]:
     event_props = event_schema["properties"]
     event_props["event_type"] = {"enum": [item.value for item in CanonicalEventType]}
     event_props["evidence"]["minItems"] = 1
+    _drop_evidence_timestamp(event_props["evidence"])
+    _constrain_evidence_frame_ids(event_props["evidence"], frame_ids)
     event_schema["required"] = list(event_props)
     event_schema["additionalProperties"] = False
     # ⚠ ALAN SIRASI ÜRETİM SIRASIDIR (GBNF şemayı sırayla dilbilgisine çevirir).
@@ -266,7 +333,7 @@ def report_schema() -> dict[str, Any]:
     return schema
 
 
-def tier_schema() -> dict[str, Any]:
+def tier_schema(frame_ids: list[str] | None = None) -> dict[str, Any]:
     """İki kademeli şema (Cerberus deseni) — üretim token'ı ölçülen darboğaz.
 
     Alan SIRASI kasıtlı: her iki dal da `summary` ile AÇILIR, `durum` ondan
@@ -275,7 +342,7 @@ def tier_schema() -> dict[str, Any]:
     olayı olağana yutuldu — betimleme zinciri kırılınca geri çağırma düşüyor.)
     Tasarruf olay/uncertainty yapısının atlanmasından gelir, gözlemden değil.
     """
-    full = report_schema()
+    full = report_schema(frame_ids)
     rest = {k: v for k, v in full["properties"].items() if k != "summary"}
     return {"oneOf": [
         {"type": "object",
@@ -362,13 +429,42 @@ def _to_report(
     else:
         data.setdefault("events", [])
         data.setdefault("uncertainties", [])
+        if frame_refs is not None:
+            for event in data["events"]:
+                if isinstance(event, dict):
+                    _fill_evidence_timestamps(event.get("evidence") or [], frame_refs)
+            if note is not None:
+                # Kesilmiş çıktının kuyruğunda yarım evidence kaydı kalabilir;
+                # sağlam kanıtı olan olayları koru, kuyruk artıklarını at —
+                # aksi halde guard tek yarım kayıt için tüm pencereyi düşürür.
+                allowed_ids = {frame.frame_id for frame in frame_refs}
+                salvaged = []
+                for event in data["events"]:
+                    if not isinstance(event, dict):
+                        continue
+                    event["evidence"] = [
+                        ref for ref in (event.get("evidence") or [])
+                        if isinstance(ref, dict) and ref.get("frame_id") in allowed_ids
+                    ]
+                    if event["evidence"]:
+                        salvaged.append(event)
+                data["events"] = salvaged
         raw_anomaly_type = data.get("anomaly_type")
         try:
             canonical_type = CanonicalEventType(raw_anomaly_type)
         except (TypeError, ValueError) as exc:
-            # frame_refs'in varlığı gerçek VLM parse yolunu gösterir. Legacy
-            # test/fixture çağrılarında eski Türkçe değerler hâlâ kabul edilir.
-            if frame_refs is not None:
+            # `anomaly_type` şemada BİLEREK son alan (sınıf gözlemden sonra
+            # seçilsin) — bu yüzden token sınırında kesilen çıktıda tam da o
+            # eksik kalır. Kurtarılan raporu tek eksik alan yüzünden düşürmek
+            # ölçülen salvage davranışını öldürüyordu (2026-08-11 inceleme
+            # bulgusu B1): kesilmişse unknown_anomaly ile düşür, olayları koru.
+            if note is not None:
+                data["anomaly_type"] = legacy_ws_label_from_canonical(
+                    CanonicalEventType.UNKNOWN_ANOMALY
+                ).value
+            elif frame_refs is not None:
+                # frame_refs'in varlığı gerçek VLM parse yolunu gösterir. Legacy
+                # test/fixture çağrılarında eski Türkçe değerler hâlâ kabul edilir.
                 raise VlmSchemaError(
                     f"canonical olmayan VLM anomaly_type: {raw_anomaly_type}",
                     code="INVALID_VLM_EVENT_TYPE",
@@ -460,6 +556,7 @@ async def _frame_parts(
     frame_refs: list[FrameReference],
     *,
     captured_frames: dict[str, tuple[FrameReference, bytes]] | None = None,
+    include_timestamps: bool = False,
 ) -> list[dict[str, Any]]:
     """Kareleri EŞZAMANLI çeker, zaman damgası + görüntü çifti olarak dizer.
 
@@ -476,9 +573,16 @@ async def _frame_parts(
             captured_frames[frame.frame_id] = (frame, jpeg)
         parts.append({
             "type": "text",
+            # B-biçimi (2026-08-11 ablation): pencere geçişinde yalnız FRAME_ID
+            # gösterilir; zaman eşlemesi uygulama tarafında frame_id→timestamp
+            # sözlüğünden yapılır. VIDEO_TIMESTAMP_SECONDS satırı tespit kaybına
+            # yol açıyordu (pilot: arm C %78 vs arm B %89; Explosion028 tam kayıp).
+            # İkinci geçiş anlatı kurar (zirve_t ister) → zaman etiketi orada kalır.
             "text": (
                 f"FRAME_ID: {frame.frame_id}\n"
                 f"VIDEO_TIMESTAMP_SECONDS: {frame.timestamp:.3f}"
+                if include_timestamps
+                else f"FRAME_ID: {frame.frame_id}"
             ),
         })
         parts.append(_image_part(jpeg))
@@ -613,6 +717,7 @@ async def interpret_window(
     """
     start, end = window
     frame_refs = build_frame_references(keyframes)
+    request_frame_ids = [frame.frame_id for frame in frame_refs]
     content = await _frame_parts(video, frame_refs, captured_frames=captured_frames)
 
     task = ((task_prompt or TASK_TR)
@@ -645,8 +750,9 @@ async def interpret_window(
             response_format={
                 "type": "json_schema",
                 "json_schema": {"name": "window_report", "strict": True,
-                                "schema": tier_schema() if settings.two_tier
-                                          else report_schema()},
+                                "schema": tier_schema(request_frame_ids)
+                                          if settings.two_tier
+                                          else report_schema(request_frame_ids)},
             },
             extra_body={
                 # Görüntü isteklerinde spekülasyonu KAPAT — çökme için değil HIZ için:

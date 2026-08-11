@@ -192,10 +192,13 @@ async def test_thinking_escalation_uses_same_evidence_schema(monkeypatch):
     schema = captured["response_format"]["json_schema"]["schema"]
     event_schema = schema["oneOf"][1]["properties"]["events"]["items"]
     assert event_schema["properties"]["evidence"]["minItems"] == 1
+    # B-biçimi: model yalnız FRAME_ID görür; timestamp şemadan çıkarılır ve
+    # parse sonrasında uygulama tarafından doldurulur.
+    evidence_item = event_schema["properties"]["evidence"]["items"]
+    assert "timestamp" not in evidence_item["properties"]
+    assert "timestamp" not in evidence_item.get("required", [])
     content = captured["messages"][1]["content"]
-    assert content[0]["text"] == (
-        "FRAME_ID: f_000\nVIDEO_TIMESTAMP_SECONDS: 12.500"
-    )
+    assert content[0]["text"] == "FRAME_ID: f_000"
 
 
 def test_legacy_window_event_remains_valid():

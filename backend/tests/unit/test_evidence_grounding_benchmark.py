@@ -230,7 +230,7 @@ def test_dry_run_call_count_and_source_label_preservation(tmp_path: Path) -> Non
     assert summary["GROUNDING_EVALUATION_CONDITION"] == "at_least_one_valid_selected_frame"
     assert summary["permutation_scope"] == "single_controlled_order_perturbation_sensitivity"
     assert summary["contracts"] == {
-        "production": ["frame_id", "timestamp", "claim"],
+        "production": ["frame_id", "claim"],
         "benchmark_normalized": {
             "A": ["image_index", "claim"],
             "B": ["frame_id", "claim"],

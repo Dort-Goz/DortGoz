@@ -66,7 +66,8 @@ TEMPERATURE = 0
 GROUNDING_EVALUATION_CONDITION = "at_least_one_valid_selected_frame"
 EXCLUDED_KEYFRAME_FAILURE = "EXCLUDED_KEYFRAME_FAILURE"
 PERMUTATION_SCOPE = "single_controlled_order_perturbation_sensitivity"
-PRODUCTION_EVIDENCE_CONTRACT = ("frame_id", "timestamp", "claim")
+PRODUCTION_EVIDENCE_CONTRACT = ("frame_id", "claim")  # B-biçimi (2026-08-11):
+# timestamp model-facing şemadan çıkarıldı; uygulama frame_id→timestamp doldurur.
 BENCHMARK_EVIDENCE_CONTRACTS = {
     "A": ("image_index", "claim"),
     "B": ("frame_id", "claim"),
@@ -113,8 +114,7 @@ _ARM_SYSTEM_CLAUSE = {
     "C": _C_SYSTEM_CLAUSE,
 }
 _PRODUCTION_TASK_CLAUSE = (
-    "Her evidence kaydında yalnız ilgili karenin FRAME_ID ve "
-    "VIDEO_TIMESTAMP_SECONDS değerini aynen kullan."
+    "Her evidence kaydında yalnız ilgili karenin FRAME_ID değerini aynen kullan."
 )
 _NORMALIZED_FRAME_TASK_CLAUSE = (
     "Her evidence kaydında yalnız ilgili karenin FRAME_ID değerini aynen kullan."
