@@ -568,8 +568,17 @@ async def run_video(
                     escalation_timing: dict[str, float | int] = {}
                     try:
                         escalation_frames = {}
+                        # Aynı karelerle düşünmeli yeniden sorgu, C-bandı
+                        # kaçırmalarının 4/4'ünde yine "0 olay" dedi (2026-08-11
+                        # taksonomi) — bilgi karelerde yoksa düşünme yetmiyor.
+                        # Pencere teşhisinde 12 tekdüze kare tam bu pencereleri
+                        # kurtardı (ör. P 0,002→0,999) → tırmandırma yoğun
+                        # örneklemeyle bakar; maliyet yalnız ~%4 pencerede.
+                        esc_step = (end - start) / 12
+                        esc_keyframes = [start + esc_step * (i + 0.5)
+                                         for i in range(12)]
                         esc = await interpret_window(
-                            path, (start, end), keyframes,
+                            path, (start, end), esc_keyframes,
                             meta=percep.meta_text() if percep else "",
                             model=model, system_prompt=system_prompt,
                             task_prompt=task_prompt, context=hint,
