@@ -609,6 +609,42 @@ async def run_video(
                     finally:
                         metrics.record_qwen_timing(escalation_timing)
 
+                # Çift okuma (max-recall kipi): pencere hâlâ olağansa bir kez de
+                # 12 motion-ranked kareyle bak; iki okumadan biri olay görürse
+                # alarm. k6∪k12 birleşim analizi (2026-08-11): kaçırmaların
+                # önemli kısmı kare-kümesi duyarlı — ikinci küme farklı anları
+                # örneklediği için tamamlayıcı. AgentStep her iki verdikti yazar
+                # (kesişim/AND kipi kayıttan hesaplanabilir kalsın).
+                if settings.dual_read and not report.events:
+                    dual_timing: dict[str, float | int] = {}
+                    try:
+                        kf12 = windowing.select_keyframes(profile, start, end, 12)
+                        dual_frames = {}
+                        dual = await interpret_window(
+                            path, (start, end), kf12,
+                            meta=percep.meta_text() if percep else "",
+                            model=model, system_prompt=system_prompt,
+                            task_prompt=task_prompt, context=hint,
+                            timing=dual_timing,
+                            captured_frames=dual_frames,
+                        )
+                        await rec.emit(AgentStep(
+                            node="interpret", status="end",
+                            detail=(f"çift okuma {start:.0f}-{end:.0f} sn "
+                                    f"(12 kare): {len(dual.events)} olay"),
+                        ))
+                        if dual.events:
+                            report = dual
+                            captured_frames = dual_frames
+                    except Exception as exc:
+                        await rec.emit(AgentStep(
+                            node="interpret", status="end",
+                            detail=(f"çift okuma başarısız, taban karar "
+                                    f"korundu: {str(exc)[:120]}"),
+                        ))
+                    finally:
+                        metrics.record_qwen_timing(dual_timing)
+
                 validation = postprocess_finalized_report(
                     report=report,
                     captured_frames=captured_frames,

@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     # (71 klip alt kümesi): eşik 0,10'da pencerelerin ~%4'ü tırmanıyor,
     # klip yakalama +1 / yanlış alarm +0; kurtarılanlar GT-ilişkiliydi.
     escalate_p: float = 0.10
+    # Çift okuma (2026-08-11 birleşim analizi): olagan kalan pencere bir kez de
+    # 12 motion-ranked kareyle okunur; İKİ okumadan biri olay görürse alarm.
+    # k6∪k12 birleşimi 99→112/140 yakalama vaat ediyor (FA 12→~21, maliyet ~2×)
+    # — max-recall kipi; varsayılan KAPALI, tam-bölme ölçümüyle karar verilir.
+    dual_read: bool = False
     # Süreç genelinde aynı anda en çok bu kadar VLM çağrısı uçuşta olur —
     # 24 akış sunucuya 24 istek yığınca model sunucusu 429 döndürüyor ve pencereler
     # atlanıyordu (2026-08-06 canlı). Kendi kendini kısıtlamak + 429'da geri
