@@ -16,7 +16,6 @@ from openai import AsyncOpenAI, RateLimitError
 
 from ..config import settings
 
-
 # Döngü başına TEK istemci: her çağrıda yeni AsyncOpenAI kurmak her seferinde
 # yeni bir httpx havuzu açıyordu (kapatılmadan) — 24-akış soak'ında binlerce
 # istemci = sızan bağlantı/fd. İstemci eşzamanlı kullanım için zaten güvenli.

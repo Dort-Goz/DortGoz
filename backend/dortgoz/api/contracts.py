@@ -7,7 +7,7 @@ JSON'a güvenli biçimde taşır.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -26,6 +26,8 @@ class AnalyzeRequest(BaseModel):
     model: str = Field(default="", max_length=500)
     system_prompt: str = Field(default="", max_length=20_000)
     task_prompt: str = Field(default="", max_length=20_000)
+    # Çalışma kipi: "" | dengeli | hassas | genis (bkz. runner._mode_flags)
+    mode: Literal["", "dengeli", "hassas", "genis"] = ""
 
 
 class AnalysisAccepted(BaseModel):

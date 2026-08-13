@@ -58,7 +58,7 @@ class Detection:
     w: float
     h: float
 
-    def iou(self, other: "Detection") -> float:
+    def iou(self, other: Detection) -> float:
         ax0, ay0 = self.cx - self.w / 2, self.cy - self.h / 2
         ax1, ay1 = self.cx + self.w / 2, self.cy + self.h / 2
         bx0, by0 = other.cx - other.w / 2, other.cy - other.h / 2
@@ -86,7 +86,7 @@ class _Detector:
         labels = json.loads(cfg.read_text())["id2label"] if cfg.is_file() else {}
         self.id2label = {int(k): v for k, v in labels.items()}
 
-    def detect(self, rgb: "object", conf: float) -> list[Detection]:
+    def detect(self, rgb: object, conf: float) -> list[Detection]:
         """640×640 RGB uint8 kare → eşik üstü, ilgi listesi içi tespitler."""
         import numpy as np
         x = (np.asarray(rgb, dtype=np.float32) / 255.0).transpose(2, 0, 1)[None]

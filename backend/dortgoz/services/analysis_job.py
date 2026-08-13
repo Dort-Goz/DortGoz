@@ -50,6 +50,7 @@ class EffectiveRuntimeConfig:
     model: str
     system_prompt: str
     task_prompt: str
+    mode: str = ""  # "" = dengeli; hassas | genis (bkz. runner._mode_flags)
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,6 +169,7 @@ class CanonicalAnalysisJobService:
         model: str = "",
         system_prompt: str = "",
         task_prompt: str = "",
+        mode: str = "",
     ) -> AnalysisJobSnapshot:
         """Start or atomically reuse an identical active canonical analysis."""
 
@@ -179,6 +181,7 @@ class CanonicalAnalysisJobService:
             model=model or defaults.model,
             system_prompt=system_prompt or defaults.system_prompt,
             task_prompt=task_prompt or defaults.task_prompt,
+            mode=mode,
         )
         identity = _video_identity(video)
 
@@ -214,6 +217,7 @@ class CanonicalAnalysisJobService:
                     model=model,
                     system_prompt=system_prompt,
                     task_prompt=task_prompt,
+                    mode=mode,
                 ),
                 name=f"dortgoz-analysis-{analysis_id}",
             )
@@ -294,6 +298,7 @@ class CanonicalAnalysisJobService:
         model: str,
         system_prompt: str,
         task_prompt: str,
+        mode: str = "",
     ) -> None:
         record.status = AnalysisJobStatus.RUNNING
         try:
@@ -305,6 +310,7 @@ class CanonicalAnalysisJobService:
                 system_prompt=system_prompt,
                 task_prompt=task_prompt,
                 feed=record.feed,
+                mode=mode,
             )
         except asyncio.CancelledError:
             parsed = resolve_jsonl_status(self.runs_dir, record.analysis_id, active=False)

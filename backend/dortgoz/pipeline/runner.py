@@ -280,6 +280,21 @@ async def review_if_closed(
         await rec.emit(AgentStep(node="oversight", status="error", detail=str(exc)[:160]))
 
 
+def _mode_flags(mode: str) -> tuple[bool, bool, bool]:
+    """Kip → (çift-okuma-OR, hassas-doğrulama, son-tarama).
+
+    "" ve "dengeli": ayarlardaki bayraklar (varsayılan ikisi de kapalı).
+    "genis": max-recall — çift okuma + son tarama (ölçüm: ~116/140 @ ~23/150).
+    "hassas": alarm ikinci 12-kare okumayla DOĞRULANMALI, aksi düşürülür
+    (offline kesişim kestirimi: ~88/140 @ ~5/150).
+    """
+    if mode == "genis":
+        return True, False, True
+    if mode == "hassas":
+        return False, True, False
+    return settings.dual_read, False, settings.final_sweep
+
+
 async def run_video(
     manager: ConnectionManager,
     video: str,
@@ -289,6 +304,7 @@ async def run_video(
     system_prompt: str = "",
     task_prompt: str = "",
     feed: str = "",
+    mode: str = "",
 ) -> None:
     """Bir videoyu işler; iptal edilirse (stop_run) durumu temiz bırakır.
 
@@ -302,12 +318,14 @@ async def run_video(
     ctx = session.start(run_id, video, feed=feed)   # sohbet analiz sonrası buradan sürer
     ledger = ctx.ledger
     effective_model = model or settings.main_model
+    dual_or, confirm_and, sweep_on = _mode_flags(mode)
     (settings.runs_dir / f"{run_id}.meta.json").write_text(json.dumps({
         "video": video,
         "model": effective_model,
         "system_prompt": system_prompt or SYSTEM_TR,
         "task_prompt": task_prompt or TASK_TR,
-        "customized": bool(model or system_prompt or task_prompt),
+        "mode": mode or "dengeli",
+        "customized": bool(model or system_prompt or task_prompt or mode),
     }, ensure_ascii=False, indent=1), encoding="utf-8")
     try:
         path = resolve_media(video)
@@ -615,7 +633,9 @@ async def run_video(
                 # önemli kısmı kare-kümesi duyarlı — ikinci küme farklı anları
                 # örneklediği için tamamlayıcı. AgentStep her iki verdikti yazar
                 # (kesişim/AND kipi kayıttan hesaplanabilir kalsın).
-                if settings.dual_read and not report.events:
+                need_second = ((dual_or and not report.events)
+                               or (confirm_and and report.events))
+                if need_second:
                     dual_timing: dict[str, float | int] = {}
                     try:
                         kf12 = windowing.select_keyframes(profile, start, end, 12)
@@ -630,16 +650,30 @@ async def run_video(
                         )
                         await rec.emit(AgentStep(
                             node="interpret", status="end",
-                            detail=(f"çift okuma {start:.0f}-{end:.0f} sn "
+                            detail=(f"{'doğrulama' if report.events else 'çift'} "
+                                    f"okuma {start:.0f}-{end:.0f} sn "
                                     f"(12 kare): {len(dual.events)} olay"),
                         ))
-                        if dual.events:
+                        if not report.events and dual.events:
+                            # genis (OR): ikinci okuma olay gördü → benimse
                             report = dual
                             captured_frames = dual_frames
+                        elif confirm_and and report.events and not dual.events:
+                            # hassas (AND): doğrulanamayan alarm düşürülür —
+                            # gözlem kaybolmaz, belirsizliğe iner (fail-closed)
+                            report = WindowReport(
+                                window_start=report.window_start,
+                                window_end=report.window_end,
+                                summary=report.summary,
+                                uncertainties=report.uncertainties + [
+                                    "hassas kip: ilk okumanın olayı ikinci "
+                                    "(12 kare) okumada doğrulanmadı — alarm "
+                                    "düşürüldü"],
+                            )
                     except Exception as exc:
                         await rec.emit(AgentStep(
                             node="interpret", status="end",
-                            detail=(f"çift okuma başarısız, taban karar "
+                            detail=(f"ikinci okuma başarısız, taban karar "
                                     f"korundu: {str(exc)[:120]}"),
                         ))
                     finally:
@@ -747,7 +781,7 @@ async def run_video(
         # zaman ekseninde görünür oluyor — ölçüm 2026-08-12: 28 kaçırmanın 4'ü
         # açıldı, 129 temiz normalde 0 yeni FA. Bulgu her zaman insan
         # incelemesine işaretlenir (zayıf-sinyal yakalama).
-        if settings.final_sweep and not ledger.incidents and duration >= 10.0:
+        if sweep_on and not ledger.incidents and duration >= 10.0:
             sweep_end = max(1.0, duration - 0.4)
             sweep_kf = [sweep_end / 16 * (i + 0.5) for i in range(16)]
             try:

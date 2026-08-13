@@ -170,6 +170,7 @@ async def analyze_video(
             model=body.model,
             system_prompt=body.system_prompt,
             task_prompt=body.task_prompt,
+            mode=body.mode,
         )
     except AnalysisJobConflict as exc:
         return error_response(

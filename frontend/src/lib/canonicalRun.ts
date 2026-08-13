@@ -8,7 +8,7 @@ interface StartCanonicalRunArgs {
   selected: string;
   busy: boolean;
   gate: StartGate;
-  overrides: Pick<OperatorMessage, "model" | "system_prompt" | "task_prompt">;
+  overrides: Pick<OperatorMessage, "model" | "system_prompt" | "task_prompt" | "mode">;
   dispatchStarted: (video: string) => void;
   send: (message: OperatorMessage) => void;
 }

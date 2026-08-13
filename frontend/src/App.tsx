@@ -25,6 +25,8 @@ export default function App() {
   const [model, setModel] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [taskPrompt, setTaskPrompt] = useState("");
+  // Çalışma kipi (ölçülü cephe): dengeli 99/140@12 · hassas ~88@5 · genis ~116@23
+  const [runMode, setRunMode] = useState<"" | "hassas" | "genis">("");
   const [demoCount, setDemoCount] = useState(4);
   const startPendingRef = useRef(false);
   const [startPending, setStartPending] = useState(false);
@@ -95,7 +97,8 @@ export default function App() {
       interpretCfg && systemPrompt !== interpretCfg.system_prompt ? systemPrompt : "",
     task_prompt:
       interpretCfg && taskPrompt !== interpretCfg.task_prompt ? taskPrompt : "",
-  }), [interpretCfg, model, systemPrompt, taskPrompt]);
+    mode: runMode,
+  }), [interpretCfg, model, systemPrompt, taskPrompt, runMode]);
 
   const startRun = useCallback(() => {
     const started = startCanonicalRun({
@@ -174,6 +177,17 @@ export default function App() {
           >
             {videos.length === 0 && <option value="">media/ boş</option>}
             {videos.map((v) => <option key={v} value={v}>{v}</option>)}
+          </select>
+          <select
+            value={runMode}
+            onChange={(e) => setRunMode(e.target.value as "" | "hassas" | "genis")}
+            disabled={busy}
+            title="Çalışma kipi — dengeli: varsayılan; hassas: alarm ikinci okumayla doğrulanır (az yanlış alarm); geniş: çift okuma + son tarama (en yüksek yakalama)"
+            className="bg-zinc-800 border border-zinc-700 rounded px-1 py-1 disabled:opacity-50"
+          >
+            <option value="">dengeli</option>
+            <option value="hassas">hassas</option>
+            <option value="genis">geniş</option>
           </select>
           <button
             onClick={busy ? stopRun : startRun}

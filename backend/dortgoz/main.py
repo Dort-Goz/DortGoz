@@ -259,6 +259,7 @@ async def start_run(msg: OperatorMessage) -> None:
             system_prompt=msg.system_prompt,
             task_prompt=msg.task_prompt,
             feed=msg.feed,
+            mode=msg.mode,
         )
     except AnalysisJobExecutionDisabled:
         # Mock WS bağlantısı fixture'ı zaten oynatıyor. start_run'ın ayrıca gerçek
