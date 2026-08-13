@@ -741,6 +741,54 @@ async def run_video(
                 speed=end / max(time.time() - t_wall, 1e-6),
             ))
 
+        # Son tarama: pencere pencere hiçbir olay açılmadıysa videoya BİR kez
+        # bütün olarak bak (16 tekdüze kare). Uzun yayılımlı ince olaylar
+        # (alıp-götürme, tek anlık olaylar) pencere bağlamında görünmezken tam
+        # zaman ekseninde görünür oluyor — ölçüm 2026-08-12: 28 kaçırmanın 4'ü
+        # açıldı, 129 temiz normalde 0 yeni FA. Bulgu her zaman insan
+        # incelemesine işaretlenir (zayıf-sinyal yakalama).
+        if settings.final_sweep and not ledger.incidents and duration >= 10.0:
+            sweep_end = max(1.0, duration - 0.4)
+            sweep_kf = [sweep_end / 16 * (i + 0.5) for i in range(16)]
+            try:
+                sweep_frames: dict = {}
+                sweep_rep = await interpret_window(
+                    path, (0.0, sweep_end), sweep_kf,
+                    model=model, system_prompt=system_prompt,
+                    task_prompt=task_prompt, captured_frames=sweep_frames,
+                )
+                await rec.emit(AgentStep(
+                    node="interpret", status="end",
+                    detail=f"son tarama (16 kare): {len(sweep_rep.events)} olay"))
+                if sweep_rep.events:
+                    validation = postprocess_finalized_report(
+                        report=sweep_rep, captured_frames=sweep_frames,
+                        scope=evidence_scope, window_index=len(wins),
+                        video_duration=duration,
+                        workspace_root=settings.runs_dir.resolve().parent,
+                        evidence_root=settings.runs_dir / "_runtime_evidence",
+                    )
+                    metrics.record_validation(validation)
+                    policy = decide_runtime_policy(sweep_rep, validation)
+                    ctx.reports.append(sweep_rep)
+                    await rec.emit(sweep_rep)
+                    if policy.ledger_report is not None:
+                        serious = ledger.serious(policy.ledger_report)
+                        thumb = None
+                        if serious:
+                            peak = max(serious,
+                                       key=lambda e: RISK_ORDER.index(e.severity_hint))
+                            thumb = await save_thumbnail(path, peak.t, run_id, "sweep")
+                        reasons = [item for item in
+                                   ("son taramayla yakalandı", policy.review_reason)
+                                   if item]
+                        for update in ledger.ingest(policy.ledger_report, thumb,
+                                                    uncertain=" · ".join(reasons)):
+                            await rec.emit(update)
+            except Exception as exc:  # tarama hatası koşuyu düşürmez
+                await rec.emit(AgentStep(node="interpret", status="end",
+                                         detail=f"son tarama başarısız: {str(exc)[:100]}"))
+
         for update in ledger.finalize():       # video biterken açık kalan olayı kapat
             await rec.emit(update)
             await review_if_closed(

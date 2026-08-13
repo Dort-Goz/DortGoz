@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     # k6∪k12 birleşimi 99→112/140 yakalama vaat ediyor (FA 12→~21, maliyet ~2×)
     # — max-recall kipi; varsayılan KAPALI, tam-bölme ölçümüyle karar verilir.
     dual_read: bool = False
+    # Son tarama (2026-08-12 ölçümü): hiç olay açılmamış koşuya TEK 16-karelik
+    # tam-video bakışı. 30 sn pencerelerin yapısal göremediği "alıp-götürme"
+    # yayını yakalar (28 kaçırmadan 4 açıldı; temiz normallerde yeni FA yok).
+    # Maliyet yalnız olaysız koşuda 1 çağrı (~%3-4).
+    final_sweep: bool = False
     # Süreç genelinde aynı anda en çok bu kadar VLM çağrısı uçuşta olur —
     # 24 akış sunucuya 24 istek yığınca model sunucusu 429 döndürüyor ve pencereler
     # atlanıyordu (2026-08-06 canlı). Kendi kendini kısıtlamak + 429'da geri
