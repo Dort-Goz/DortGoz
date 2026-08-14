@@ -434,6 +434,19 @@ async def run_video(
         n_ctx = await context_size(effective_model)   # bağlam doluluğu için (bir kez)
         det_enabled = settings.detector_enabled       # ağırlık yoksa koşuda kapanır
         prev_end = 0.0
+        # ALGI ÖN-GETİRME (2026-08-14, GPU boşluk optimizasyonu): D-FINE
+        # taraması pencere başına ~0,5-2 sn CPU işiydi ve GPU bu sürede boş
+        # kalıyordu (ölçülen görev döngüsü ~%55-70). Sıradaki pencerenin
+        # taraması, mevcut pencerenin VLM çağrısı beklenirken arka planda
+        # koşar — sonuçlar pencere-bağımsız olduğundan çıktı birebir aynıdır.
+        percep_prefetch: dict[int, asyncio.Task] = {}
+
+        async def _scan_window(widx: int):
+            ws_, we_ = wins[widx]
+            with metrics.dfine_call():
+                return await perception.scan_window(
+                    path, ws_, we_, settings.detector_samples)
+
         for idx, (start, end) in enumerate(wins):
             metrics.windows_seen += 1
             # Her canonical pencere motion/candidate pre-VLM kararından geçer.
@@ -466,9 +479,9 @@ async def run_video(
             percep = None
             if det_enabled:
                 try:
-                    with metrics.dfine_call():
-                        percep = await perception.scan_window(
-                            path, start, end, settings.detector_samples)
+                    task = percep_prefetch.pop(idx, None)
+                    percep = await (task if task is not None
+                                    else _scan_window(idx))
                 except FileNotFoundError as exc:
                     det_enabled = False
                     await rec.emit(AgentStep(
@@ -478,6 +491,8 @@ async def run_video(
                     await rec.emit(AgentStep(
                         node="perceive", status="error",
                         detail=f"{start:.0f}-{end:.0f} sn algı hatası: {str(exc)[:100]}"))
+            if det_enabled and idx + 1 < len(wins) and (idx + 1) not in percep_prefetch:
+                percep_prefetch[idx + 1] = asyncio.create_task(_scan_window(idx + 1))
 
             gated = not settings.dynamic_windows and peak < gate
             screened_out = bool(cand_spans is not None
@@ -880,6 +895,8 @@ async def run_video(
         await rec.emit(AgentStep(node="interpret", status="error", detail=detail))
         await rec.emit(RunStatus(run_id=run_id, state="error", video=video, detail=detail))
     finally:
+        for _t in list(locals().get("percep_prefetch", {}).values()):
+            _t.cancel()
         try:
             rec.record_metrics()
         except Exception:
