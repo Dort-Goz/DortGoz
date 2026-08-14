@@ -1,0 +1,177 @@
+[
+ {
+  "name": "de-24-autumn-rd",
+  "url": "http://video.deldot.gov:1935/live/SCAM195.stream/playlist.m3u8",
+  "desc": "DE 24 @ AUTUMN RD",
+  "codec": "h264",
+  "res": "800x450"
+ },
+ {
+  "name": "de-1-james-st",
+  "url": "http://video.deldot.gov:1935/live/SCAM146.stream/playlist.m3u8",
+  "desc": "DE 1 @ JAMES ST",
+  "codec": "h264",
+  "res": "800x450"
+ },
+ {
+  "name": "casho-mill-rd-north-of-csx-tracks",
+  "url": "http://video.deldot.gov:1935/live/NCAM244.stream/playlist.m3u8",
+  "desc": "CASHO MILL RD @ NORTH OF CSX TRACKS",
+  "codec": "h264",
+  "res": "800x450"
+ },
+ {
+  "name": "de-4-alban-drive",
+  "url": "http://video.deldot.gov:1935/live/NCAM196.stream/playlist.m3u8",
+  "desc": "DE 4 @ ALBAN DRIVE",
+  "codec": "h264",
+  "res": "800x450"
+ },
+ {
+  "name": "i-95-sb-at-sr-141-off-ramp",
+  "url": "http://video.deldot.gov:1935/live/NCAM169.stream/playlist.m3u8",
+  "desc": "I-95 SB @ AT SR 141 OFF RAMP",
+  "codec": "h264",
+  "res": "1280x720"
+ },
+ {
+  "name": "de-896-bethel-church-rd-sb-c-d-canal",
+  "url": "http://video.deldot.gov:1935/live/NCAM105.stream/playlist.m3u8",
+  "desc": "DE 896 @ BETHEL CHURCH RD (SB C&D CANAL)",
+  "codec": "h264",
+  "res": "1280x720"
+ },
+ {
+  "name": "us-13-de-54",
+  "url": "http://video.deldot.gov:1935/live/SCAM191.stream/playlist.m3u8",
+  "desc": "US 13 @ DE 54",
+  "codec": "h264",
+  "res": "1280x720"
+ },
+ {
+  "name": "i-95-i-495-split",
+  "url": "http://video.deldot.gov:1935/live/NCAM118.stream/playlist.m3u8",
+  "desc": "I 95 @ I 495 SPLIT",
+  "codec": "h264",
+  "res": "1920x1080"
+ },
+ {
+  "name": "de-54-de-20",
+  "url": "http://video.deldot.gov:1935/live/SCAM101.stream/playlist.m3u8",
+  "desc": "DE 54 @ DE 20",
+  "codec": "h264",
+  "res": "800x450"
+ },
+ {
+  "name": "levels-rd-patriot-drive",
+  "url": "http://video.deldot.gov:1935/live/NCAM264.stream/playlist.m3u8",
+  "desc": "LEVELS RD @ PATRIOT DRIVE",
+  "codec": "h264",
+  "res": "1280x720"
+ },
+ {
+  "name": "us-13-sb-de-14",
+  "url": "http://video.deldot.gov:1935/live/KCAM102.stream/playlist.m3u8",
+  "desc": "US 13 SB @ DE 14",
+  "codec": "h264",
+  "res": "1280x720"
+ },
+ {
+  "name": "de-1-north-of-school-bell-br",
+  "url": "http://video.deldot.gov:1935/live/NCAM163.stream/playlist.m3u8",
+  "desc": "DE 1 @ NORTH OF SCHOOL BELL BR",
+  "codec": "h264",
+  "res": "1920x1080"
+ },
+ {
+  "name": "de-1-de-54",
+  "url": "http://video.deldot.gov:1935/live/SCAM001.stream/playlist.m3u8",
+  "desc": "DE 1 @ DE 54",
+  "codec": "h264",
+  "res": "1280x720"
+ },
+ {
+  "name": "tul-99-jno-rte-198",
+  "url": "https://wzmedia.dot.ca.gov/D6/99_JNO_RTE_198.stream/playlist.m3u8",
+  "desc": "TUL-99-JNO RTE 198",
+  "codec": "h264",
+  "res": "1280x720"
+ },
+ {
+  "name": "us-113-de-14",
+  "url": "http://video.deldot.gov:1935/live/KCAM171.stream/playlist.m3u8",
+  "desc": "US 113 @ DE 14",
+  "codec": "h264",
+  "res": "1920x1080"
+ },
+ {
+  "name": "pennsylvania-ave-n-rodney-st",
+  "url": "http://video.deldot.gov:1935/live/NCAM223.stream/playlist.m3u8",
+  "desc": "PENNSYLVANIA AVE @ N RODNEY ST",
+  "codec": "h264",
+  "res": "800x450"
+ },
+ {
+  "name": "us-301-sb-ramp-h-g",
+  "url": "http://video.deldot.gov:1935/live/NCAM173.stream/playlist.m3u8",
+  "desc": "US 301 SB @ RAMP H & G",
+  "codec": "h264",
+  "res": "1280x720"
+ },
+ {
+  "name": "bay-rd-de-10",
+  "url": "http://video.deldot.gov:1935/live/KCAM126.stream/playlist.m3u8",
+  "desc": "BAY RD @ DE 10",
+  "codec": "h264",
+  "res": "1280x720"
+ },
+ {
+  "name": "i-10-136-fremont-ave",
+  "url": "https://wzmedia.dot.ca.gov/D7/CCTV-136.stream/playlist.m3u8",
+  "desc": "I-10 : (136) Fremont Ave",
+  "codec": "h264",
+  "res": "768x432"
+ },
+ {
+  "name": "us-13-de-20-north",
+  "url": "http://video.deldot.gov:1935/live/SCAM130.stream/playlist.m3u8",
+  "desc": "US 13 @ DE 20 NORTH",
+  "codec": "h264",
+  "res": "1280x720"
+ },
+ {
+  "name": "i-95-de-896",
+  "url": "http://video.deldot.gov:1935/live/NCAM115.stream/playlist.m3u8",
+  "desc": "I-95 @ DE 896",
+  "codec": "h264",
+  "res": "1280x720"
+ },
+ {
+  "name": "de-141-dupont-exper-sta",
+  "url": "http://video.deldot.gov:1935/live/NCAM060.stream/playlist.m3u8",
+  "desc": "DE 141 @ DUPONT EXPER STA",
+  "codec": "h264",
+  "res": "800x450"
+ },
+ {
+  "name": "hwy-50-at-zinfandel-dr-eb-2",
+  "url": "https://wzmedia.dot.ca.gov/D3/50_Zinfandel_Dr_SAC50_EB_2.stream/playlist.m3u8",
+  "desc": "Hwy 50 at Zinfandel Dr EB 2",
+  "codec": "h264",
+  "res": "1920x1080"
+ },
+ {
+  "name": "kin-198-at-12th-ave",
+  "url": "https://wzmedia.dot.ca.gov/D6/198_12th.stream/playlist.m3u8",
+  "desc": "KIN-198-AT 12TH AVE",
+  "codec": "h264",
+  "res": "800x448"
+ },
+ {
+  "name": "de-141-de-100",
+  "url": "http://video.deldot.gov:1935/live/NCAM088.stream/playlist.m3u8",
+  "desc": "DE 141 @ DE 100",
+  "codec": "h264",
+  "res": "1920x1080"
+ }
+]

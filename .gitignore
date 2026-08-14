@@ -31,3 +31,4 @@ models/**/*.bin
 
 # Team-internal access docs (real endpoint addresses) — never committed
 secrets/
+config/live_feeds.json
