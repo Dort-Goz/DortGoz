@@ -379,7 +379,13 @@ export default function App() {
       {!liveView && (
       <div className="flex-1 grid grid-cols-6 grid-rows-2 gap-2 min-h-0">
         <div className="col-span-2 row-span-1 min-h-0">
-          <VideoPanel highlight={feed.highlight} seekTo={feed.seekTo} video={feed.video} />
+          <VideoPanel
+            highlight={feed.highlight}
+            seekTo={feed.seekTo}
+            video={feed.video}
+            feed={Object.keys(state.feeds).filter((k) => k !== "").length >= 2
+              ? state.active : null}
+          />
         </div>
         <div className="col-span-4 min-h-0">
           <Timeline

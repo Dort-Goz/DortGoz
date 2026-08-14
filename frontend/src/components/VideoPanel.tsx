@@ -4,8 +4,13 @@ import type { IncidentUpdate } from "../types/events";
 /** Video + canvas kaplaması. Ajan seek_video/highlight_incident komutlarına tepki verir.
  *  Kaynak, koşuya alınan `/media` altındaki klip; koşu yoksa bilgi gösterilir. */
 export default function VideoPanel({
-  highlight, seekTo, video,
-}: { highlight: IncidentUpdate | null; seekTo: number | null; video: string | null }) {
+  highlight, seekTo, video, feed,
+}: {
+  highlight: IncidentUpdate | null;
+  seekTo: number | null;
+  video: string | null;
+  feed?: string | null;    // çoklu-akışta hangi kameranın oynadığı (tek akışta boş)
+}) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -41,6 +46,14 @@ export default function VideoPanel({
     <div className="panel h-full relative">
       <div className="panel-title flex items-center gap-2">
         Canlı İzleme
+        {feed && (
+          <span
+            className="normal-case font-normal text-zinc-500"
+            title="Bu panel seçili kamerayı oynatır — akış duvarından başka kamera seçebilirsiniz"
+          >
+            · {feed}
+          </span>
+        )}
         {highlight && (
           <span className={`ml-auto normal-case font-normal risk-${highlight.risk}`}>
             ▸ {highlight.title} (t={highlight.t}s)
