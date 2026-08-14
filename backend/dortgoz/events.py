@@ -116,6 +116,10 @@ class IncidentUpdate(BaseModel):
     # operator_review_required durumu). Gerekçesi operatöre gösterilir.
     needs_review: bool = False
     review_reason: str = ""
+    # 2. geçiş incelemesinin sayısal olay aralığı (None = henüz incelenmedi).
+    # Jüri metriği (zamansal IoU) ve dışa aktarım bu aralığı kullanır.
+    olay_baslangic: float | None = None
+    olay_bitis: float | None = None
 
     @property
     def canonical_event_type(self) -> CanonicalEventType:

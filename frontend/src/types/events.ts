@@ -77,6 +77,9 @@ export interface IncidentUpdate {
   /** Model emin değil → insan incelemesi istiyor; gerekçesi gösterilir. */
   needs_review?: boolean;
   review_reason?: string;
+  /** 2. geçiş incelemesinin sayısal olay aralığı (yoksa henüz incelenmedi) */
+  olay_baslangic?: number | null;
+  olay_bitis?: number | null;
 }
 
 export interface ActuatorRequest {

@@ -55,6 +55,23 @@ class Incident:
     # düşer (Bengisu tasarımı: operator_review_required). Gerekçe görünür.
     needs_review: bool = False
     review_reason: str = ""
+    # Olay aralığı (jüri metriği/dışa aktarım): doğrulanmış kanıt karelerinin
+    # yayılımından türetilir (±1 sn pay) — model sayı tahmininden ÖLÇÜLEBİLİR
+    # ölçüde iyi (2026-08-14: IoU@0.5 P 0,097→0,166; model tahmini 3/5 geriletti).
+    olay_baslangic: float | None = None
+    olay_bitis: float | None = None
+    evidence_ts: list[float] = field(default_factory=list)
+
+    def not_evidence(self, events: list) -> None:
+        """Ciddi olayların doğrulanmış kanıt zamanlarını toplar, aralığı türetir."""
+        for e in events:
+            for ref in getattr(e, "evidence", []) or []:
+                ts = getattr(ref, "timestamp", None)
+                if isinstance(ts, int | float):
+                    self.evidence_ts.append(float(ts))
+        if self.evidence_ts:
+            self.olay_baslangic = max(0.0, min(self.evidence_ts) - 1.0)
+            self.olay_bitis = max(self.evidence_ts) + 1.0
 
 
 @dataclass
@@ -129,6 +146,12 @@ class Ledger:
         previous_review_reason = inc.review_reason
         inc.anomaly_type = review.get("anomaly_type", inc.anomaly_type)
         inc.title = _title_text(review.get("zirve", inc.title))
+        if not inc.evidence_ts and \
+                isinstance(review.get("baslangic_t"), int | float) and \
+                isinstance(review.get("bitis_t"), int | float):
+            # Kanıt yayılımı varsa o kazanır; model sayı tahmini yalnız yedek
+            inc.olay_baslangic = float(review["baslangic_t"])
+            inc.olay_bitis = float(review["bitis_t"])
         # Second-pass VLM risk'i final risk değildir. Ayrıca daha önce verilmiş
         # human-review kararı hiçbir model geçişiyle temizlenemez.
         unc = review.get("belirsizlikler", [])
@@ -241,6 +264,7 @@ class Ledger:
             notes=[e.desc for e in events],
             thumbnail=thumbnail,
         )
+        inc.not_evidence(events)
         self.incidents[inc.incident_id] = inc
         self._open_id = inc.incident_id
         return _update(inc, peak.t, report.summary)
@@ -249,6 +273,7 @@ class Ledger:
                 report: WindowReport) -> IncidentUpdate:
         inc.phase = "gelisiyor"
         inc.last_seen = events[-1].t
+        inc.not_evidence(events)
         inc.notes.extend(e.desc for e in events)
         if _rank(peak.severity_hint) > _rank(inc.risk):
             inc.risk = peak.severity_hint          # risk yalnız yukarı revize edilir
@@ -326,4 +351,6 @@ def _update(inc: Incident, t: float, detail: str) -> IncidentUpdate:
         thumbnail=inc.thumbnail,
         needs_review=inc.needs_review,
         review_reason=inc.review_reason,
+        olay_baslangic=inc.olay_baslangic,
+        olay_bitis=inc.olay_bitis,
     )

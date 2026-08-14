@@ -137,7 +137,8 @@ REVIEW_SYSTEM_TR = (
     "Sen bir güvenlik kamerası olay analiz uzmanısın. Sana TEK bir olayın "
     "tamamına yayılmış kareler zaman damgalarıyla veriliyor. Görevin olayı "
     "bütün olarak değerlendirmek: nasıl başladı, en kritik an hangisi, nasıl "
-    "sonuçlandı. Türkçe, kısa ve operasyonel yaz. Yalnızca karelerde GÖRDÜĞÜNÜ "
+    "sonuçlandı — ve olayın GERÇEK başlangıç/bitiş saniyelerini sayısal ver (kare zamanlarından yorumla; olay iki kare arasında başlamış olabilir). "
+    "Türkçe, kısa ve operasyonel yaz. Yalnızca karelerde GÖRDÜĞÜNÜ "
     "yaz; emin olmadığını 'belirsizlikler'e koy. Pencere pencere bakan bir ön "
     "analiz bu olayı parçalı görmüş olabilir — sen bütünlüklü karar ver, "
     "gerekiyorsa sınıfı yeniden değerlendir. Her evidence kaydında yalnız sana "
@@ -151,10 +152,16 @@ class IncidentReviewResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    # Alan SIRASI üretim sırasıdır: her anlatı alanını SAYISAL zamanı izler —
+    # jüri metriği (zamansal IoU) olay aralığını bu sayılardan alır
+    # (2026-08-14 karne bulgusu: aralıklar GT'den 3-5× genişti; yerelleştirme
+    # bilgisi kanıt karelerinde var ama çıktıya dönüşmüyordu).
     baslangic: str
+    baslangic_t: float = Field(ge=0, allow_inf_nan=False)
     zirve: str
-    sonuc: str
     zirve_t: float = Field(ge=0, allow_inf_nan=False)
+    sonuc: str
+    bitis_t: float = Field(ge=0, allow_inf_nan=False)
     event_type: CanonicalEventType
     risk: Risk
     evidence: list[EventEvidenceRef] = Field(min_length=1)
@@ -319,16 +326,18 @@ async def review_incident(
         payload = json.loads(fixed)
     if isinstance(payload, dict):
         _fill_evidence_timestamps(payload.get("evidence") or [], frame_refs)
-        # zirve_t de model üretimi — B-biçiminde kare zamanı görünmediği için
-        # aralık dışına kayabilir; kanıt karesine (yoksa aralık ortasına) çıpala.
-        zirve = payload.get("zirve_t")
-        if not (isinstance(zirve, int | float) and start <= zirve <= end):
-            ev = payload.get("evidence") or []
-            payload["zirve_t"] = next(
-                (r["timestamp"] for r in ev
-                 if isinstance(r, dict) and isinstance(r.get("timestamp"), int | float)),
-                (start + end) / 2,
-            )
+        # Zaman alanları model üretimi — aralık dışına kayanlar kanıt karesine
+        # (yoksa aralık ortasına) çıpalanır; üçlü sıralamayla tutarlılaştırılır.
+        ev = payload.get("evidence") or []
+        ev_ts = [r["timestamp"] for r in ev
+                 if isinstance(r, dict) and isinstance(r.get("timestamp"), int | float)]
+        fallback = ev_ts[0] if ev_ts else (start + end) / 2
+        for key in ("baslangic_t", "zirve_t", "bitis_t"):
+            v = payload.get(key)
+            if not (isinstance(v, int | float) and start <= v <= end):
+                payload[key] = fallback
+        b, z, e = sorted((payload["baslangic_t"], payload["zirve_t"], payload["bitis_t"]))
+        payload["baslangic_t"], payload["zirve_t"], payload["bitis_t"] = b, z, e
     review = IncidentReviewResult.model_validate(payload)
     _guard_incident_review_evidence(review, frame_refs)
     return review.model_dump(mode="json")
