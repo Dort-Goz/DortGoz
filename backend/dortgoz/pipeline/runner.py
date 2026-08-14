@@ -733,7 +733,7 @@ async def run_video(
                 )
                 metrics.record_validation(validation)
                 policy = decide_runtime_policy(report, validation)
-                ctx.reports.append(report)
+                ctx.add_report(report)
                 await rec.emit(report)
                 sev = ",".join(sorted({e.severity_hint for e in report.events})) or "—"
                 await rec.emit(AgentStep(
@@ -847,7 +847,7 @@ async def run_video(
                     )
                     metrics.record_validation(validation)
                     policy = decide_runtime_policy(sweep_rep, validation)
-                    ctx.reports.append(sweep_rep)
+                    ctx.add_report(sweep_rep)
                     await rec.emit(sweep_rep)
                     if policy.ledger_report is not None:
                         serious = ledger.serious(policy.ledger_report)

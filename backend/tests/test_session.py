@@ -82,3 +82,40 @@ def test_new_run_replaces_previous_context():
     session.start("test-3", "Explosion019_x264.mp4")
     assert session.current().video == "Explosion019_x264.mp4"
     assert session.current().incidents == []
+
+
+def _quiet(i: int) -> WindowReport:
+    return WindowReport(window_start=i * 30, window_end=(i + 1) * 30,
+                        anomaly_type="normal", summary=f"Sahne sakin ({i}).")
+
+
+def test_quiet_reports_are_budgeted_anomalies_kept():
+    """7/24 canlı akışta RAM sınırsız büyümemeli; anomali bilgisi hiç atılmaz."""
+    ctx = session.start("test-cap", "kamera01.mp4")
+    anomaly = WindowReport(window_start=0, window_end=30, anomaly_type="kavga",
+                           summary="Kavga.", events=[WindowEvent(
+                               t=5, desc="Boğuşma", severity_hint="yuksek")])
+    ctx.add_report(anomaly)
+    for i in range(1, session.MAX_NORMAL_REPORTS + 51):
+        ctx.add_report(_quiet(i))
+    quiet_kept = sum(1 for r in ctx.reports if r.anomaly_type == "normal")
+    assert quiet_kept == session.MAX_NORMAL_REPORTS
+    assert ctx.dropped_quiet == 50
+    assert ctx.reports[0] is anomaly          # anomali penceresi yerinde
+
+
+def test_briefing_compresses_old_quiet_windows_keeps_anomalies():
+    ctx = session.start("test-brief", "kamera01.mp4")
+    ctx.add_report(WindowReport(
+        window_start=0, window_end=30, anomaly_type="kavga",
+        summary="Girişte kavga.", events=[WindowEvent(
+            t=8, desc="İki kişi boğuşuyor", severity_hint="yuksek")]))
+    for i in range(1, session.BRIEFING_RECENT_WINDOWS + 30):
+        ctx.add_report(_quiet(i))
+    brief = ctx.briefing()
+    assert "sakin pencere özetlendi" in brief
+    assert "İki kişi boğuşuyor" in brief       # eski anomali TAM duruyor
+    # son pencereler tam metin: en yenisinin özeti brifingde
+    assert f"({session.BRIEFING_RECENT_WINDOWS + 29})" in brief
+    # brifing sakin pencere sayısıyla lineer büyümüyor: satır sayısı sınırlı
+    assert len(brief.splitlines()) < session.BRIEFING_RECENT_WINDOWS + 25
