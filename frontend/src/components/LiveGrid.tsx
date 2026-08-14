@@ -32,6 +32,15 @@ export default function LiveGrid({ incidents, onSelectFeed }: {
   const [active, setActive] = useState(false);
   const [error, setError] = useState("");
   const [zoom, setZoom] = useState<string | null>(null);
+  // Kare tazeleme yoğunluğu: N segmentte 1 kare indirilir (bant genişliği
+  // seçimi — yavaş istemci bağlantısında düşürülür). Sunucu her segmentte
+  // anlık görüntü üretmeye devam eder; bu YALNIZ istemcinin indirme sıklığı.
+  const [rate, setRate] = useState<number>(() =>
+    Number(localStorage.getItem("dortgoz.canliKareOrani") || 1));
+  const changeRate = (v: number) => {
+    setRate(v);
+    localStorage.setItem("dortgoz.canliKareOrani", String(v));
+  };
 
   // Izgaranın nabzı: 2 sn'de bir durum tazele. Görüntüler AYRICA tazelenmez:
   // img önbellek kırıcısı segments_done'a bağlı — tarayıcı bir kareyi yalnız
@@ -86,6 +95,20 @@ export default function LiveGrid({ incidents, onSelectFeed }: {
             {feeds.reduce((a, f) => a + f.segments_done, 0)} segment işlendi
           </span>
         )}
+        <label className="ml-auto flex items-center gap-1 text-zinc-400">
+          kare tazeleme
+          <select
+            value={rate}
+            onChange={(e) => changeRate(Number(e.target.value))}
+            title="Izgara karesi kaç segmentte bir indirilsin — yavaş bağlantıda yükseltin (büyütülmüş görünüm her zaman en tazedir)"
+            className="bg-zinc-800 border border-zinc-700 rounded px-1 py-0.5"
+          >
+            <option value={1}>her segment</option>
+            <option value={2}>2 segmentte 1</option>
+            <option value={4}>4 segmentte 1</option>
+            <option value={8}>8 segmentte 1</option>
+          </select>
+        </label>
         {error && <span className="text-red-400">{error}</span>}
       </div>
 
@@ -136,7 +159,7 @@ export default function LiveGrid({ incidents, onSelectFeed }: {
             >
               {f.snapshot ? (
                 <img
-                  src={`${f.snapshot}?v=${f.segments_done}`}
+                  src={`${f.snapshot}?v=${Math.floor(f.segments_done / rate)}`}
                   alt={f.name}
                   loading="lazy"
                   decoding="async"
