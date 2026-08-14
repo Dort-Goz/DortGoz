@@ -10,9 +10,9 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -144,6 +144,47 @@ async def get_run(run_id: str) -> list[dict]:
     if not (settings.runs_dir / f"{run_id}.jsonl").is_file():
         raise HTTPException(status_code=404, detail="koşu bulunamadı")
     return load_run(run_id)
+
+
+@app.get("/api/runs/{run_id}/export")
+async def export_run(run_id: str) -> FileResponse:
+    """Analizi taşınabilir pakete (zip) çıkarır: akış + meta + özet + video +
+    kanıt kareleri. Paket başka bir Dörtgöz kurulumuna içe alındığında ajan
+    sohbeti tam yetenekle çalışır."""
+    from .services.analysis_package import export_with_evidence
+
+    try:
+        pkg = await export_with_evidence(run_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="koşu bulunamadı")
+    return FileResponse(pkg, filename=pkg.name, media_type="application/zip")
+
+
+@app.post("/api/runs/import")
+async def import_run(request: Request) -> dict:
+    """Dışa aktarılmış paketi (zip, ham gövde) geri yükler.
+
+    Gövde `application/zip` olarak POST edilir (multipart bağımlılığı yok).
+    Başarıda oturum bağlamı kurulur — sohbet içe alınan analiz üzerinde çalışır.
+    """
+    import tempfile
+
+    from .services.analysis_package import import_analysis
+
+    data = await request.body()
+    if not data:
+        raise HTTPException(status_code=400, detail="boş paket gövdesi")
+    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+        tmp.write(data)
+        tmp_path = Path(tmp.name)
+    try:
+        ctx = import_analysis(tmp_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    finally:
+        tmp_path.unlink(missing_ok=True)
+    return {"run_id": ctx.run_id, "video": ctx.video, "verdict": ctx.verdict(),
+            "incidents": len(ctx.incidents), "reports": len(ctx.reports)}
 
 
 @app.get("/api/interpret_config")

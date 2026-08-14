@@ -30,6 +30,9 @@ export default function App() {
   const [demoCount, setDemoCount] = useState(4);
   const startPendingRef = useRef(false);
   const [startPending, setStartPending] = useState(false);
+  // Analiz paketi içe aktarma durumu ("" = sessiz)
+  const [importNote, setImportNote] = useState("");
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const socket = new DortgozSocket((e: Event) => dispatch({ kind: "event", event: e }));
@@ -138,6 +141,24 @@ export default function App() {
 
   const stopRun = useCallback(() => socketRef.current?.send({ kind: "stop_run" }), []);
 
+  // Paket içe aktarma: zip ham gövde olarak POST edilir; başarıda sohbet
+  // bağlamı backend'de kurulur — operatör içe alınan analizle konuşabilir.
+  const importPackage = useCallback(async (file: File) => {
+    setImportNote("içe alınıyor…");
+    try {
+      const r = await fetch("/api/runs/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/zip" },
+        body: file,
+      });
+      const body = await r.json();
+      if (!r.ok) throw new Error(body.detail ?? r.statusText);
+      setImportNote(`✔ ${body.run_id}: ${body.verdict}`);
+    } catch (err) {
+      setImportNote(`✖ içe aktarma başarısız: ${(err as Error).message}`);
+    }
+  }, []);
+
   return (
     <div className="h-screen flex flex-col gap-2 p-2">
       {/* Üst çubuk */}
@@ -168,6 +189,29 @@ export default function App() {
             setVideos((current) => includeUploadedVideo(current, video.stored_filename));
             setSelected(video.stored_filename);
           }} />
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".zip"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) importPackage(file);
+              e.target.value = "";
+            }}
+          />
+          <button
+            onClick={() => importInputRef.current?.click()}
+            title="Dışa aktarılmış analiz paketini (.zip) içe al — sohbet paket üzerinde tam yetenekle çalışır"
+            className="rounded px-2 py-1 border border-zinc-700 hover:border-zinc-500"
+          >
+            ⇪ paket al
+          </button>
+          {importNote && (
+            <span className="max-w-72 truncate text-zinc-400" title={importNote}>
+              {importNote}
+            </span>
+          )}
           <select
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
@@ -226,6 +270,16 @@ export default function App() {
                 />
               </div>
               <span className={busy ? "text-emerald-400" : ""}>{run.state}</span>
+              {run.state === "done" && run.run_id !== "-" && (
+                <a
+                  href={`/api/runs/${run.run_id}/export`}
+                  download
+                  title="Analizi taşınabilir paket (.zip) olarak indir: akış + özet + video + kanıt kareleri"
+                  className="rounded px-2 py-1 border border-zinc-700 hover:border-zinc-500"
+                >
+                  ⇩ paket
+                </a>
+              )}
               {run.detail && <span className="text-zinc-500">{run.detail}</span>}
             </>
           )}
