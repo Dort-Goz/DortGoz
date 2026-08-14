@@ -30,11 +30,13 @@ export default function LiveGrid({ incidents, onSelectFeed }: {
 }) {
   const [feeds, setFeeds] = useState<LiveFeed[]>([]);
   const [active, setActive] = useState(false);
-  const [tick, setTick] = useState(0);          // anlık görüntü önbellek kırıcı
   const [error, setError] = useState("");
   const [zoom, setZoom] = useState<string | null>(null);
 
-  // Izgaranın nabzı: 2 sn'de bir durum + görüntü tazele
+  // Izgaranın nabzı: 2 sn'de bir durum tazele. Görüntüler AYRICA tazelenmez:
+  // img önbellek kırıcısı segments_done'a bağlı — tarayıcı bir kareyi yalnız
+  // YENİ anlık görüntü varken indirir (yoksa yavaş bağlantıda 25 img × 2 sn
+  // ≈ 2 Mbps boşa akıyordu ve kareler yarım/bayat yükleniyordu).
   useEffect(() => {
     let alive = true;
     const poll = async () => {
@@ -44,7 +46,6 @@ export default function LiveGrid({ incidents, onSelectFeed }: {
         if (!alive) return;
         setActive(body.active);
         setFeeds(body.feeds);
-        setTick((t) => t + 1);
       } catch { /* backend geçici kopuk — sonraki turda tekrar */ }
     };
     poll();
@@ -91,7 +92,7 @@ export default function LiveGrid({ incidents, onSelectFeed }: {
       {zoomed && (
         <div className="flex gap-3 items-start rounded-lg border border-zinc-700 bg-zinc-900/80 p-2">
           <img
-            src={`${zoomed.snapshot}?t=${tick}`}
+            src={`${zoomed.snapshot}?v=${zoomed.segments_done}`}
             alt={zoomed.name}
             className="max-h-64 rounded"
           />
@@ -135,8 +136,10 @@ export default function LiveGrid({ incidents, onSelectFeed }: {
             >
               {f.snapshot ? (
                 <img
-                  src={`${f.snapshot}?t=${tick}`}
+                  src={`${f.snapshot}?v=${f.segments_done}`}
                   alt={f.name}
+                  loading="lazy"
+                  decoding="async"
                   className="w-full h-full object-cover opacity-90"
                 />
               ) : (
