@@ -57,9 +57,10 @@ app.add_exception_handler(Exception, domain_exception_handler)
 
 MOCK_EVENTS = Path(__file__).parent / "mock" / "sample_events.jsonl"
 
-# Sınır = şartnamedeki 24 kamera senaryosu. Ölçülen kapasite ~10 kamera @1×
-# (5,8 GPU-sn/dk): 24 akışta hız rozetleri 1×'in ALTINI gösterir — bu bilinçli,
-# sistem yavaşlar ama düşmez; RunStatus.speed dürüst ölçümü taşır.
+# Sınır = şartnamedeki 24 kamera senaryosu. Prova ölçümü (2026-08-14, 24 akış
+# × 20 dk gerçekçi kayıt): 24/24 tamamlandı, hız medyanı 0,85× — sistem
+# yavaşlar ama düşmez, RunStatus.speed dürüst ölçümü taşır. Gerçekçi içerikte
+# ~17 akış @1×; olay-yoğun en kötü durumda ~10 (bench/kapasite_provasi.py).
 MAX_FEEDS = 24
 analysis_jobs = CanonicalAnalysisJobService(
     manager,
