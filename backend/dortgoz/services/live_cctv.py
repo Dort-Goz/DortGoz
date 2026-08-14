@@ -136,27 +136,35 @@ class LiveFeedWorker:
 
     async def _ffmpeg_loop(self) -> None:
         backoff = 5.0
-        while self.running:
-            try:
-                self._proc = await asyncio.create_subprocess_exec(
-                    *self._ffmpeg_cmd(),
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.PIPE)
-                self.status.state = "akiyor"
-                backoff = 5.0
-                _, stderr = await self._proc.communicate()
-                if not self.running:
+        try:
+            while self.running:
+                try:
+                    self._proc = await asyncio.create_subprocess_exec(
+                        *self._ffmpeg_cmd(),
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.PIPE)
+                    self.status.state = "akiyor"
+                    backoff = 5.0
+                    _, stderr = await self._proc.communicate()
+                    if not self.running:
+                        return
+                    tail = (stderr or b"")[-300:].decode(errors="replace").strip()
+                    self.status.state = "hata"
+                    self.status.last_error = tail or f"ffmpeg çıktı ({self._proc.returncode})"
+                    log.warning("canlı %s: çekici düştü: %s", self.status.name, tail)
+                except FileNotFoundError:
+                    self.status.state = "hata"
+                    self.status.last_error = "ffmpeg bulunamadı"
                     return
-                tail = (stderr or b"")[-300:].decode(errors="replace").strip()
-                self.status.state = "hata"
-                self.status.last_error = tail or f"ffmpeg çıktı ({self._proc.returncode})"
-                log.warning("canlı %s: çekici düştü: %s", self.status.name, tail)
-            except FileNotFoundError:
-                self.status.state = "hata"
-                self.status.last_error = "ffmpeg bulunamadı"
-                return
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, 60.0)   # 7/24: kalıcı kopuşta nazik tekrar
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 60.0)   # 7/24: kalıcı kopuşta nazik tekrar
+        finally:
+            # İptal communicate() içinde yakalanırsa alt süreç YAŞAMAYA devam
+            # eder (2026-08-14 canlı ölçümde bir ffmpeg sızdı) — görev nasıl
+            # biterse bitsin çekici burada öldürülür.
+            if self._proc and self._proc.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    self._proc.kill()
 
     # ---- işleyici ----
 
