@@ -153,3 +153,14 @@ async def test_prune_keeps_recent_segments_and_runs(worker, monkeypatch):
 @pytest.mark.asyncio
 async def test_empty_dir_step_is_idle(worker):
     assert await worker._step() is False
+
+
+def test_wipe_stale_clears_previous_session_segments(worker):
+    """Taze başlatma eski oturum segmentlerini işlememeli — gecikme rozeti
+    saatler gerideki dosyaya demirleniyordu (2026-08-14 canlı bulgu)."""
+    _seg(worker, 1000)
+    _seg(worker, 1030)
+    (worker.dir / "latest.jpg").write_bytes(b"jpg")   # anlık görüntü kalabilir
+    worker._wipe_stale()
+    assert list(worker.dir.glob("seg_*.mp4")) == []
+    assert (worker.dir / "latest.jpg").exists()

@@ -109,10 +109,21 @@ class LiveFeedWorker:
     def start(self) -> None:
         self.running = True
         self.dir.mkdir(parents=True, exist_ok=True)
+        self._wipe_stale()
         self._tasks = [asyncio.create_task(self._ffmpeg_loop(),
                                            name=f"canli-cek-{self.status.name}"),
                        asyncio.create_task(self._process_loop(),
                                            name=f"canli-isle-{self.status.name}")]
+
+    def _wipe_stale(self) -> None:
+        """Önceki oturumdan kalan segmentleri siler — "canlı" ŞİMDİ demektir.
+
+        Eski segment işlenirse gecikme saatler gerideki dosyaya demirlenir
+        (2026-08-14 canlı test: taze başlatmada tüm rozetler "−59 dk geride"
+        gösterdi). Canlı kipin geçmişi yoktur; kayıt runs/'ta zaten durur.
+        """
+        for stale in self.dir.glob(SEGMENT_GLOB):
+            stale.unlink(missing_ok=True)
 
     async def stop(self) -> None:
         self.running = False
