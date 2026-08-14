@@ -6,6 +6,7 @@ import TriagePanel from "./TriagePanel";
 interface LiveFeed {
   name: string;
   url: string;
+  desc: string;            // insan-okur kamera adı (boşsa name gösterilir)
   state: string;           // baslatiliyor | akiyor | isleniyor | hata
   lag_s: number | null;
   dropped_s: number;
@@ -121,7 +122,7 @@ export default function LiveGrid({ incidents, onSelectFeed }: {
             className="max-h-64 rounded"
           />
           <div className="text-sm space-y-1 min-w-0">
-            <div className="font-bold">{zoomed.name}</div>
+            <div className="font-bold">{zoomed.desc || zoomed.name}</div>
             <div className={`inline-block rounded px-2 py-0.5 text-xs text-white ${lagBadge(zoomed).cls}`}>
               {lagBadge(zoomed).text}
             </div>
@@ -173,7 +174,10 @@ export default function LiveGrid({ incidents, onSelectFeed }: {
                 </div>
               )}
               <div className="absolute top-0 left-0 right-0 flex justify-between px-1 pt-0.5 text-[10px]">
-                <span className="bg-black/70 rounded px-1 truncate max-w-[60%]">{f.name}</span>
+                <span className="bg-black/70 rounded px-1 truncate max-w-[60%]"
+                      title={f.desc || f.name}>
+                  {f.desc || f.name}
+                </span>
                 <span className={`rounded px-1 text-white ${badge.cls}`}>{badge.text}</span>
               </div>
               {(f.state === "isleniyor" || inc > 0 || f.dropped_s > 0) && (
@@ -202,7 +206,11 @@ export default function LiveGrid({ incidents, onSelectFeed }: {
       </div>
       {/* Nöbet kuyruğu: tespitler insan hükmüne düşer, doğrulananlar oturum
           listesine geçer (insan-döngüde karar katmanı) */}
-      <TriagePanel onSelectFeed={onSelectFeed} />
+      <TriagePanel
+        onSelectFeed={onSelectFeed}
+        feedNames={Object.fromEntries(
+          feeds.filter((f) => f.desc).map((f) => [f.name, f.desc]))}
+      />
       </div>
     </div>
   );

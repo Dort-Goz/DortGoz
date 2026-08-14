@@ -48,6 +48,7 @@ class FeedStatus:
 
     name: str
     url: str
+    desc: str = ""                    # insan-okur kamera adı (ör. "US 301 SB Ramp")
     state: str = "baslatiliyor"       # baslatiliyor | akiyor | isleniyor | hata
     lag_s: float | None = None        # şimdi − son işlenen segment kapanışı
     dropped_s: float = 0.0            # canlıya yetişmek için atılan süre
@@ -93,8 +94,8 @@ def plan_segments(pending: list[Path], max_backlog: int) -> tuple[list[Path], li
 
 class LiveFeedWorker:
     def __init__(self, name: str, url: str, manager: ConnectionManager,
-                 mode: str = "") -> None:
-        self.status = FeedStatus(name=name, url=url)
+                 mode: str = "", desc: str = "") -> None:
+        self.status = FeedStatus(name=name, url=url, desc=desc)
         self.manager = manager
         self.mode = mode
         self.dir = settings.media_dir / "canli" / name
@@ -213,9 +214,18 @@ class LiveFeedWorker:
         self.status.state = "isleniyor"
         try:
             from ..pipeline.runner import run_video   # geç import (mock kipte ağır hat yüklenmesin)
+            from .triage import store as triage_store
 
+            # Uyarlanma döngüsü: operatör bu kamerada bir durumu defalarca
+            # elediyse modele "bu olağandır" notu eklenir — tespit hiç doğmaz.
+            note = triage_store.feed_note(self.status.name)
+            system_prompt = ""
+            if note:
+                from ..pipeline.interpret import SYSTEM_TR
+                system_prompt = SYSTEM_TR + note
             await run_video(self.manager, rel, run_id,
-                            feed=self.status.name, mode=self.mode, live=True)
+                            feed=self.status.name, mode=self.mode, live=True,
+                            system_prompt=system_prompt)
             self.status.segments_done += 1
             self.status.last_error = ""
         except Exception as exc:   # tek segmentin hatası akışı durdurmaz (7/24)
@@ -279,7 +289,8 @@ class LiveCctvService:
             raise RuntimeError(
                 f"akış sınırı {settings.max_feeds}, listede {len(feed_list)} var")
         for f in feed_list:
-            worker = LiveFeedWorker(f["name"], f["url"], self.manager, mode=mode)
+            worker = LiveFeedWorker(f["name"], f["url"], self.manager,
+                                    mode=mode, desc=f.get("desc", ""))
             worker.start()
             self.workers[f["name"]] = worker
         log.info("canlı kip başladı: %d akış", len(self.workers))

@@ -18,13 +18,32 @@ interface TriageItem {
   operator_category: string;
   note: string;
   decided_wall: number | null;
+  tekrar: number;
 }
 
 interface Snapshot {
   pending: TriageItem[];
   confirmed: TriageItem[];
   dismissed_count: number;
+  auto_dismissed: number;
+  rules: { feed: string; category: string; auto_count: number }[];
   categories: string[];
+}
+
+/** Teknik gerekçe metnini operatör diline çevirir (ham metin tooltip'te kalır).
+ *  "Runtime evidence yalnız provisional... (event[0]=VALIDATED)" gibi satırlar
+ *  mühendis jargonu — operatöre KARARINI etkileyen bilgiyi söyler. */
+function humanizeReason(reason: string): string {
+  return reason
+    .split(" · ")
+    .map((part) => {
+      if (/provisional|automatic confirmation|VALIDATED|Runtime evidence/i.test(part))
+        return "Sistem kanıtı doğruladı; otomatik onay kapalı — karar sizde.";
+      if (/model belirsizlik bildirdi:/i.test(part))
+        return part.replace(/model belirsizlik bildirdi:/i, "Model emin değil:");
+      return part;
+    })
+    .join(" ");
 }
 
 const CATEGORY_TR: Record<string, string> = {
@@ -44,9 +63,10 @@ const clock = (t: number) =>
 const wallClock = (epoch: number) =>
   new Date(epoch * 1000).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
 
-function PendingCard({ item, categories, onDecide }: {
+function PendingCard({ item, categories, feedLabel, onDecide }: {
   item: TriageItem;
   categories: string[];
+  feedLabel: string;
   onDecide: (key: string, verdict: string, category?: string) => void;
 }) {
   // Kategori varsayılanı modelin önerisi — operatör düzeltebilir
@@ -61,7 +81,7 @@ function PendingCard({ item, categories, onDecide }: {
         <div className="min-w-0">
           <div className="font-medium truncate">{item.title}</div>
           <div className="text-zinc-400">
-            {item.feed || "ana akış"} · video {clock(item.t)} · {wallClock(item.wall)}
+            {feedLabel} · video {clock(item.t)} · {wallClock(item.wall)}
           </div>
           <div className="flex gap-1 mt-0.5">
             <span className={`rounded px-1 ${RISK_CLS[item.risk] ?? "bg-zinc-800"}`}>
@@ -70,11 +90,19 @@ function PendingCard({ item, categories, onDecide }: {
             <span className="rounded px-1 bg-zinc-800 text-zinc-300">
               model: {CATEGORY_TR[item.model_category] ?? item.model_category}
             </span>
+            {item.tekrar > 1 && (
+              <span className="rounded px-1 bg-indigo-900 text-indigo-200"
+                    title="Aynı kameradan aynı sınıfta tekrar tespit — tek kartta birleştirildi">
+                ×{item.tekrar}
+              </span>
+            )}
           </div>
         </div>
       </div>
       {item.needs_review && item.review_reason && (
-        <div className="text-amber-300/90">? {item.review_reason}</div>
+        <div className="text-amber-300/90" title={item.review_reason}>
+          ? {humanizeReason(item.review_reason)}
+        </div>
       )}
       <div className="flex items-center gap-1">
         <select
@@ -106,8 +134,10 @@ function PendingCard({ item, categories, onDecide }: {
   );
 }
 
-export default function TriagePanel({ onSelectFeed }: {
+export default function TriagePanel({ onSelectFeed, feedNames = {} }: {
   onSelectFeed?: (feed: string) => void;
+  /** akış kimliği → insan-okur ad (canlı ızgaradan; yoksa kimlik gösterilir) */
+  feedNames?: Record<string, string>;
 }) {
   const [snap, setSnap] = useState<Snapshot | null>(null);
 
@@ -154,10 +184,43 @@ export default function TriagePanel({ onSelectFeed }: {
           )}
           {snap.pending.map((i) => (
             <div key={i.key} onClick={() => onSelectFeed?.(i.feed)}>
-              <PendingCard item={i} categories={snap.categories} onDecide={decide} />
+              <PendingCard item={i} categories={snap.categories}
+                           feedLabel={feedNames[i.feed] || i.feed || "ana akış"}
+                           onDecide={decide} />
             </div>
           ))}
         </div>
+        {/* Öğrenilen bastırma kuralları: 3× "sorun değil" → otomatik eleme.
+            Kural görünür ve tek tıkla iptal edilir — sessiz kara kutu değil. */}
+        {snap.rules.length > 0 && (
+          <div className="mt-1.5 pt-1.5 border-t border-zinc-800 text-xs space-y-1">
+            <div className="text-zinc-500">
+              Öğrenilen kurallar · {snap.auto_dismissed} otomatik elendi
+            </div>
+            {snap.rules.map((r) => (
+              <div key={`${r.feed}:${r.category}`}
+                   className="flex items-center gap-1 text-zinc-400">
+                <span className="truncate">
+                  {feedNames[r.feed] || r.feed}: {CATEGORY_TR[r.category] ?? r.category}
+                  {" "}olağan ({r.auto_count}× elendi)
+                </span>
+                <button
+                  onClick={async () => {
+                    await fetch("/api/triage/rule_sil", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ feed: r.feed, category: r.category }),
+                    });
+                  }}
+                  title="Kuralı iptal et — bu tespitler yeniden kuyruğa düşer"
+                  className="ml-auto shrink-0 text-zinc-600 hover:text-red-400"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-2 max-h-[45%] flex flex-col">
         <div className="font-bold mb-1.5">
@@ -176,7 +239,7 @@ export default function TriagePanel({ onSelectFeed }: {
                 {CATEGORY_TR[i.operator_category] ?? i.operator_category}
               </span>
               <span className="text-zinc-400">
-                {" "}· {i.feed || "ana akış"} · {clock(i.t)}
+                {" "}· {feedNames[i.feed] || i.feed || "ana akış"} · {clock(i.t)}
                 {i.decided_wall && ` · ${wallClock(i.decided_wall)}`}
               </span>
               <div className="text-zinc-300 truncate">{i.title}</div>

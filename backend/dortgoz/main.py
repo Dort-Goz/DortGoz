@@ -206,6 +206,13 @@ async def triage_snapshot() -> dict:
     return triage.store.snapshot()
 
 
+@app.post("/api/triage/rule_sil")
+async def triage_revoke_rule(body: dict) -> dict:
+    """Bastırma kuralını iptal et: {feed, category} — çift yeniden kuyruğa düşer."""
+    triage.store.revoke_rule(body.get("feed", ""), body.get("category", ""))
+    return triage.store.snapshot()
+
+
 @app.post("/api/triage/decide")
 async def triage_decide(body: dict) -> dict:
     """Operatör kararı: {key, verdict: anomali|sorun_degil, category?, note?}."""

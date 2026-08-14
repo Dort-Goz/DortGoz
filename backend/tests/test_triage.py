@@ -92,6 +92,62 @@ def test_decisions_are_logged_to_duty_book(store):
 
 
 def test_pending_is_budgeted(store):
+    # Farklı kameralardan (tekrar birleştirmeye takılmasın) kuyruk taşırılır
     for i in range(triage.MAX_PENDING + 20):
-        store.observe(_incident(incident_id=f"inc-{i}"))
+        store.observe(_incident(feed=f"KAM-{i}", incident_id=f"inc-{i}"))
     assert len(store.snapshot()["pending"]) == triage.MAX_PENDING
+
+
+# ---- uyarlanma: tekrar birleştirme, bastırma kuralı, istem notu ----
+
+def test_repeat_detection_merges_into_one_card(store):
+    store.observe(_incident(incident_id="a", risk="orta"))
+    store.observe(_incident(incident_id="b", risk="yuksek"))
+    store.observe(_incident(incident_id="c", risk="dusuk"))
+    snap = store.snapshot()
+    assert len(snap["pending"]) == 1           # kuyruk tekrarla dolmaz
+    assert snap["pending"][0]["tekrar"] == 3
+    assert snap["pending"][0]["risk"] == "yuksek"   # en ciddisi korunur
+
+
+def test_three_dismissals_create_suppression_rule(store):
+    for i in range(triage.RULE_THRESHOLD):
+        store.observe(_incident(incident_id=f"i{i}"))
+        store.decide(f"KAM-1:i{i}", "sorun_degil")
+    assert ("KAM-1", "kavga") in store.rules
+    # kural doğduktan sonra aynı tespit kuyruğa DÜŞMEZ, otomatik elenir
+    store.observe(_incident(incident_id="sonraki"))
+    snap = store.snapshot()
+    assert snap["pending"] == []
+    assert snap["auto_dismissed"] == 1
+    assert snap["rules"] == [{"feed": "KAM-1", "category": "kavga", "auto_count": 1}]
+
+
+def test_confirmation_resets_dismissal_counter(store):
+    for i in range(triage.RULE_THRESHOLD - 1):
+        store.observe(_incident(incident_id=f"i{i}"))
+        store.decide(f"KAM-1:i{i}", "sorun_degil")
+    store.observe(_incident(incident_id="gercek"))
+    store.decide("KAM-1:gercek", "anomali", category="kavga")
+    store.observe(_incident(incident_id="tekrar"))
+    store.decide("KAM-1:tekrar", "sorun_degil")
+    assert ("KAM-1", "kavga") not in store.rules   # sayaç sıfırlandı, kural yok
+
+
+def test_revoked_rule_requeues_detections(store):
+    for i in range(triage.RULE_THRESHOLD):
+        store.observe(_incident(incident_id=f"i{i}"))
+        store.decide(f"KAM-1:i{i}", "sorun_degil")
+    store.revoke_rule("KAM-1", "kavga")
+    store.observe(_incident(incident_id="yeni"))
+    assert len(store.snapshot()["pending"]) == 1
+
+
+def test_feed_note_reflects_rules_and_reaches_prompt(store):
+    assert store.feed_note("KAM-1") == ""
+    for i in range(triage.RULE_THRESHOLD):
+        store.observe(_incident(incident_id=f"i{i}", anomaly_type="arac_kazasi"))
+        store.decide(f"KAM-1:i{i}", "sorun_degil")
+    note = store.feed_note("KAM-1")
+    assert "OLAĞAN" in note and "duran/yavaşlayan araçlar" in note
+    assert store.feed_note("KAM-2") == ""      # başka kamera etkilenmez
