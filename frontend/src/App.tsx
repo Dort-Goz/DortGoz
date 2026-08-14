@@ -25,7 +25,7 @@ export default function App() {
   const [model, setModel] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [taskPrompt, setTaskPrompt] = useState("");
-  // Çalışma kipi (ölçülü cephe): dengeli 99/140@12 · hassas ~88@5 · genis ~116@23
+  // Çalışma kipi (ölçülü cephe, 290 klip): dengeli 99/140@12 · temkinli 86/140@5 · geniş 109/140@16
   const [runMode, setRunMode] = useState<"" | "temkinli" | "genis">("");
   const [demoCount, setDemoCount] = useState(4);
   const startPendingRef = useRef(false);
