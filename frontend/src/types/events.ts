@@ -144,7 +144,7 @@ export interface OperatorMessage {
   model?: string;
   system_prompt?: string;
   task_prompt?: string;
-  /** Çalışma kipi: "" = dengeli varsayılan; hassas = ikinci-okuma doğrulaması;
+  /** Çalışma kipi: "" = dengeli varsayılan; temkinli = ikinci-okuma doğrulaması;
    *  genis = çift okuma + son tarama (max-recall). */
-  mode?: "" | "dengeli" | "hassas" | "genis";
+  mode?: "" | "dengeli" | "temkinli" | "genis";
 }

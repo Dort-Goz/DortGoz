@@ -50,7 +50,7 @@ class EffectiveRuntimeConfig:
     model: str
     system_prompt: str
     task_prompt: str
-    mode: str = ""  # "" = dengeli; hassas | genis (bkz. runner._mode_flags)
+    mode: str = ""  # "" = dengeli; temkinli | genis (bkz. runner._mode_flags)
 
 
 @dataclass(frozen=True, slots=True)

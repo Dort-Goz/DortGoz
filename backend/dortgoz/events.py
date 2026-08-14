@@ -220,6 +220,6 @@ class OperatorMessage(BaseModel):
     task_prompt: str = ""
     feed: str = ""                    # start_run: çoklu-akış (demo) kamera etiketi
     # Çalışma kipi (2026-08-12 ölçülü cephe): "" = dengeli varsayılan.
-    # dengeli 99/140@12 · hassas ~88/140@5 (ikinci okuma doğrulaması) ·
+    # dengeli 99/140@12 · temkinli ~88/140@5 (ikinci okuma doğrulaması) ·
     # genis ~116/140@23 (çift okuma + son tarama). Kayıt: iyilestirme_kampanyasi.
-    mode: Literal["", "dengeli", "hassas", "genis"] = ""
+    mode: Literal["", "dengeli", "temkinli", "genis"] = ""

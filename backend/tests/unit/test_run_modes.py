@@ -1,4 +1,4 @@
-"""Çalışma kipi (dengeli/hassas/genis) zinciri: bayrak çözümü + job kimliği."""
+"""Çalışma kipi (dengeli/temkinli/genis) zinciri: bayrak çözümü + job kimliği."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def test_mode_flags_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _mode_flags("") == (False, False, False)
     assert _mode_flags("dengeli") == (False, False, False)
     assert _mode_flags("genis") == (True, False, True)
-    assert _mode_flags("hassas") == (False, True, False)
+    assert _mode_flags("temkinli") == (False, True, False)
     # kip verilmediğinde ayar bayrakları geçerli kalır
     monkeypatch.setattr(settings, "dual_read", True)
     monkeypatch.setattr(settings, "final_sweep", True)
@@ -42,7 +42,7 @@ async def test_mode_joins_job_identity(tmp_path: Path) -> None:
     assert same.analysis_id == first.analysis_id
 
     with pytest.raises(AnalysisJobConflict):
-        await jobs.start("camera.mp4", feed="KAM-1", mode="hassas")
+        await jobs.start("camera.mp4", feed="KAM-1", mode="temkinli")
 
     await wait_for_calls(runner, 1)
     assert runner.calls[0][2].get("mode") == "genis"

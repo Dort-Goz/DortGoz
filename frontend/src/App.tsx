@@ -26,7 +26,7 @@ export default function App() {
   const [systemPrompt, setSystemPrompt] = useState("");
   const [taskPrompt, setTaskPrompt] = useState("");
   // Çalışma kipi (ölçülü cephe): dengeli 99/140@12 · hassas ~88@5 · genis ~116@23
-  const [runMode, setRunMode] = useState<"" | "hassas" | "genis">("");
+  const [runMode, setRunMode] = useState<"" | "temkinli" | "genis">("");
   const [demoCount, setDemoCount] = useState(4);
   const startPendingRef = useRef(false);
   const [startPending, setStartPending] = useState(false);
@@ -180,13 +180,13 @@ export default function App() {
           </select>
           <select
             value={runMode}
-            onChange={(e) => setRunMode(e.target.value as "" | "hassas" | "genis")}
+            onChange={(e) => setRunMode(e.target.value as "" | "temkinli" | "genis")}
             disabled={busy}
-            title="Çalışma kipi — dengeli: varsayılan; hassas: alarm ikinci okumayla doğrulanır (az yanlış alarm); geniş: çift okuma + son tarama (en yüksek yakalama)"
+            title="Çalışma kipi — dengeli: varsayılan; temkinli: alarm ikinci okumayla doğrulanır (az yanlış alarm); geniş: çift okuma + son tarama (en yüksek yakalama)"
             className="bg-zinc-800 border border-zinc-700 rounded px-1 py-1 disabled:opacity-50"
           >
             <option value="">dengeli</option>
-            <option value="hassas">hassas</option>
+            <option value="temkinli">temkinli</option>
             <option value="genis">geniş</option>
           </select>
           <button

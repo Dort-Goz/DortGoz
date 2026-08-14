@@ -26,8 +26,8 @@ class AnalyzeRequest(BaseModel):
     model: str = Field(default="", max_length=500)
     system_prompt: str = Field(default="", max_length=20_000)
     task_prompt: str = Field(default="", max_length=20_000)
-    # Çalışma kipi: "" | dengeli | hassas | genis (bkz. runner._mode_flags)
-    mode: Literal["", "dengeli", "hassas", "genis"] = ""
+    # Çalışma kipi: "" | dengeli | temkinli | genis (bkz. runner._mode_flags)
+    mode: Literal["", "dengeli", "temkinli", "genis"] = ""
 
 
 class AnalysisAccepted(BaseModel):

@@ -281,16 +281,16 @@ async def review_if_closed(
 
 
 def _mode_flags(mode: str) -> tuple[bool, bool, bool]:
-    """Kip → (çift-okuma-OR, hassas-doğrulama, son-tarama).
+    """Kip → (çift-okuma-OR, temkinli-doğrulama, son-tarama).
 
     "" ve "dengeli": ayarlardaki bayraklar (varsayılan ikisi de kapalı).
     "genis": max-recall — çift okuma + son tarama (ölçüm: ~116/140 @ ~23/150).
-    "hassas": alarm ikinci 12-kare okumayla DOĞRULANMALI, aksi düşürülür
+    "temkinli": alarm ikinci 12-kare okumayla DOĞRULANMALI, aksi düşürülür
     (offline kesişim kestirimi: ~88/140 @ ~5/150).
     """
     if mode == "genis":
         return True, False, True
-    if mode == "hassas":
+    if mode == "temkinli":
         return False, True, False
     return settings.dual_read, False, settings.final_sweep
 
@@ -687,14 +687,14 @@ async def run_video(
                                 report = dual
                                 captured_frames = dual_frames
                         elif confirm_and and report.events and not dual.events:
-                            # hassas (AND): doğrulanamayan alarm düşürülür —
+                            # temkinli (AND): doğrulanamayan alarm düşürülür —
                             # gözlem kaybolmaz, belirsizliğe iner (fail-closed)
                             report = WindowReport(
                                 window_start=report.window_start,
                                 window_end=report.window_end,
                                 summary=report.summary,
                                 uncertainties=report.uncertainties + [
-                                    "hassas kip: ilk okumanın olayı ikinci "
+                                    "temkinli kip: ilk okumanın olayı ikinci "
                                     "(12 kare) okumada doğrulanmadı — alarm "
                                     "düşürüldü"],
                             )
