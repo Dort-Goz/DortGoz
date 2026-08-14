@@ -8,6 +8,7 @@ import ChatPanel from "./components/ChatPanel";
 import ActionLog from "./components/ActionLog";
 import ExperimentPanel, { type InterpretConfig } from "./components/ExperimentPanel";
 import FeedStrip from "./components/FeedStrip";
+import LiveGrid from "./components/LiveGrid";
 import UploadPanel from "./components/UploadPanel";
 import { includeUploadedVideo, startCanonicalRun } from "./lib/canonicalRun";
 import { consoleReducer, emptyFeed, initialState } from "./state";
@@ -33,6 +34,8 @@ export default function App() {
   // Analiz paketi içe aktarma durumu ("" = sessiz)
   const [importNote, setImportNote] = useState("");
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  // Canlı CCTV ızgarası (5×5) — panel yerleşiminin yerine geçer
+  const [liveView, setLiveView] = useState(false);
 
   useEffect(() => {
     const socket = new DortgozSocket((e: Event) => dispatch({ kind: "event", event: e }));
@@ -167,6 +170,17 @@ export default function App() {
           DÖRTGÖZ <span className="text-zinc-500 font-normal text-sm">operatör konsolu</span>
         </span>
         <div className="ml-auto flex items-center gap-3 text-xs text-zinc-400">
+          <button
+            onClick={() => setLiveView((v) => !v)}
+            title="Canlı CCTV ızgarası: config/live_feeds.json'daki gerçek akışlar, işlenme durumu ve gecikme rozetleriyle"
+            className={`rounded px-2 py-1 border ${
+              liveView
+                ? "border-sky-700 text-sky-300 bg-sky-950/40"
+                : "border-zinc-700 hover:border-zinc-500"
+            }`}
+          >
+            📡 canlı
+          </button>
           {interpretCfg && (
             <button
               onClick={() => setShowExperiment((s) => !s)}
@@ -328,10 +342,20 @@ export default function App() {
         );
       })()}
 
+      {/* Canlı CCTV ızgarası — 5×5 gerçek akış duvarı, panel yerleşiminin yerine */}
+      {liveView && (
+        <LiveGrid
+          incidents={Object.fromEntries(
+            Object.entries(state.feeds).map(([f, s]) => [f, s.incidents]))}
+          onSelectFeed={(f) => dispatch({ kind: "select_feed", feed: f })}
+        />
+      )}
+
       {/* Ana ızgara */}
       {/* 6 sütun: video 1:1 içerik taşıdığı için DAR bir sütuna oturur (2/6);
           artan genişlik zaman çizelgesine gider (4/6) — orada okunacak metin var.
           Alt sıra üçe eşit bölünür. */}
+      {!liveView && (
       <div className="flex-1 grid grid-cols-6 grid-rows-2 gap-2 min-h-0">
         <div className="col-span-2 row-span-1 min-h-0">
           <VideoPanel highlight={feed.highlight} seekTo={feed.seekTo} video={feed.video} />
@@ -358,6 +382,7 @@ export default function App() {
           />
         </div>
       </div>
+      )}
     </div>
   );
 }
