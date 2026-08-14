@@ -165,11 +165,14 @@ export default function App() {
   return (
     <div className="h-screen flex flex-col gap-2 p-2">
       {/* Üst çubuk */}
-      <header className="flex items-center gap-3 px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-900/60 shrink-0">
+      {/* Üst çubuk TEK ekrana sığar: sağ grup taşarsa alt satıra SARAR
+          (yatay kaydırma yasak) ve canlı görünümde dosya-koşusu denetimleri
+          (klip/kip/Başlat/demo/deney) GİZLENİR — o kipte işlevleri yok. */}
+      <header className="flex items-center flex-wrap gap-x-3 gap-y-1.5 px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-900/60 shrink-0">
         <span className="text-lg font-bold tracking-tight">
           DÖRTGÖZ <span className="text-zinc-500 font-normal text-sm">operatör konsolu</span>
         </span>
-        <div className="ml-auto flex items-center gap-3 text-xs text-zinc-400">
+        <div className="ml-auto flex items-center flex-wrap gap-x-3 gap-y-1.5 text-xs text-zinc-400">
           <button
             onClick={() => setLiveView((v) => !v)}
             title="Canlı CCTV ızgarası: config/live_feeds.json'daki gerçek akışlar, işlenme durumu ve gecikme rozetleriyle"
@@ -181,7 +184,7 @@ export default function App() {
           >
             📡 canlı
           </button>
-          {interpretCfg && (
+          {interpretCfg && !liveView && (
             <button
               onClick={() => setShowExperiment((s) => !s)}
               title="Model ve istem deneyleri"
@@ -199,10 +202,12 @@ export default function App() {
               )}
             </button>
           )}
-          <UploadPanel onUploaded={(video) => {
-            setVideos((current) => includeUploadedVideo(current, video.stored_filename));
-            setSelected(video.stored_filename);
-          }} />
+          {!liveView && (
+            <UploadPanel onUploaded={(video) => {
+              setVideos((current) => includeUploadedVideo(current, video.stored_filename));
+              setSelected(video.stored_filename);
+            }} />
+          )}
           <input
             ref={importInputRef}
             type="file"
@@ -222,10 +227,15 @@ export default function App() {
             ⇪ paket al
           </button>
           {importNote && (
-            <span className="max-w-72 truncate text-zinc-400" title={importNote}>
+            <button
+              onClick={() => setImportNote("")}
+              title={`${importNote} — kapatmak için tıklayın`}
+              className="max-w-72 truncate text-zinc-400 hover:text-zinc-200"
+            >
               {importNote}
-            </span>
+            </button>
           )}
+          {!liveView && (<>
           <select
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
@@ -294,9 +304,16 @@ export default function App() {
                   ⇩ paket
                 </a>
               )}
-              {run.detail && <span className="text-zinc-500">{run.detail}</span>}
+              {/* Ayrıntı (dosya yolu + model) İKİNCİL bilgidir: kırpılır,
+                  tamamı araç ipucunda — üst çubuğu taşırmasın */}
+              {run.detail && (
+                <span className="text-zinc-500 max-w-56 truncate" title={run.detail}>
+                  {run.detail}
+                </span>
+              )}
             </>
           )}
+          </>)}
         </div>
       </header>
 
@@ -317,9 +334,13 @@ export default function App() {
       {/* Koşunun nihai kararı — hangi sınıf, hangi risk (backend: RunContext.verdict).
           Renk EN CİDDİ olayın riskini taşır: yeşil kutu içinde "kritik" yazması
           operatörü yanıltıyordu; olaysız koşu yeşil kalır. */}
-      {/* Çoklu-akış (demo) kamera duvarı — tek akışta görünmez */}
-      <FeedStrip feeds={state.feeds} active={state.active}
-                 onSelect={(f) => dispatch({ kind: "select_feed", feed: f })} />
+      {/* Çoklu-akış (demo) kamera duvarı — tek akışta görünmez. Canlı
+          görünümde de gizli: ızgara hücreleri aynı bilgiyi zaten taşıyor,
+          üstte İKİNCİ bir akış duvarı yalnız yer yiyordu. */}
+      {!liveView && (
+        <FeedStrip feeds={state.feeds} active={state.active}
+                   onSelect={(f) => dispatch({ kind: "select_feed", feed: f })} />
+      )}
 
       {run?.state === "done" && run.detail && (() => {
         const order = ["dusuk", "orta", "yuksek", "kritik"] as const;

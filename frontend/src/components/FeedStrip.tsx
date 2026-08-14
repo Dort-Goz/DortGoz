@@ -28,8 +28,12 @@ export default function FeedStrip({ feeds, active, onSelect }: {
   const total = names.reduce((s, n) => s + (feeds[n].runStatus?.speed ?? 0), 0);
   const enough = busyFeeds.length === 0 || total >= busyFeeds.length;
 
+  // SARAN duvar, yatay kaydırma DEĞİL: 24 akış tek satırda ekran dışına
+  // taşıyordu ve kaydırmadan görülemiyordu (2026-08-14 kullanılabilirlik
+  // bulgusu). Karolar satırlara sarar; ~3 satırı aşarsa dikey kaydırma açılır
+  // — tüm akışlar tek bakışta, en kötü durumda tek parmak kaydırması.
   return (
-    <div className="shrink-0 flex gap-2 overflow-x-auto">
+    <div className="shrink-0 flex flex-wrap gap-1.5 overflow-y-auto max-h-44">
       <div className={`rounded-lg border px-3 py-1.5 min-w-32 shrink-0 ${
         enough ? "border-emerald-900/60 bg-emerald-950/30" : "border-red-900/60 bg-red-950/30"
       }`}>
@@ -55,7 +59,7 @@ export default function FeedStrip({ feeds, active, onSelect }: {
           <button
             key={name}
             onClick={() => onSelect(name)}
-            className={`rounded-lg border px-3 py-1.5 text-left min-w-40 bg-zinc-900/70
+            className={`rounded-lg border px-2.5 py-1.5 text-left w-48 bg-zinc-900/70
                         hover:bg-zinc-800 transition-colors ${
               name === active ? "border-zinc-400" : "border-zinc-800"
             }`}
