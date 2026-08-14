@@ -57,15 +57,15 @@ app.add_exception_handler(Exception, domain_exception_handler)
 
 MOCK_EVENTS = Path(__file__).parent / "mock" / "sample_events.jsonl"
 
-# Sınır = şartnamedeki 24 kamera senaryosu. Prova ölçümü (2026-08-14, 24 akış
-# × 20 dk gerçekçi kayıt): 24/24 tamamlandı, hız medyanı 0,85× — sistem
-# yavaşlar ama düşmez, RunStatus.speed dürüst ölçümü taşır. Gerçekçi içerikte
-# ~17 akış @1×; olay-yoğun en kötü durumda ~10 (bench/kapasite_provasi.py).
-MAX_FEEDS = 24
+# Sınır = şartnamedeki 24 kamera senaryosu (+1 pay 5×5 canlı ızgara). Prova
+# ölçümü (2026-08-14, 24 akış × 20 dk gerçekçi kayıt): 24/24 tamamlandı, hız
+# medyanı 0,85× — sistem yavaşlar ama düşmez, RunStatus.speed dürüst ölçümü
+# taşır. Gerçekçi içerikte ~17 akış @1×; olay-yoğun en kötü durumda ~10
+# (bench/kapasite_provasi.py). DORTGOZ_MAX_FEEDS ile ayarlanır.
 analysis_jobs = CanonicalAnalysisJobService(
     manager,
     runs_dir=settings.runs_dir,
-    max_active=MAX_FEEDS,
+    max_active=settings.max_feeds,
     enabled=lambda: not settings.mock,
 )
 # REST ve WS bu app composition sınırındaki aynı canonical job instance'ını kullanır;
@@ -186,6 +186,54 @@ async def import_run(request: Request) -> dict:
         tmp_path.unlink(missing_ok=True)
     return {"run_id": ctx.run_id, "video": ctx.video, "verdict": ctx.verdict(),
             "incidents": len(ctx.incidents), "reports": len(ctx.reports)}
+
+
+# ---- Canlı CCTV kipi (services/live_cctv) ----
+from .services.live_cctv import LiveCctvService, load_feeds  # noqa: E402
+
+live_cctv = LiveCctvService(manager)
+app.state.live_cctv = live_cctv
+
+
+@app.post("/api/live/start")
+async def live_start(body: dict | None = None) -> list[dict]:
+    """Canlı kip: config/live_feeds.json'daki akışları çekmeye + işlemeye başlar."""
+    if settings.mock:
+        raise HTTPException(status_code=409, detail="mock kipte canlı akış çekilmez")
+    try:
+        statuses = await live_cctv.start(mode=(body or {}).get("mode", ""))
+    except (RuntimeError, FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return [vars(s) for s in statuses]
+
+
+@app.post("/api/live/stop")
+async def live_stop() -> dict:
+    await live_cctv.stop()
+    return {"status": "durdu"}
+
+
+@app.get("/api/live/status")
+async def live_status() -> dict:
+    """Izgaranın nabzı: akış başına durum + gecikme + anlık görüntü URL'si."""
+    return {"active": live_cctv.active,
+            "feeds": [vars(s) for s in live_cctv.status()]}
+
+
+@app.get("/api/live/feeds")
+async def live_feed_list() -> list[dict]:
+    """Yapılandırılmış akış listesi (başlatmadan önizleme)."""
+    try:
+        return load_feeds()
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.on_event("shutdown")
+async def _stop_live_on_shutdown() -> None:
+    """7/24 temiz kapanış: ffmpeg çekicileri süreçle birlikte ölsün."""
+    if live_cctv.active:
+        await live_cctv.stop()
 
 
 @app.get("/api/interpret_config")

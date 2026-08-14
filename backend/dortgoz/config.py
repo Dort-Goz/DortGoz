@@ -153,6 +153,15 @@ class Settings(BaseSettings):
     # Ağırlık nöbetçisi sayfa-düşürme hedefleri (":" ayraçlı GGUF yolları).
     # Boş bırakılırsa iyileşme yalnız /unload yapar (bkz. services/weight_guard).
     gguf_paths: str = ""
+    # Eşzamanlı koşu sınırı: şartname senaryosu 24 kamera; +1 pay 5×5 canlı
+    # ızgarayı (25 akış) karşılar. Prova ölçümü (2026-08-14): 24 akış 0,85×.
+    max_feeds: int = 25
+    # Canlı CCTV kipi (services/live_cctv): akış listesi JSON'u ve segmentleme.
+    live_feeds_path: Path = Path(__file__).resolve().parents[2] / "config" / "live_feeds.json"
+    live_segment_seconds: int = 30    # segment süresi = anlık görüntü tazeliği
+    live_max_backlog: int = 2         # işlenmemiş segment sınırı — fazlası ATILIR (canlıya yetişme)
+    live_keep_segments: int = 3       # işlenmiş segmentten saklanan son N (hata ayıklama)
+    live_keep_runs: int = 20          # akış başına saklanan son N segment koşu kaydı
     candidate_cache_dir: Path = Path(__file__).resolve().parents[2] / "cache" / "candidate"
     candidate_manifest_path: Path = (
         Path(__file__).resolve().parents[2] / "models" / "candidate" / "manifest.json"

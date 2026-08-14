@@ -306,6 +306,7 @@ async def run_video(
     task_prompt: str = "",
     feed: str = "",
     mode: str = "",
+    live: bool = False,
 ) -> None:
     """Bir videoyu işler; iptal edilirse (stop_run) durumu temiz bırakır.
 
@@ -316,7 +317,9 @@ async def run_video(
     metrics = CanonicalRunMetrics(run_id)
     rec = RunRecorder(manager, run_id, metrics, feed=feed)
     evidence_scope = RuntimeEvidenceScope.create(run_id)
-    ctx = session.start(run_id, video, feed=feed)   # sohbet analiz sonrası buradan sürer
+    # Canlı kipte (live=True) her segment yeni koşudur ama sohbet SÜREKLİDİR —
+    # geçmiş sıfırlanmaz (bkz. session.start).
+    ctx = session.start(run_id, video, feed=feed, reset_chat=not live)
     ledger = ctx.ledger
     effective_model = model or settings.main_model
     dual_or, confirm_and, sweep_on = _mode_flags(mode)

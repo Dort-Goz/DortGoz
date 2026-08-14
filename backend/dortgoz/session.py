@@ -149,14 +149,19 @@ class RunContext:
 _contexts: dict[str, RunContext] = {}
 
 
-def start(run_id: str, video: str, feed: str = "") -> RunContext:
+def start(run_id: str, video: str, feed: str = "", *,
+          reset_chat: bool = True) -> RunContext:
     ctx = RunContext(run_id=run_id, video=video, feed=feed)
     _contexts.pop(feed, None)         # aynı akışta yeni koşu → sona taşınsın
     _contexts[feed] = ctx
     # Yeni koşu = yeni bağlam: eski kaydın sohbeti yeni kayda taşınmasın.
     # Demo başlatması N koşuyu art arda açar; sıfırlama idempotent, sorun değil.
-    from .agent.graph import reset_history
-    reset_history()
+    # İSTİSNA — canlı kip (reset_chat=False): her 30 sn'lik segment yeni bir
+    # "koşu"dur; operatör sohbetini segment başına silmek sohbeti kullanılmaz
+    # yapar. Canlı akışta sohbet süreklidir, bağlam segmentle tazelenir.
+    if reset_chat:
+        from .agent.graph import reset_history
+        reset_history()
     return ctx
 
 
