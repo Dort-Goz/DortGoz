@@ -194,6 +194,32 @@ from .services.live_cctv import LiveCctvService, load_feeds  # noqa: E402
 live_cctv = LiveCctvService(manager)
 app.state.live_cctv = live_cctv
 
+# ---- Anomali nöbet kuyruğu (services/triage): insan-döngüde karar katmanı ----
+from .services import triage  # noqa: E402
+
+manager.observers.append(triage.store.observe)
+
+
+@app.get("/api/triage")
+async def triage_snapshot() -> dict:
+    """Nöbet kuyruğu: bekleyen olaylar + bu oturumda doğrulanan anomaliler."""
+    return triage.store.snapshot()
+
+
+@app.post("/api/triage/decide")
+async def triage_decide(body: dict) -> dict:
+    """Operatör kararı: {key, verdict: anomali|sorun_degil, category?, note?}."""
+    try:
+        item = triage.store.decide(
+            body.get("key", ""), body.get("verdict", ""),
+            category=body.get("category", ""), note=body.get("note", ""))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    from dataclasses import asdict
+    return asdict(item)
+
 
 @app.post("/api/live/start")
 async def live_start(body: dict | None = None) -> list[dict]:

@@ -15,6 +15,10 @@ class ConnectionManager:
     def __init__(self) -> None:
         self._connections: set[WebSocket] = set()
         self._seq = 0
+        # Sunucu içi dinleyiciler: her yayınlanan olayı görür (ör. anomali
+        # nöbet kuyruğu incident_update'leri buradan toplar). Senkron ve
+        # hata-yalıtımlı: bozuk bir dinleyici yayını DÜŞÜREMEZ.
+        self.observers: list = []
 
     async def connect(self, ws: WebSocket) -> None:
         await ws.accept()
@@ -32,6 +36,11 @@ class ConnectionManager:
     async def broadcast(self, event: Event) -> None:
         self._seq += 1
         event.seq = self._seq
+        for observer in self.observers:
+            try:
+                observer(event)
+            except Exception:  # dinleyici hatası yayını etkilemez
+                pass
         if not self._connections:
             return
         data = event.model_dump_json()

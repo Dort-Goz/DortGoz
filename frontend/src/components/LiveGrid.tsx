@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { IncidentUpdate } from "../types/events";
+import TriagePanel from "./TriagePanel";
 
 /** `GET /api/live/status` akış görünümü (backend FeedStatus aynası). */
 interface LiveFeed {
@@ -141,6 +142,7 @@ export default function LiveGrid({ incidents, onSelectFeed }: {
         </div>
       )}
 
+      <div className="flex-1 min-h-0 flex gap-2">
       <div
         className="flex-1 min-h-0 grid gap-1 overflow-auto"
         style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}
@@ -197,6 +199,10 @@ export default function LiveGrid({ incidents, onSelectFeed }: {
             Canlı kip kapalı — config/live_feeds.json'daki akışlarla başlatın.
           </div>
         )}
+      </div>
+      {/* Nöbet kuyruğu: tespitler insan hükmüne düşer, doğrulananlar oturum
+          listesine geçer (insan-döngüde karar katmanı) */}
+      <TriagePanel onSelectFeed={onSelectFeed} />
       </div>
     </div>
   );
