@@ -319,6 +319,10 @@ async def run_video(
     ledger = ctx.ledger
     effective_model = model or settings.main_model
     dual_or, confirm_and, sweep_on = _mode_flags(mode)
+    if mode == "genis" and not system_prompt:
+        # Geniş kip, ölçülmüş genis2 yapılandırmasını kullanır (keskin hırsızlık
+        # istisnası yalnız bu kipte — dengeli kipin yayımlanmış ölçümü değişmez).
+        system_prompt = interpret.SYSTEM_TR_GENIS
     (settings.runs_dir / f"{run_id}.meta.json").write_text(json.dumps({
         "video": video,
         "model": effective_model,
@@ -655,9 +659,33 @@ async def run_video(
                                     f"(12 kare): {len(dual.events)} olay"),
                         ))
                         if not report.events and dual.events:
-                            # genis (OR): ikinci okuma olay gördü → benimse
-                            report = dual
-                            captured_frames = dual_frames
+                            # genis (OR): ikinci okuma olay gördü → olay anına
+                            # ortalanmış ÜÇÜNCÜ okumayla teyit et (ölçüm
+                            # 2026-08-14: uydurma alarm teyidi 0/5, gerçek 2/5 —
+                            # FA'yı keser, sınırdaki gerçeklerin bir kısmı son
+                            # taramaya kalır). Teyitsiz alarm benimsenmez.
+                            et = next((e.t for e in dual.events
+                                       if start <= e.t <= end), (start + end) / 2)
+                            ca, cb = max(start, et - 4.0), min(end, et + 4.0)
+                            if cb - ca < 2.0:
+                                ca, cb = start, end
+                            conf_kf = [ca + (cb - ca) / 8 * (i + 0.5)
+                                       for i in range(8)]
+                            conf = await interpret_window(
+                                path, (start, end), conf_kf,
+                                meta=percep.meta_text() if percep else "",
+                                model=model, system_prompt=system_prompt,
+                                task_prompt=task_prompt, context=hint,
+                                timing=dual_timing,
+                            )
+                            await rec.emit(AgentStep(
+                                node="interpret", status="end",
+                                detail=(f"çift-okuma teyidi {start:.0f}-{end:.0f}"
+                                        f" sn (8 kare): {len(conf.events)} olay"),
+                            ))
+                            if conf.events:
+                                report = dual
+                                captured_frames = dual_frames
                         elif confirm_and and report.events and not dual.events:
                             # hassas (AND): doğrulanamayan alarm düşürülür —
                             # gözlem kaybolmaz, belirsizliğe iner (fail-closed)

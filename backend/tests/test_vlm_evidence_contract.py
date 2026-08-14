@@ -150,7 +150,7 @@ def test_uncertain_can_carry_evidence_without_confirmation(three_frames):
 async def test_thinking_escalation_uses_same_evidence_schema(monkeypatch):
     captured = {}
 
-    async def fake_grab_frame(_video, _timestamp):
+    async def fake_grab_frame(_video, _timestamp, _width=512):
         return b"jpeg"
 
     async def fake_create_chat(_client, **kwargs):

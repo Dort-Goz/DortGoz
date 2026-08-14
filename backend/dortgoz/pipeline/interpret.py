@@ -80,6 +80,20 @@ SYSTEM_TR = (
     "yalnız gerçekten müdahale gerektiren durumlar için kullan."
 )
 
+
+# Geniş (max-recall) kipin sistem istemi: hırsızlık istisnasının KESKİN hali.
+# 2026-08-14 ölçümü (genis2, tam bölme): keskin cümle + çift-okuma teyidi +
+# son tarama = 109/140 @ 16/150 — kullanıcı seçimi "geniş" çalışma noktası.
+# Dengeli kip ORİJİNAL cümleyle kalır (99/140 @ 12/150 yayımlanmış ölçüm).
+SYSTEM_TR_GENIS = SYSTEM_TR.replace(
+    "raporla: ürünü ödeme yapmadan çantaya/cebe koyma, kasadan izinsiz para "
+    "alma gibi davranışlar `possible_theft` kapsamında dikkat gerektirir. ",
+    "raporla: ürünü CEBE veya giysi içine GİZLEME, kasadan izinsiz para alma, "
+    "ödemeden kasa hattını geçip çıkma `possible_theft` kapsamında dikkat "
+    "gerektirir; kasa önünde ödeme sırasında ürünü poşete koymak NORMAL "
+    "alışveriştir. ",
+)
+
 # İki kademeli çıktının sözleşme paragrafı — şemaya (tier_schema) bağlı olduğu
 # için SYSTEM_TR'den AYRI tutulur ve etkin sistem istemine mekanik eklenir:
 # deney paneli sistem istemini değiştirse de `durum` dalı açıklamasız kalmaz.
@@ -606,6 +620,7 @@ async def _frame_parts(
     *,
     captured_frames: dict[str, tuple[FrameReference, bytes]] | None = None,
     include_timestamps: bool = False,
+    frame_width: int = 512,
 ) -> list[dict[str, Any]]:
     """Kareleri EŞZAMANLI çeker, zaman damgası + görüntü çifti olarak dizer.
 
@@ -614,7 +629,7 @@ async def _frame_parts(
     ömürlü bağımsız süreçler — 6-16'lık pencere için sınırlama gerekmez.
     """
     jpegs = await asyncio.gather(
-        *(grab_frame(video, frame.timestamp) for frame in frame_refs)
+        *(grab_frame(video, frame.timestamp, frame_width) for frame in frame_refs)
     )
     parts: list[dict[str, Any]] = []
     for frame, jpeg in zip(frame_refs, jpegs):
@@ -750,6 +765,7 @@ async def interpret_window(
     stats: dict[str, Any] | None = None,
     timing: dict[str, float | int] | None = None,
     captured_frames: dict[str, tuple[FrameReference, bytes]] | None = None,
+    frame_width: int = 512,
 ) -> WindowReport:
     """Bir pencereyi tek VLM çağrısıyla yorumlar; şema-geçerli WindowReport döner.
 
@@ -767,7 +783,12 @@ async def interpret_window(
     start, end = window
     frame_refs = build_frame_references(keyframes)
     request_frame_ids = [frame.frame_id for frame in frame_refs]
-    content = await _frame_parts(video, frame_refs, captured_frames=captured_frames)
+    # frame_width>512: istemci tarafı yükseltme — dinamik çözünürlük daha çok
+    # görüntü token'ı işler (ölçüm 2026-08-14: 1024px'te ptok ~2000→~5400,
+    # oracle-fail Shoplifting001 0,013→0,999; normaller temiz). Teyit okumaları
+    # bu yolu kullanır; varsayılan okumalar 512 kalır (maliyet ~2,7×).
+    content = await _frame_parts(video, frame_refs, captured_frames=captured_frames,
+                                 frame_width=frame_width)
 
     task = ((task_prompt or TASK_TR)
             .replace("{start}", f"{start:.0f}")
