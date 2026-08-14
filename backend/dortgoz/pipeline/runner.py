@@ -28,6 +28,7 @@ from ..domain.taxonomy import (
 )
 from ..events import AgentStep, Event, RunStatus, WindowEvent, WindowReport
 from ..services.runtime_metrics import CanonicalRunMetrics
+from ..services.weight_guard import guard as weight_guard
 from ..services.runtime_policy import decide_runtime_policy
 from ..services.runtime_postprocess import RuntimeEvidenceScope, postprocess_finalized_report
 from ..ws import ConnectionManager
@@ -747,6 +748,12 @@ async def run_video(
                               if "durum_p" in call else "")
                            + perf_text(call, n_ctx),
                 ))
+
+                # Ağırlık nöbetçisi: CJK sızıntısı uyarıları operatöre görünür
+                # olsun (iyileşme, kuyruk boşalınca iş servisinde tetiklenir).
+                for uyari in weight_guard.drain_alerts():
+                    await rec.emit(AgentStep(node="oversight", status="error",
+                                             detail=uyari))
 
                 # Defter: ciddi olayları yaşam döngüsüyle olaya dönüştürür.
                 # İzleme satırı NE DEĞİŞTİĞİNİ yazar (eski "N olay defterde"

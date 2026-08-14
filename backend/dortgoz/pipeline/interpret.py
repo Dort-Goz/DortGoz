@@ -31,6 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..agent.llm import call_stats, create_chat, main_client
 from ..config import settings
+from ..services.weight_guard import guard as weight_guard
 from ..domain.evidence import FRAME_TIMESTAMP_TOLERANCE_SECONDS
 from ..domain.taxonomy import CanonicalEventType, legacy_ws_label_from_canonical
 from ..events import EventEvidenceRef, FrameReference, Risk, WindowReport
@@ -317,6 +318,7 @@ async def review_incident(
     if stats is not None:
         stats.update(call_stats(resp))
     raw = resp.choices[0].message.content or "{}"
+    weight_guard.record(raw)   # CJK sızıntı taraması (sayfa bozulması nöbetçisi)
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError:
@@ -858,6 +860,7 @@ async def interpret_window(
         if settings.two_tier and (p := _dikkat_probability(resp)) is not None:
             stats["durum_p"] = p
     raw = resp.choices[0].message.content or "{}"
+    weight_guard.record(raw)   # CJK sızıntı taraması (sayfa bozulması nöbetçisi)
     # GBNF üretim anında garanti eder; Pydantic ikinci savunma katmanı (A6).
     # finish_reason "length" = çıktı bütçeye sığmadı → kesilmiş olabilir.
     return _to_report(

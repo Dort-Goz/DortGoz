@@ -150,6 +150,9 @@ class Settings(BaseSettings):
     # Yollar
     media_dir: Path = Path(__file__).resolve().parents[2] / "media"
     runs_dir: Path = Path(__file__).resolve().parents[2] / "runs"
+    # Ağırlık nöbetçisi sayfa-düşürme hedefleri (":" ayraçlı GGUF yolları).
+    # Boş bırakılırsa iyileşme yalnız /unload yapar (bkz. services/weight_guard).
+    gguf_paths: str = ""
     candidate_cache_dir: Path = Path(__file__).resolve().parents[2] / "cache" / "candidate"
     candidate_manifest_path: Path = (
         Path(__file__).resolve().parents[2] / "models" / "candidate" / "manifest.json"

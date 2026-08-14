@@ -12,6 +12,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from ..ws import ConnectionManager
+from .weight_guard import guard as weight_guard
 
 LOGGER = logging.getLogger(__name__)
 
@@ -343,6 +344,16 @@ class CanonicalAnalysisJobService:
                     self._active_by_feed.pop(record.feed, None)
                 self._records.pop(record.analysis_id, None)
                 self._terminal_status[record.analysis_id] = record.status
+                idle = self._active_count_locked() == 0
+            # Ağırlık nöbetçisi: sistematik CJK sızıntısı görüldüyse ve kuyruk
+            # boşaldıysa sayfa önbelleğini ŞİMDİ tazele — koşu ortasında asla
+            # (model çekilirse etkin istekler düşer). Bozulma /unload'a dayanır;
+            # tek çare sayfaların diskten yeniden okunması (2026-08-13 ölçümü).
+            if idle and weight_guard.needs_heal:
+                try:
+                    await weight_guard.heal()
+                except Exception:
+                    LOGGER.exception("weight_guard iyileşmesi başarısız")
 
     def _active_count_locked(self) -> int:
         return sum(
