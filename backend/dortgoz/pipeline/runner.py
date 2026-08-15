@@ -726,6 +726,50 @@ async def run_video(
                     finally:
                         metrics.record_qwen_timing(dual_timing)
 
+                # İkinci görüş (çapraz model): pencere hâlâ olaysız ama hareket
+                # yüksek → BİR kez de ikinci modele okutulur. 31-klip A/B
+                # (2026-08-15): kör noktalar tamamlayıcı — 27B, 35B'nin olaysız
+                # bıraktığı 8 pencerede orta+ olay buldu (tersi 2); motion>=0,30
+                # kapısıyla yakalama 13/26 → 19/26, FA +0. Çapraz model bulgusu
+                # bağımsız ikinci görüş sayılır (aynı-model teyit zinciri
+                # uygulanmaz) ama insan incelemesine işaretlenir. Ölçüm:
+                # bench/results/ab_qwen38_rol_analizi_20260815.md
+                ikinci_gorus = ""
+                if (settings.second_opinion_model and not report.events
+                        and peak >= settings.second_opinion_motion):
+                    so_timing: dict[str, float | int] = {}
+                    try:
+                        so_frames = {}
+                        so = await interpret_window(
+                            path, (start, end), keyframes,
+                            meta=percep.meta_text() if percep else "",
+                            model=settings.second_opinion_model,
+                            system_prompt=system_prompt,
+                            task_prompt=task_prompt, context=hint,
+                            timing=so_timing,
+                            captured_frames=so_frames,
+                        )
+                        await rec.emit(AgentStep(
+                            node="interpret", status="end",
+                            detail=(f"ikinci görüş {start:.0f}-{end:.0f} sn "
+                                    f"({settings.second_opinion_model}): "
+                                    f"{len(so.events)} olay"),
+                        ))
+                        if so.events:
+                            report = so
+                            captured_frames = so_frames
+                            ikinci_gorus = (
+                                f"ikinci görüş modeli olay buldu (birincil "
+                                f"okuma olaysızdı, hareket {peak:.2f})")
+                    except Exception as exc:
+                        await rec.emit(AgentStep(
+                            node="interpret", status="end",
+                            detail=(f"ikinci görüş başarısız, taban karar "
+                                    f"korundu: {str(exc)[:120]}"),
+                        ))
+                    finally:
+                        metrics.record_qwen_timing(so_timing)
+
                 validation = postprocess_finalized_report(
                     report=report,
                     captured_frames=captured_frames,
@@ -775,7 +819,7 @@ async def run_video(
                     ledger.require_review(policy.review_reason)
                     updates = []
                 else:
-                    review_reasons = [item for item in (escalated, policy.review_reason) if item]
+                    review_reasons = [item for item in (escalated, ikinci_gorus, policy.review_reason) if item]
                     updates = ledger.ingest(
                         ledger_report,
                         thumb,

@@ -62,6 +62,15 @@ class Settings(BaseSettings):
     # (71 klip alt kümesi): eşik 0,10'da pencerelerin ~%4'ü tırmanıyor,
     # klip yakalama +1 / yanlış alarm +0; kurtarılanlar GT-ilişkiliydi.
     escalate_p: float = 0.10
+    # İkinci görüş (çapraz model, 2026-08-15 A/B): birincil model olaysız
+    # bıraktı VE pencere hareketi eşiği aştıysa pencere BİR kez de ikinci
+    # modele okutulur. İki modelin kör noktaları tamamlayıcı ölçüldü (31 klip:
+    # 27B, 35B'nin olaysız 8 penceresinde orta+ buldu; tersi 2) — motion>=0,30
+    # kapısıyla klip yakalama 13/26 → 19/26, FA +0. Model değişimi model sunucusu
+    # yeniden yüklemesidir; canlı düzende kuyrukla amorti edilir. "" = KAPALI.
+    # Ölçüm: bench/results/ab_qwen38_rol_analizi_20260815.md
+    second_opinion_model: str = ""   # ör. "qwen3.8-27b-vision-dg"
+    second_opinion_motion: float = 0.30
     # Çift okuma (2026-08-11 birleşim analizi): olagan kalan pencere bir kez de
     # 12 motion-ranked kareyle okunur; İKİ okumadan biri olay görürse alarm.
     # k6∪k12 birleşimi 99→112/140 yakalama vaat ediyor (FA 12→~21, maliyet ~2×)
