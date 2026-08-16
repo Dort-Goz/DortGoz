@@ -199,11 +199,13 @@ def test_sqlite_v3_uses_normalized_tables_and_persists_development_gate(
             "human_reviews",
             "development_approvals",
             "training_samples",
+            "training_jobs",
+            "model_versions",
             "decision_traces",
             "audit_log",
         } <= tables
         assert "repository_snapshot" not in tables
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
         assert connection.execute("SELECT COUNT(*) FROM human_reviews").fetchone()[0] == 1
         assert (
             connection.execute("SELECT COUNT(*) FROM development_approvals").fetchone()[0]
@@ -264,7 +266,7 @@ def test_sqlite_v1_snapshot_is_migrated_without_deleting_rollback_data(
 
     migrated = SqliteEventRepository(database_path)
 
-    assert migrated.schema_version == 3
+    assert migrated.schema_version == 4
     assert migrated.get_video(VIDEO_ID) is not None
     assert migrated.get_event("event-offline-1") is not None
     with sqlite3.connect(database_path) as connection:
@@ -302,7 +304,7 @@ def test_sqlite_v2_database_adds_training_samples_without_losing_events(
 
     migrated = SqliteEventRepository(database_path)
 
-    assert migrated.schema_version == 3
+    assert migrated.schema_version == 4
     assert migrated.get_event("event-offline-1") is not None
     with sqlite3.connect(database_path) as connection:
         tables = {

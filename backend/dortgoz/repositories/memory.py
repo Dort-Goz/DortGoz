@@ -19,6 +19,12 @@ from ..domain.feedback import (
     DevelopmentUse,
 )
 from ..domain.memory import AnalysisRecord, AnalysisResult, AnalysisStatus
+from ..domain.model_lifecycle import (
+    ModelStage,
+    ModelVersion,
+    TrainingJob,
+    TrainingJobStatus,
+)
 from ..domain.provenance import AnalysisProvenance, HumanReview, ReviewDecision, TraceRecord
 from ..domain.training import (
     TrainingFrameReview,
@@ -48,6 +54,8 @@ class InMemoryEventRepository:
         self._reviews: dict[str, HumanReview] = {}
         self._development_approvals: dict[str, DevelopmentApproval] = {}
         self._training_samples: dict[str, TrainingSample] = {}
+        self._training_jobs: dict[str, TrainingJob] = {}
+        self._model_versions: dict[str, ModelVersion] = {}
         self._traces: dict[tuple[str, str], list[TraceRecord]] = {}
 
     def create_video(self, metadata: VideoMetadata) -> VideoMetadata:
@@ -449,6 +457,217 @@ class InMemoryEventRepository:
             updated = TrainingSample.model_validate(updated.model_dump())
             self._training_samples[sample_id] = updated
             return _copy(updated)
+
+    def create_training_job(self, job: TrainingJob) -> TrainingJob:
+        with self._lock:
+            if job.status != TrainingJobStatus.QUEUED or job.revision != 1:
+                raise RepositoryConflictError(
+                    "yeni training job queued ve revision 1 olmalıdır"
+                )
+            existing = self._training_jobs.get(job.job_id)
+            if existing is not None:
+                if existing.model_dump() != job.model_dump():
+                    raise RepositoryDuplicateError(
+                        f"training job farklı içerikle kayıtlı: {job.job_id}"
+                    )
+                return _copy(existing)
+            self._training_jobs[job.job_id] = _copy(job)
+            return _copy(job)
+
+    def get_training_job(self, job_id: str) -> TrainingJob | None:
+        with self._lock:
+            job = self._training_jobs.get(job_id)
+            return _copy(job) if job is not None else None
+
+    def list_training_jobs(self) -> list[TrainingJob]:
+        with self._lock:
+            return _copy(
+                sorted(
+                    self._training_jobs.values(),
+                    key=lambda item: (item.created_at, item.job_id),
+                )
+            )
+
+    def update_training_job(self, job: TrainingJob) -> TrainingJob:
+        with self._lock:
+            current = self._training_jobs.get(job.job_id)
+            if current is None:
+                raise RepositoryNotFoundError(f"training job bulunamadı: {job.job_id}")
+            if job.revision != current.revision + 1:
+                raise RepositoryConflictError(
+                    f"training job revision ilerlemiyor: {job.job_id}"
+                )
+            immutable = {
+                "job_version",
+                "job_id",
+                "dataset_id",
+                "dataset_fingerprint",
+                "export_fingerprint",
+                "export_ref",
+                "architecture",
+                "category_names",
+                "verified_frame_count",
+                "train_frame_count",
+                "validation_frame_count",
+                "source_video_count",
+                "box_count",
+                "dfine_repository_revision",
+                "base_checkpoint_sha256",
+                "seed",
+                "epochs",
+                "batch_size",
+                "workers",
+                "gpu_index",
+                "max_gpu_minutes",
+                "daily_gpu_minutes",
+                "requested_by",
+                "output_ref",
+                "created_at",
+            }
+            if current.model_dump(include=immutable) != job.model_dump(include=immutable):
+                raise RepositoryConflictError("training job provenance alanları değiştirilemez")
+            allowed = {
+                TrainingJobStatus.QUEUED: {TrainingJobStatus.RUNNING},
+                TrainingJobStatus.RUNNING: {
+                    TrainingJobStatus.SUCCEEDED,
+                    TrainingJobStatus.FAILED,
+                    TrainingJobStatus.CANCELLED,
+                    TrainingJobStatus.BUDGET_STOPPED,
+                },
+            }
+            if job.status not in allowed.get(current.status, set()):
+                raise RepositoryConflictError(
+                    f"geçersiz training job geçişi: {current.status.value} -> {job.status.value}"
+                )
+            if (
+                job.status == TrainingJobStatus.RUNNING
+                and any(
+                    item.status == TrainingJobStatus.RUNNING
+                    for item in self._training_jobs.values()
+                    if item.job_id != job.job_id
+                )
+            ):
+                raise RepositoryConflictError("aynı anda yalnız bir training job çalışabilir")
+            self._training_jobs[job.job_id] = _copy(job)
+            return _copy(job)
+
+    def create_model_version(self, version: ModelVersion) -> ModelVersion:
+        with self._lock:
+            if version.stage != ModelStage.CANDIDATE or version.revision != 1:
+                raise RepositoryConflictError(
+                    "yeni model version candidate ve revision 1 olmalıdır"
+                )
+            job = self._training_jobs.get(version.training_job_id)
+            if (
+                job is None
+                or job.status != TrainingJobStatus.SUCCEEDED
+                or job.checkpoint_sha256 != version.checkpoint_sha256
+                or job.checkpoint_ref != version.checkpoint_ref
+            ):
+                raise RepositoryConflictError(
+                    "candidate model başarılı training job checkpoint'i ile eşleşmelidir"
+                )
+            existing = self._model_versions.get(version.model_version_id)
+            if existing is not None:
+                if existing.model_dump() != version.model_dump():
+                    raise RepositoryDuplicateError(
+                        f"model version farklı içerikle kayıtlı: {version.model_version_id}"
+                    )
+                return _copy(existing)
+            self._model_versions[version.model_version_id] = _copy(version)
+            return _copy(version)
+
+    def get_model_version(self, model_version_id: str) -> ModelVersion | None:
+        with self._lock:
+            version = self._model_versions.get(model_version_id)
+            return _copy(version) if version is not None else None
+
+    def list_model_versions(self) -> list[ModelVersion]:
+        with self._lock:
+            return _copy(
+                sorted(
+                    self._model_versions.values(),
+                    key=lambda item: (item.created_at, item.model_version_id),
+                )
+            )
+
+    def update_model_version(self, version: ModelVersion) -> ModelVersion:
+        with self._lock:
+            current = self._model_versions.get(version.model_version_id)
+            if current is None:
+                raise RepositoryNotFoundError(
+                    f"model version bulunamadı: {version.model_version_id}"
+                )
+            if version.revision != current.revision + 1:
+                raise RepositoryConflictError(
+                    f"model version revision ilerlemiyor: {version.model_version_id}"
+                )
+            immutable = {
+                "model_version",
+                "model_version_id",
+                "training_job_id",
+                "architecture",
+                "checkpoint_ref",
+                "checkpoint_sha256",
+                "dataset_fingerprint",
+                "export_fingerprint",
+                "dfine_repository_revision",
+                "created_at",
+            }
+            if current.model_dump(include=immutable) != version.model_dump(include=immutable):
+                raise RepositoryConflictError("model version provenance alanları değiştirilemez")
+            if current.stage != ModelStage.CANDIDATE or version.stage != ModelStage.CANDIDATE:
+                raise RepositoryConflictError(
+                    "stage geçişi yalnız switch_champion ile yapılabilir"
+                )
+            if current.evaluation is not None or version.evaluation is None:
+                raise RepositoryConflictError("candidate evaluation yalnız bir kez kaydedilebilir")
+            self._model_versions[version.model_version_id] = _copy(version)
+            return _copy(version)
+
+    def switch_champion(
+        self,
+        champion: ModelVersion,
+        previous_champion: ModelVersion | None,
+    ) -> ModelVersion:
+        with self._lock:
+            current = self._model_versions.get(champion.model_version_id)
+            if current is None:
+                raise RepositoryNotFoundError(
+                    f"model version bulunamadı: {champion.model_version_id}"
+                )
+            if champion.stage != ModelStage.CHAMPION:
+                raise RepositoryConflictError("yeni active model champion olmalıdır")
+            if champion.revision != current.revision + 1:
+                raise RepositoryConflictError("champion model revision ilerlemiyor")
+            active = next(
+                (
+                    item
+                    for item in self._model_versions.values()
+                    if item.stage == ModelStage.CHAMPION
+                ),
+                None,
+            )
+            if active is None and previous_champion is not None:
+                raise RepositoryConflictError("önceki champion kaydı beklenmiyordu")
+            if active is not None:
+                if previous_champion is None or previous_champion.model_version_id != active.model_version_id:
+                    raise RepositoryConflictError("önceki champion kaydı eşleşmiyor")
+                if previous_champion.stage != ModelStage.RETIRED:
+                    raise RepositoryConflictError("önceki champion retired olmalıdır")
+                if previous_champion.revision != active.revision + 1:
+                    raise RepositoryConflictError("önceki champion revision ilerlemiyor")
+            snapshot = deepcopy(self._model_versions)
+            try:
+                if previous_champion is not None:
+                    self._model_versions[previous_champion.model_version_id] = _copy(
+                        previous_champion
+                    )
+                self._model_versions[champion.model_version_id] = _copy(champion)
+            except Exception:
+                self._model_versions = snapshot
+                raise
+            return _copy(champion)
 
     def list_event_revisions(self, event_id: str) -> list[VerifiedEvent]:
         with self._lock:

@@ -1,6 +1,6 @@
 """Normalized SQLite-backed, local-only event memory adapter.
 
-Schema v3 stores each entity in its own row. Existing schema-v1 JSON snapshots
+Schema v4 stores each entity in its own row. Existing schema-v1 JSON snapshots
 are imported once and kept untouched as a rollback artifact.
 """
 
@@ -20,6 +20,7 @@ from ..domain.candidate import CandidateEvent
 from ..domain.event import VerifiedEvent
 from ..domain.feedback import DevelopmentApproval
 from ..domain.memory import AnalysisRecord
+from ..domain.model_lifecycle import ModelVersion, TrainingJob
 from ..domain.provenance import HumanReview, TraceRecord
 from ..domain.training import TrainingFrameReview, TrainingSample
 from ..domain.video import VideoMetadata
@@ -27,7 +28,7 @@ from .errors import RepositoryError
 from .memory import InMemoryEventRepository
 
 _T = TypeVar("_T")
-_DATABASE_SCHEMA_VERSION = 3
+_DATABASE_SCHEMA_VERSION = 4
 _LEGACY_SNAPSHOT_VERSION = 1
 
 
@@ -159,6 +160,42 @@ class SqliteEventRepository(InMemoryEventRepository):
                     CREATE INDEX IF NOT EXISTS idx_training_samples_dataset
                         ON training_samples(dataset_id, dataset_fingerprint, split);
 
+                    CREATE TABLE IF NOT EXISTS training_jobs (
+                        job_id TEXT PRIMARY KEY,
+                        dataset_id TEXT NOT NULL,
+                        dataset_fingerprint TEXT NOT NULL,
+                        export_fingerprint TEXT NOT NULL,
+                        architecture TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        requested_by TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        revision INTEGER NOT NULL,
+                        payload TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_training_jobs_dataset_status
+                        ON training_jobs(dataset_id, dataset_fingerprint, status, created_at);
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_training_jobs_single_running
+                        ON training_jobs(status) WHERE status = 'running';
+
+                    CREATE TABLE IF NOT EXISTS model_versions (
+                        model_version_id TEXT PRIMARY KEY,
+                        training_job_id TEXT NOT NULL REFERENCES training_jobs(job_id),
+                        architecture TEXT NOT NULL,
+                        checkpoint_sha256 TEXT NOT NULL,
+                        stage TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        revision INTEGER NOT NULL,
+                        payload TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_model_versions_job
+                        ON model_versions(training_job_id);
+                    CREATE INDEX IF NOT EXISTS idx_model_versions_stage_created
+                        ON model_versions(stage, created_at);
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_model_versions_single_champion
+                        ON model_versions(stage) WHERE stage = 'champion';
+
                     CREATE TABLE IF NOT EXISTS decision_traces (
                         analysis_id TEXT NOT NULL REFERENCES analyses(analysis_id),
                         candidate_id TEXT NOT NULL REFERENCES candidates(candidate_id),
@@ -232,7 +269,7 @@ class SqliteEventRepository(InMemoryEventRepository):
                     subject_type="database",
                     subject_id=str(self.database_path),
                     actor=None,
-                    payload={"from_version": 1, "to_version": 3},
+                    payload={"from_version": 1, "to_version": 4},
                 )
         except sqlite3.Error as exc:
             raise RepositoryError(f"legacy event store taşınamadı: {exc}") from exc
@@ -315,6 +352,16 @@ class SqliteEventRepository(InMemoryEventRepository):
             item.sample_id: item
             for row in self._connection.execute("SELECT payload FROM training_samples")
             if (item := self._model_from_payload(TrainingSample, row["payload"]))
+        }
+        self._training_jobs = {
+            item.job_id: item
+            for row in self._connection.execute("SELECT payload FROM training_jobs")
+            if (item := self._model_from_payload(TrainingJob, row["payload"]))
+        }
+        self._model_versions = {
+            item.model_version_id: item
+            for row in self._connection.execute("SELECT payload FROM model_versions")
+            if (item := self._model_from_payload(ModelVersion, row["payload"]))
         }
         self._traces = {}
         for row in self._connection.execute(
@@ -461,6 +508,61 @@ class SqliteEventRepository(InMemoryEventRepository):
                 item.frame_sha256,
                 item.revision,
                 item.created_at.isoformat(),
+                self._json_payload(item),
+            ),
+        )
+
+    def _write_training_job(self, item: TrainingJob) -> None:
+        self._connection.execute(
+            """
+            INSERT INTO training_jobs(
+                job_id, dataset_id, dataset_fingerprint, export_fingerprint,
+                architecture, status, requested_by, created_at, updated_at,
+                revision, payload
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(job_id) DO UPDATE SET
+                status = excluded.status,
+                updated_at = excluded.updated_at,
+                revision = excluded.revision,
+                payload = excluded.payload
+            """,
+            (
+                item.job_id,
+                item.dataset_id,
+                item.dataset_fingerprint,
+                item.export_fingerprint,
+                item.architecture.value,
+                item.status.value,
+                item.requested_by,
+                item.created_at.isoformat(),
+                item.updated_at.isoformat(),
+                item.revision,
+                self._json_payload(item),
+            ),
+        )
+
+    def _write_model_version(self, item: ModelVersion) -> None:
+        self._connection.execute(
+            """
+            INSERT INTO model_versions(
+                model_version_id, training_job_id, architecture,
+                checkpoint_sha256, stage, created_at, updated_at, revision, payload
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(model_version_id) DO UPDATE SET
+                stage = excluded.stage,
+                updated_at = excluded.updated_at,
+                revision = excluded.revision,
+                payload = excluded.payload
+            """,
+            (
+                item.model_version_id,
+                item.training_job_id,
+                item.architecture.value,
+                item.checkpoint_sha256,
+                item.stage.value,
+                item.created_at.isoformat(),
+                item.updated_at.isoformat(),
+                item.revision,
                 self._json_payload(item),
             ),
         )
@@ -704,6 +806,125 @@ class SqliteEventRepository(InMemoryEventRepository):
             ),
             write,
         )
+
+    def create_training_job(self, job: TrainingJob) -> TrainingJob:
+        def write(saved: TrainingJob) -> None:
+            self._write_training_job(saved)
+            self._write_audit(
+                action="training_job_queued",
+                subject_type="training_job",
+                subject_id=saved.job_id,
+                actor=saved.requested_by,
+                occurred_at=saved.created_at,
+                payload={
+                    "dataset_fingerprint": saved.dataset_fingerprint,
+                    "export_fingerprint": saved.export_fingerprint,
+                    "architecture": saved.architecture.value,
+                    "max_gpu_minutes": saved.max_gpu_minutes,
+                },
+            )
+
+        return self._transaction(
+            lambda: super(SqliteEventRepository, self).create_training_job(job),
+            write,
+        )
+
+    def update_training_job(self, job: TrainingJob) -> TrainingJob:
+        def write(saved: TrainingJob) -> None:
+            self._write_training_job(saved)
+            self._write_audit(
+                action=f"training_job_{saved.status.value}",
+                subject_type="training_job",
+                subject_id=saved.job_id,
+                actor=saved.requested_by,
+                occurred_at=saved.updated_at,
+                payload={
+                    "revision": saved.revision,
+                    "elapsed_seconds": saved.elapsed_seconds,
+                    "checkpoint_sha256": saved.checkpoint_sha256,
+                    "error_code": saved.error_code,
+                },
+            )
+
+        return self._transaction(
+            lambda: super(SqliteEventRepository, self).update_training_job(job),
+            write,
+        )
+
+    def create_model_version(self, version: ModelVersion) -> ModelVersion:
+        def write(saved: ModelVersion) -> None:
+            self._write_model_version(saved)
+            self._write_audit(
+                action="model_candidate_created",
+                subject_type="model_version",
+                subject_id=saved.model_version_id,
+                actor=None,
+                occurred_at=saved.created_at,
+                payload={
+                    "training_job_id": saved.training_job_id,
+                    "checkpoint_sha256": saved.checkpoint_sha256,
+                },
+            )
+
+        return self._transaction(
+            lambda: super(SqliteEventRepository, self).create_model_version(version),
+            write,
+        )
+
+    def update_model_version(self, version: ModelVersion) -> ModelVersion:
+        def write(saved: ModelVersion) -> None:
+            self._write_model_version(saved)
+            assert saved.evaluation is not None
+            self._write_audit(
+                action="model_evaluation_saved",
+                subject_type="model_version",
+                subject_id=saved.model_version_id,
+                actor=saved.evaluation.evaluator,
+                occurred_at=saved.evaluation.measured_at,
+                payload={
+                    "evaluation_id": saved.evaluation.evaluation_id,
+                    "metrics_fingerprint": saved.evaluation.metrics_fingerprint,
+                    "shadow_passed": saved.evaluation.shadow_passed,
+                },
+            )
+
+        return self._transaction(
+            lambda: super(SqliteEventRepository, self).update_model_version(version),
+            write,
+        )
+
+    def switch_champion(
+        self,
+        champion: ModelVersion,
+        previous_champion: ModelVersion | None,
+    ) -> ModelVersion:
+        def operation() -> ModelVersion:
+            return super(SqliteEventRepository, self).switch_champion(
+                champion, previous_champion
+            )
+
+        def write(saved: ModelVersion) -> None:
+            if previous_champion is not None:
+                self._write_model_version(previous_champion)
+            self._write_model_version(saved)
+            self._write_audit(
+                action="model_champion_switched",
+                subject_type="model_version",
+                subject_id=saved.model_version_id,
+                actor=saved.approved_by,
+                occurred_at=saved.promoted_at,
+                payload={
+                    "previous_model_version_id": (
+                        previous_champion.model_version_id
+                        if previous_champion is not None
+                        else None
+                    ),
+                    "policy_version": saved.promotion_policy_version,
+                    "reason": saved.promotion_reason,
+                },
+            )
+
+        return self._transaction(operation, write)
 
     def save_agent_bundle(
         self,

@@ -8,6 +8,7 @@ from ..domain.candidate import CandidateEvent
 from ..domain.event import VerifiedEvent
 from ..domain.feedback import DevelopmentApproval
 from ..domain.memory import AnalysisRecord, AnalysisResult
+from ..domain.model_lifecycle import ModelVersion, TrainingJob
 from ..domain.provenance import (
     AnalysisProvenance,
     HumanReview,
@@ -87,6 +88,28 @@ class EventRepository(Protocol):
     def verify_training_sample(
         self, sample_id: str, review: TrainingFrameReview
     ) -> TrainingSample: ...
+
+    def create_training_job(self, job: TrainingJob) -> TrainingJob: ...
+
+    def get_training_job(self, job_id: str) -> TrainingJob | None: ...
+
+    def list_training_jobs(self) -> list[TrainingJob]: ...
+
+    def update_training_job(self, job: TrainingJob) -> TrainingJob: ...
+
+    def create_model_version(self, version: ModelVersion) -> ModelVersion: ...
+
+    def get_model_version(self, model_version_id: str) -> ModelVersion | None: ...
+
+    def list_model_versions(self) -> list[ModelVersion]: ...
+
+    def update_model_version(self, version: ModelVersion) -> ModelVersion: ...
+
+    def switch_champion(
+        self,
+        champion: ModelVersion,
+        previous_champion: ModelVersion | None,
+    ) -> ModelVersion: ...
 
     def get_analysis_result(self, analysis_id: str) -> AnalysisResult | None: ...
 

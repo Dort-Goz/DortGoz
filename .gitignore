@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
+.pytest-tmp*/
 .ruff_cache/
 
 # Node
@@ -16,6 +17,7 @@ runs/
 cache/
 models/candidate/local/
 models/semantic/local/
+models/dfine/local/
 models/vlm/manifest.local.json
 models/**/*.gguf
 models/**/*.safetensors

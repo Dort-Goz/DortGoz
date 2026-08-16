@@ -1,0 +1,30 @@
+{
+  "training_policy": {
+    "policy_version": "dfine-training-v1",
+    "minimum_verified_frames": 100,
+    "minimum_train_frames": 80,
+    "minimum_validation_frames": 20,
+    "minimum_source_videos": 10,
+    "maximum_epochs": 20,
+    "maximum_batch_size": 4,
+    "maximum_workers": 4,
+    "maximum_gpu_minutes_per_job": 90,
+    "maximum_gpu_minutes_per_day": 120,
+    "allowed_architectures": [
+      "dfine_n",
+      "dfine_s"
+    ]
+  },
+  "promotion_policy": {
+    "policy_version": "dfine-promotion-v1",
+    "minimum_map_50_95": 0.5,
+    "minimum_critical_recall": 0.9,
+    "maximum_false_alarms_per_hour": 4.0,
+    "maximum_p95_latency_ms": 250.0,
+    "maximum_peak_memory_mb": 4096,
+    "minimum_repetitions": 3,
+    "maximum_critical_recall_drop": 0.0,
+    "maximum_false_alarm_increase": 0.0,
+    "maximum_latency_increase_ratio": 0.1
+  }
+}
