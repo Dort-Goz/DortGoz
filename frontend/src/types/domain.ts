@@ -45,6 +45,25 @@ export interface IncidentMedia {
   revision: number;
 }
 
+export interface InterventionPriority {
+  priority_id: string;
+  event_id: string;
+  analysis_id: string;
+  event_revision: number;
+  score: number;
+  band: "routine" | "review" | "high" | "urgent";
+  reasons: string[];
+  risk_input: "dusuk" | "orta" | "yuksek" | "kritik";
+  event_type_input: string;
+  phase_input: string;
+  needs_review_input: boolean;
+  model_confidence: number | null;
+  ruleset_version: string;
+  revision: number;
+  created_at: string;
+  calculated_at: string;
+}
+
 export interface DevelopmentApproval {
   approval_id: string;
   event_id: string;

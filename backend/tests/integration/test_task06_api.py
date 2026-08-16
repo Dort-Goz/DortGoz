@@ -25,6 +25,7 @@ from dortgoz.domain.provenance import AnalysisProvenance
 from dortgoz.domain.video import VideoMetadata
 from dortgoz.main import app
 from dortgoz.services.dataset_manifest import write_dataset_manifest
+from dortgoz.services.intervention_priority import InterventionPriorityService
 from dortgoz.services.training_sample import TrainingSampleService
 
 
@@ -232,15 +233,27 @@ def test_incident_media_route_returns_playable_local_urls(monkeypatch) -> None:
             thumbnail_size_bytes=50,
         )
     )
+    InterventionPriorityService(runtime.repository).assess_and_save(
+        event.event_id,
+        risk="kritik",
+        event_type="bilinmeyen",
+        phase="basladi",
+        needs_review=True,
+    )
 
     with TestClient(app) as client:
         response = client.get("/api/events/event-incident-media-api/media")
+        priority_response = client.get("/api/events/event-incident-media-api/priority")
 
     assert response.status_code == 200
     assert response.json()["clip_url"] == (
         "/media/_incident_media/incident-media-api/incident.mp4"
     )
     assert response.json()["thumbnail_url"].endswith("/thumbnail.jpg")
+    assert priority_response.status_code == 200
+    assert priority_response.json()["score"] == 95
+    assert priority_response.json()["band"] == "urgent"
+    assert priority_response.json()["ruleset_version"] == "intervention-priority-v1"
 
 
 def test_training_sample_api_prepares_and_verifies_approved_event(

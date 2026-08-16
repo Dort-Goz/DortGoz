@@ -10,6 +10,7 @@ from ..domain.feedback import DevelopmentApproval, RuleProposal
 from ..domain.media import IncidentMedia
 from ..domain.memory import AnalysisRecord, AnalysisResult
 from ..domain.model_lifecycle import ModelVersion, TrainingJob
+from ..domain.priority import InterventionPriority
 from ..domain.provenance import (
     AnalysisProvenance,
     HumanReview,
@@ -93,6 +94,22 @@ class EventRepository(Protocol):
     def get_incident_media_for_event(self, event_id: str) -> IncidentMedia | None: ...
 
     def list_incident_media(self, analysis_id: str | None = None) -> list[IncidentMedia]: ...
+
+    def save_intervention_priority(
+        self, priority: InterventionPriority
+    ) -> InterventionPriority: ...
+
+    def get_intervention_priority(
+        self, priority_id: str
+    ) -> InterventionPriority | None: ...
+
+    def get_intervention_priority_for_event(
+        self, event_id: str
+    ) -> InterventionPriority | None: ...
+
+    def list_intervention_priorities(
+        self, analysis_id: str | None = None
+    ) -> list[InterventionPriority]: ...
 
     def create_training_samples(
         self, samples: list[TrainingSample]

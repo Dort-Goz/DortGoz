@@ -1,6 +1,6 @@
 """Normalized SQLite-backed, local-only event memory adapter.
 
-Schema v6 stores each entity in its own row. Existing schema-v1 JSON snapshots
+Schema v7 stores each entity in its own row. Existing schema-v1 JSON snapshots
 are imported once and kept untouched as a rollback artifact.
 """
 
@@ -22,6 +22,7 @@ from ..domain.feedback import DevelopmentApproval, RuleProposal
 from ..domain.media import IncidentMedia
 from ..domain.memory import AnalysisRecord
 from ..domain.model_lifecycle import ModelVersion, TrainingJob
+from ..domain.priority import InterventionPriority
 from ..domain.provenance import HumanReview, TraceRecord
 from ..domain.training import TrainingFrameReview, TrainingSample
 from ..domain.video import VideoMetadata
@@ -29,7 +30,7 @@ from .errors import RepositoryError
 from .memory import InMemoryEventRepository
 
 _T = TypeVar("_T")
-_DATABASE_SCHEMA_VERSION = 6
+_DATABASE_SCHEMA_VERSION = 7
 _LEGACY_SNAPSHOT_VERSION = 1
 
 
@@ -172,6 +173,24 @@ class SqliteEventRepository(InMemoryEventRepository):
                     CREATE INDEX IF NOT EXISTS idx_incident_media_analysis
                         ON incident_media(analysis_id, created_at);
 
+                    CREATE TABLE IF NOT EXISTS intervention_priorities (
+                        priority_id TEXT PRIMARY KEY,
+                        event_id TEXT NOT NULL UNIQUE REFERENCES events(event_id),
+                        analysis_id TEXT NOT NULL REFERENCES analyses(analysis_id),
+                        score INTEGER NOT NULL,
+                        band TEXT NOT NULL,
+                        ruleset_version TEXT NOT NULL,
+                        event_revision INTEGER NOT NULL,
+                        created_at TEXT NOT NULL,
+                        calculated_at TEXT NOT NULL,
+                        revision INTEGER NOT NULL,
+                        payload TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_intervention_priority_queue
+                        ON intervention_priorities(score DESC, created_at, priority_id);
+                    CREATE INDEX IF NOT EXISTS idx_intervention_priority_analysis
+                        ON intervention_priorities(analysis_id, score DESC, created_at);
+
                     CREATE TABLE IF NOT EXISTS training_samples (
                         sample_id TEXT PRIMARY KEY,
                         event_id TEXT NOT NULL REFERENCES events(event_id),
@@ -299,7 +318,7 @@ class SqliteEventRepository(InMemoryEventRepository):
                     subject_type="database",
                     subject_id=str(self.database_path),
                     actor=None,
-                    payload={"from_version": 1, "to_version": 6},
+                    payload={"from_version": 1, "to_version": 7},
                 )
         except sqlite3.Error as exc:
             raise RepositoryError(f"legacy event store taşınamadı: {exc}") from exc
@@ -385,6 +404,13 @@ class SqliteEventRepository(InMemoryEventRepository):
             item.media_id: item
             for row in self._connection.execute("SELECT payload FROM incident_media")
             if (item := self._model_from_payload(IncidentMedia, row["payload"]))
+        }
+        self._intervention_priorities = {
+            item.priority_id: item
+            for row in self._connection.execute(
+                "SELECT payload FROM intervention_priorities"
+            )
+            if (item := self._model_from_payload(InterventionPriority, row["payload"]))
         }
         self._training_samples = {
             item.sample_id: item
@@ -566,6 +592,38 @@ class SqliteEventRepository(InMemoryEventRepository):
                 item.event_revision,
                 item.created_at.isoformat(),
                 item.updated_at.isoformat(),
+                item.revision,
+                self._json_payload(item),
+            ),
+        )
+
+    def _write_intervention_priority(self, item: InterventionPriority) -> None:
+        self._connection.execute(
+            """
+            INSERT INTO intervention_priorities(
+                priority_id, event_id, analysis_id, score, band,
+                ruleset_version, event_revision, created_at, calculated_at,
+                revision, payload
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(priority_id) DO UPDATE SET
+                score = excluded.score,
+                band = excluded.band,
+                ruleset_version = excluded.ruleset_version,
+                event_revision = excluded.event_revision,
+                calculated_at = excluded.calculated_at,
+                revision = excluded.revision,
+                payload = excluded.payload
+            """,
+            (
+                item.priority_id,
+                item.event_id,
+                item.analysis_id,
+                item.score,
+                item.band.value,
+                item.ruleset_version,
+                item.event_revision,
+                item.created_at.isoformat(),
+                item.calculated_at.isoformat(),
                 item.revision,
                 self._json_payload(item),
             ),
@@ -908,6 +966,33 @@ class SqliteEventRepository(InMemoryEventRepository):
 
         return self._transaction(
             lambda: super(SqliteEventRepository, self).save_incident_media(media),
+            write,
+        )
+
+    def save_intervention_priority(
+        self, priority: InterventionPriority
+    ) -> InterventionPriority:
+        def write(saved: InterventionPriority) -> None:
+            self._write_intervention_priority(saved)
+            self._write_audit(
+                action="intervention_priority_saved",
+                subject_type="intervention_priority",
+                subject_id=saved.priority_id,
+                actor="system",
+                occurred_at=saved.calculated_at,
+                payload={
+                    "event_id": saved.event_id,
+                    "score": saved.score,
+                    "band": saved.band.value,
+                    "ruleset_version": saved.ruleset_version,
+                    "revision": saved.revision,
+                },
+            )
+
+        return self._transaction(
+            lambda: super(SqliteEventRepository, self).save_intervention_priority(
+                priority
+            ),
             write,
         )
 

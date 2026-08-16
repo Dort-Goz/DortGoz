@@ -3,6 +3,7 @@ import type {
   DevelopmentApproval,
   HumanReview,
   IncidentMedia,
+  InterventionPriority,
   TrainingSample,
   VerifiedBoundingBox,
   VideoMetadata,
@@ -53,6 +54,19 @@ export async function getIncidentMedia(eventId: string): Promise<IncidentMedia |
   try {
     return await request<IncidentMedia>(
       `/api/events/${encodeURIComponent(eventId)}/media`,
+    );
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+export async function getInterventionPriority(
+  eventId: string,
+): Promise<InterventionPriority | null> {
+  try {
+    return await request<InterventionPriority>(
+      `/api/events/${encodeURIComponent(eventId)}/priority`,
     );
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) return null;

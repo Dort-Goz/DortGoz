@@ -28,6 +28,7 @@ from ..domain.model_lifecycle import (
     TrainingJob,
     TrainingJobStatus,
 )
+from ..domain.priority import InterventionPriority
 from ..domain.provenance import AnalysisProvenance, HumanReview, ReviewDecision, TraceRecord
 from ..domain.training import (
     TrainingFrameReview,
@@ -58,6 +59,7 @@ class InMemoryEventRepository:
         self._development_approvals: dict[str, DevelopmentApproval] = {}
         self._rule_proposals: dict[str, RuleProposal] = {}
         self._incident_media: dict[str, IncidentMedia] = {}
+        self._intervention_priorities: dict[str, InterventionPriority] = {}
         self._training_samples: dict[str, TrainingSample] = {}
         self._training_jobs: dict[str, TrainingJob] = {}
         self._model_versions: dict[str, ModelVersion] = {}
@@ -499,6 +501,89 @@ class InMemoryEventRepository:
                 if analysis_id is None or item.analysis_id == analysis_id
             ]
             return _copy(sorted(items, key=lambda item: (item.created_at, item.media_id)))
+
+    def save_intervention_priority(
+        self, priority: InterventionPriority
+    ) -> InterventionPriority:
+        with self._lock:
+            event = self._events.get(priority.event_id)
+            if event is None:
+                raise RepositoryNotFoundError(f"event bulunamadı: {priority.event_id}")
+            if (
+                priority.analysis_id != event.analysis_id
+                or priority.event_revision != event.revision
+            ):
+                raise RepositoryConflictError(
+                    "intervention priority event parent veya revision ile eşleşmiyor"
+                )
+            by_event = next(
+                (
+                    item
+                    for item in self._intervention_priorities.values()
+                    if item.event_id == priority.event_id
+                ),
+                None,
+            )
+            current = self._intervention_priorities.get(priority.priority_id)
+            if by_event is not None and by_event.priority_id != priority.priority_id:
+                raise RepositoryConflictError(
+                    "event için farklı intervention priority zaten var"
+                )
+            if current is not None:
+                if current.event_id != priority.event_id:
+                    raise RepositoryConflictError(
+                        "intervention priority event kimliği değiştirilemez"
+                    )
+                if priority.revision != current.revision + 1:
+                    if priority.model_dump() == current.model_dump():
+                        return _copy(current)
+                    raise RepositoryConflictError(
+                        "intervention priority revision sıralı ilerlemelidir"
+                    )
+                if priority.created_at != current.created_at:
+                    raise RepositoryConflictError(
+                        "intervention priority created_at değiştirilemez"
+                    )
+            elif priority.revision != 1:
+                raise RepositoryConflictError(
+                    "yeni intervention priority revision 1 olmalıdır"
+                )
+            self._intervention_priorities[priority.priority_id] = _copy(priority)
+            return _copy(priority)
+
+    def get_intervention_priority(
+        self, priority_id: str
+    ) -> InterventionPriority | None:
+        with self._lock:
+            item = self._intervention_priorities.get(priority_id)
+            return _copy(item) if item is not None else None
+
+    def get_intervention_priority_for_event(
+        self, event_id: str
+    ) -> InterventionPriority | None:
+        with self._lock:
+            item = next(
+                (
+                    priority
+                    for priority in self._intervention_priorities.values()
+                    if priority.event_id == event_id
+                ),
+                None,
+            )
+            return _copy(item) if item is not None else None
+
+    def list_intervention_priorities(
+        self, analysis_id: str | None = None
+    ) -> list[InterventionPriority]:
+        with self._lock:
+            items = [
+                item
+                for item in self._intervention_priorities.values()
+                if analysis_id is None or item.analysis_id == analysis_id
+            ]
+            return _copy(
+                sorted(items, key=lambda item: (item.created_at, item.priority_id))
+            )
 
     def create_training_samples(self, samples: list[TrainingSample]) -> list[TrainingSample]:
         with self._lock:

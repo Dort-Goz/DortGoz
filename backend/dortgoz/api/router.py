@@ -21,6 +21,7 @@ from ..domain.event import VerifiedEvent
 from ..domain.evidence import EvidenceItem, VerifiedEventType
 from ..domain.feedback import DevelopmentApproval
 from ..domain.memory import AnalysisStatus
+from ..domain.priority import InterventionPriority
 from ..domain.provenance import (
     HumanReview,
     ProcedureSource,
@@ -362,6 +363,16 @@ async def get_event_media(event_id: str) -> IncidentMediaView:
     if media is None:
         raise RepositoryNotFoundError(f"event medyası bulunamadı: {event_id}")
     return _incident_media_view(media)
+
+
+@router.get("/events/{event_id}/priority", response_model=InterventionPriority)
+async def get_event_priority(event_id: str) -> InterventionPriority:
+    if runtime.repository.get_event(event_id) is None:
+        raise RepositoryNotFoundError(f"event bulunamadı: {event_id}")
+    priority = runtime.repository.get_intervention_priority_for_event(event_id)
+    if priority is None:
+        raise RepositoryNotFoundError(f"event önceliği bulunamadı: {event_id}")
+    return priority
 
 
 @router.post("/events/{event_id}/review", response_model=HumanReview)

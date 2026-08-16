@@ -25,6 +25,10 @@ interface TriageItem {
   clip_start: number | null;
   clip_end: number | null;
   media_thumbnail_url: string | null;
+  intervention_score: number;
+  intervention_band: "routine" | "review" | "high" | "urgent";
+  intervention_reasons: string[];
+  priority_ruleset_version: string;
 }
 
 interface RuleProposal {
@@ -46,6 +50,8 @@ interface Snapshot {
   rule_proposals: RuleProposal[];
   categories: string[];
   protected_categories: string[];
+  queue_overflow_count: number;
+  critical_overflow_count: number;
 }
 
 /** Teknik gerekçe metnini operatör diline çevirir (ham metin tooltip'te kalır).
@@ -76,6 +82,20 @@ const RISK_CLS: Record<string, string> = {
   yuksek: "bg-orange-900 text-orange-200", kritik: "bg-red-900 text-red-200",
 };
 
+const PRIORITY_TR = {
+  routine: "Rutin",
+  review: "İncelenmeli",
+  high: "Yüksek",
+  urgent: "Acil",
+} as const;
+
+const PRIORITY_CLS = {
+  routine: "bg-zinc-800 text-zinc-300",
+  review: "bg-amber-900 text-amber-200",
+  high: "bg-orange-900 text-orange-200",
+  urgent: "bg-red-900 text-red-100",
+} as const;
+
 const clock = (t: number) =>
   `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
 const wallClock = (epoch: number) =>
@@ -102,6 +122,12 @@ function PendingCard({ item, categories, feedLabel, onDecide }: {
             {feedLabel} · video {clock(item.t)} · {wallClock(item.wall)}
           </div>
           <div className="flex gap-1 mt-0.5">
+            <span
+              className={`rounded px-1 font-medium ${PRIORITY_CLS[item.intervention_band]}`}
+              title={item.intervention_reasons.join("\n")}
+            >
+              {item.intervention_score} · {PRIORITY_TR[item.intervention_band]}
+            </span>
             <span className={`rounded px-1 ${RISK_CLS[item.risk] ?? "bg-zinc-800"}`}>
               {item.risk}
             </span>
@@ -120,6 +146,11 @@ function PendingCard({ item, categories, feedLabel, onDecide }: {
       {item.needs_review && item.review_reason && (
         <div className="text-amber-300/90" title={item.review_reason}>
           ? {humanizeReason(item.review_reason)}
+        </div>
+      )}
+      {item.intervention_reasons.length > 0 && (
+        <div className="truncate text-zinc-500" title={item.intervention_reasons.join("\n")}>
+          Öncelik: {item.intervention_reasons.join(" · ")}
         </div>
       )}
       {item.clip_url && (
@@ -237,6 +268,11 @@ export default function TriagePanel({ onSelectFeed, feedNames = {} }: {
             {error}
           </div>
         )}
+        {snap.critical_overflow_count > 0 && (
+          <div className="mb-1.5 rounded border border-red-800 bg-red-950/60 px-2 py-1 text-xs text-red-100">
+            Kuyruk dolu. {snap.critical_overflow_count} kritik olay güvenlik için kuyrukta tutuluyor.
+          </div>
+        )}
         <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5">
           {snap.pending.length === 0 && (
             <div className="text-zinc-500 text-xs">Bekleyen olay yok.</div>
@@ -314,6 +350,9 @@ export default function TriagePanel({ onSelectFeed, feedNames = {} }: {
             <div key={i.key} className="rounded border border-emerald-900/60 bg-emerald-950/20 px-2 py-1">
               <span className="font-medium text-emerald-300">
                 {CATEGORY_TR[i.operator_category] ?? i.operator_category}
+              </span>
+              <span className={`ml-1 rounded px-1 ${PRIORITY_CLS[i.intervention_band]}`}>
+                {i.intervention_score} · {PRIORITY_TR[i.intervention_band]}
               </span>
               <span className="text-zinc-400">
                 {" "}· {feedNames[i.feed] || i.feed || "ana akış"} · {clock(i.t)}

@@ -28,6 +28,7 @@ from .feedback import (
 )
 from .media import IncidentMedia
 from .memory import AnalysisProvenance, AnalysisRecord, AnalysisResult, AnalysisStatus
+from .priority import InterventionBand, InterventionPriority, intervention_band_for_score
 from .provenance import (
     HumanReview,
     ModelRunRef,
@@ -103,6 +104,9 @@ __all__ = [
     "HumanReview",
     "IncidentMedia",
     "KeyframeRef",
+    "InterventionBand",
+    "InterventionPriority",
+    "intervention_band_for_score",
     "ModelRunRef",
     "ProcedureSource",
     "ReviewDecision",

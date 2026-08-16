@@ -151,6 +151,9 @@ def test_incident_update_lands_in_pending(store):
     assert item["model_category"] == "vandalizm"
     assert item["event_id"] == "event:KAM-1:inc-1"
     assert item["clip_url"] is None
+    assert item["intervention_score"] == 45
+    assert item["intervention_band"] == "review"
+    assert item["priority_ruleset_version"] == "intervention-priority-v1"
 
 
 def test_pending_card_exposes_persisted_incident_clip(store):
@@ -193,6 +196,42 @@ def test_lifecycle_update_refreshes_not_duplicates(store):
     assert len(pending) == 1
     assert pending[0]["risk"] == "kritik"
     assert pending[0]["phase"] == "sonuclandi"
+    assert pending[0]["intervention_score"] == 75
+    priority = store.repo.get_intervention_priority_for_event(pending[0]["event_id"])
+    assert priority is not None
+    assert priority.revision == 2
+
+
+def test_pending_queue_is_sorted_by_intervention_score(store):
+    store.observe(
+        _incident(
+            incident_id="routine",
+            risk="dusuk",
+            anomaly_type="vandalizm",
+            phase="sonuclandi",
+        )
+    )
+    store.observe(
+        _incident(
+            incident_id="urgent",
+            risk="dusuk",
+            anomaly_type="silahli_olay",
+            phase="sonuclandi",
+        )
+    )
+    store.observe(
+        _incident(
+            incident_id="review",
+            risk="orta",
+            anomaly_type="hirsizlik",
+            phase="sonuclandi",
+        )
+    )
+
+    pending = store.snapshot()["pending"]
+
+    assert [item["incident_id"] for item in pending] == ["urgent", "review", "routine"]
+    assert [item["intervention_score"] for item in pending] == [80, 40, 15]
 
 
 def test_non_incident_events_ignored(store):
@@ -328,4 +367,52 @@ def test_expired_rule_stops_automatic_suppression():
 def test_pending_is_budgeted(store):
     for index in range(triage.MAX_PENDING + 20):
         store.observe(_incident(feed=f"KAM-{index}", incident_id=f"inc-{index}"))
-    assert len(store.snapshot()["pending"]) == triage.MAX_PENDING
+    snapshot = store.snapshot()
+    assert len(snapshot["pending"]) == triage.MAX_PENDING
+    assert snapshot["queue_overflow_count"] == 20
+
+
+def test_queue_overflow_removes_lowest_score_not_critical(monkeypatch):
+    monkeypatch.setattr(triage, "MAX_PENDING", 2)
+    store = CanonicalTriageStore()
+    store.observe(
+        _incident(incident_id="low-1", risk="dusuk", phase="sonuclandi")
+    )
+    store.observe(
+        _incident(incident_id="low-2", risk="orta", phase="sonuclandi")
+    )
+    store.observe(
+        _incident(
+            incident_id="critical",
+            risk="kritik",
+            anomaly_type="silahli_olay",
+        )
+    )
+
+    snapshot = store.snapshot()
+
+    assert len(snapshot["pending"]) == 2
+    assert {item["incident_id"] for item in snapshot["pending"]} == {
+        "low-2",
+        "critical",
+    }
+    assert snapshot["queue_overflow_count"] == 1
+
+
+def test_queue_can_temporarily_exceed_budget_to_keep_critical_events(monkeypatch):
+    monkeypatch.setattr(triage, "MAX_PENDING", 2)
+    store = CanonicalTriageStore()
+    for index in range(3):
+        store.observe(
+            _incident(
+                incident_id=f"critical-{index}",
+                risk="kritik",
+                anomaly_type="yangin",
+            )
+        )
+
+    snapshot = store.snapshot()
+
+    assert len(snapshot["pending"]) == 3
+    assert snapshot["critical_overflow_count"] == 1
+    assert snapshot["queue_overflow_count"] == 0

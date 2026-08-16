@@ -8,6 +8,7 @@ etkinleşmez. Kritik olay sınıfları hiçbir zaman bastırılamaz.
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
@@ -21,11 +22,19 @@ from ..domain.feedback import (
     RuleProposal,
     RuleProposalStatus,
 )
+from ..domain.priority import intervention_band_for_score
 from ..domain.provenance import HumanReview, ReviewDecision
 from ..domain.taxonomy import canonical_event_type_from_ws_label
-from ..events import Event
+from ..events import Event, IncidentUpdate
 from ..repositories.protocols import EventRepository
 from .event_service import EventMemoryService
+from .intervention_priority import (
+    RULESET_VERSION,
+    InterventionPriorityService,
+    calculate_priority_score,
+)
+
+LOGGER = logging.getLogger(__name__)
 
 CATEGORIES = [
     "kavga", "saldiri", "hirsizlik", "silahli_olay", "yangin",
@@ -73,6 +82,10 @@ class TriageItem:
     decided_wall: float | None = None
     tekrar: int = 1
     review_ids: list[str] = field(default_factory=list)
+    intervention_score: int = 0
+    intervention_band: str = "routine"
+    intervention_reasons: list[str] = field(default_factory=list)
+    priority_ruleset_version: str = RULESET_VERSION
 
 
 class TriageStore:
@@ -87,11 +100,15 @@ class TriageStore:
         self._resolved: list[TriageItem] = []
         self.dismissed_count = 0
         self.auto_dismissed = 0
+        self.queue_overflow_count = 0
         self.repository = repository
         self.event_service = event_service or (
             EventMemoryService(repository) if repository is not None else None
         )
         self.event_id_resolver = event_id_resolver
+        self.priority_service = (
+            InterventionPriorityService(repository) if repository is not None else None
+        )
         self._clock = clock or (lambda: datetime.now(UTC))
 
     def configure(
@@ -105,6 +122,7 @@ class TriageStore:
         self.repository = repository
         self.event_service = event_service
         self.event_id_resolver = event_id_resolver
+        self.priority_service = InterventionPriorityService(repository)
 
     def observe(self, event: Event) -> None:
         payload = event.payload
@@ -112,6 +130,7 @@ class TriageStore:
             return
         key = f"{event.feed}:{payload.incident_id}"
         event_id = self._resolve_event_id(event.feed, payload.incident_id)
+        priority = self._priority_values(payload, event_id)
         if key in self._pending:
             item = self._pending[key]
             item.t, item.risk, item.phase = payload.t, payload.risk, payload.phase
@@ -121,6 +140,7 @@ class TriageStore:
             item.thumbnail = payload.thumbnail or item.thumbnail
             item.needs_review = payload.needs_review
             item.review_reason = payload.review_reason
+            self._apply_priority(item, priority)
             return
         if any(item.key == key for item in self._resolved):
             return
@@ -145,7 +165,7 @@ class TriageStore:
             )
             self._mark_rule_applied(rule)
             self.auto_dismissed += 1
-            item = self._new_item(event, event_id)
+            item = self._new_item(event, event_id, priority)
             item.verdict = "sorun_degil"
             item.note = f"onaylı süreli kural: {rule.proposal_id}"
             item.decided_wall = time.time()
@@ -153,14 +173,13 @@ class TriageStore:
             self._append_resolved(item)
             return
 
-        item = self._new_item(event, event_id)
+        item = self._new_item(event, event_id, priority)
         if rule is not None and event_id is None:
             suffix = "Canonical olay kaydı hazır değil; kural güvenli biçimde uygulanmadı."
             item.needs_review = True
             item.review_reason = " · ".join(filter(None, [item.review_reason, suffix]))
         self._pending[key] = item
-        while len(self._pending) > MAX_PENDING:
-            self._pending.pop(next(iter(self._pending)))
+        self._enforce_capacity()
 
     def decide(
         self,
@@ -319,11 +338,21 @@ class TriageStore:
             ]
         return {
             "pending": [
-                self._item_view(item) for item in reversed(list(self._pending.values()))
+                self._item_view(item)
+                for item in sorted(
+                    self._pending.values(),
+                    key=lambda queued: (
+                        -queued.intervention_score,
+                        queued.wall,
+                        queued.key,
+                    ),
+                )
             ],
             "confirmed": confirmed,
             "dismissed_count": self.dismissed_count,
             "auto_dismissed": self.auto_dismissed,
+            "queue_overflow_count": self.queue_overflow_count,
+            "critical_overflow_count": max(0, len(self._pending) - MAX_PENDING),
             "rule_proposals": proposals,
             "categories": CATEGORIES,
             "protected_categories": sorted(PROTECTED_CATEGORIES),
@@ -334,10 +363,16 @@ class TriageStore:
         self._resolved.clear()
         self.dismissed_count = 0
         self.auto_dismissed = 0
+        self.queue_overflow_count = 0
 
-    def _new_item(self, event: Event, event_id: str | None) -> TriageItem:
+    def _new_item(
+        self,
+        event: Event,
+        event_id: str | None,
+        priority: tuple[int, str, list[str], str],
+    ) -> TriageItem:
         payload = event.payload
-        return TriageItem(
+        item = TriageItem(
             key=f"{event.feed}:{payload.incident_id}",
             feed=event.feed,
             incident_id=payload.incident_id,
@@ -352,6 +387,87 @@ class TriageStore:
             needs_review=payload.needs_review,
             review_reason=payload.review_reason,
         )
+        self._apply_priority(item, priority)
+        return item
+
+    def _priority_values(
+        self, payload: IncidentUpdate, event_id: str | None
+    ) -> tuple[int, str, list[str], str]:
+        if self.priority_service is not None and event_id is not None:
+            try:
+                stored = self.priority_service.assess_and_save(
+                    event_id,
+                    risk=payload.risk,
+                    event_type=payload.anomaly_type,
+                    phase=payload.phase,
+                    needs_review=payload.needs_review,
+                )
+                return (
+                    stored.score,
+                    stored.band.value,
+                    list(stored.reasons),
+                    stored.ruleset_version,
+                )
+            except Exception:
+                LOGGER.exception(
+                    "intervention priority kalıcı kayda yazılamadı: event=%s",
+                    event_id,
+                )
+        calculated = calculate_priority_score(
+            risk=payload.risk,
+            event_type=payload.anomaly_type,
+            phase=payload.phase,
+            needs_review=payload.needs_review,
+        )
+        return (
+            calculated.score,
+            intervention_band_for_score(calculated.score).value,
+            list(calculated.reasons),
+            RULESET_VERSION,
+        )
+
+    @staticmethod
+    def _apply_priority(
+        item: TriageItem, priority: tuple[int, str, list[str], str]
+    ) -> None:
+        (
+            item.intervention_score,
+            item.intervention_band,
+            item.intervention_reasons,
+            item.priority_ruleset_version,
+        ) = priority
+
+    def _enforce_capacity(self) -> None:
+        while len(self._pending) > MAX_PENDING:
+            evictable = [
+                item
+                for item in self._pending.values()
+                if item.intervention_band != "urgent"
+                and item.model_category not in PROTECTED_CATEGORIES
+                and item.risk not in PROTECTED_RISKS
+            ]
+            if not evictable:
+                LOGGER.warning(
+                    "nöbet kuyruğu yalnız kritik olaylarla kapasiteyi aştı: %d/%d",
+                    len(self._pending),
+                    MAX_PENDING,
+                )
+                return
+            victim = min(
+                evictable,
+                key=lambda queued: (
+                    queued.phase != "sonuclandi",
+                    queued.intervention_score,
+                    queued.wall,
+                    queued.key,
+                ),
+            )
+            self._pending.pop(victim.key)
+            self.queue_overflow_count += 1
+            LOGGER.warning(
+                "nöbet kartı kapasite nedeniyle görünümden çıkarıldı; canonical kayıt korundu: %s",
+                victim.key,
+            )
 
     def _item_view(self, item: TriageItem) -> dict:
         view = asdict(item)
