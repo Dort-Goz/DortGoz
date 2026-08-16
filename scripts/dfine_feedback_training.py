@@ -14,27 +14,36 @@ from pydantic import ValidationError
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 
-from dortgoz.domain.model_lifecycle import (  # noqa: E402
+from dortgoz.domain.model_lifecycle import (
     DfineArchitecture,
     DfineTrainingPolicy,
     PromotionPolicy,
 )
-from dortgoz.repositories.sqlite import SqliteEventRepository  # noqa: E402
-from dortgoz.services.dataset_manifest import load_dataset_manifest  # noqa: E402
-from dortgoz.services.dfine_training import (  # noqa: E402
+from dortgoz.repositories.sqlite import SqliteEventRepository
+from dortgoz.services.dataset_manifest import load_dataset_manifest
+from dortgoz.services.dfine_evaluation import (
+    build_dfine_test_command,
+    execute_dfine_detector_evaluation,
+    inspect_project_revision,
+    load_dfine_evaluation_plan,
+    normalize_dfine_evaluation_log,
+    prepare_dfine_detector_evaluation,
+    write_dfine_evaluation_plan,
+)
+from dortgoz.services.dfine_training import (
     DfineTrainingError,
     DfineTrainingService,
 )
-from dortgoz.services.evaluation_report import (  # noqa: E402
+from dortgoz.services.evaluation_report import (
     DfineEvaluationReport,
     EvaluationReportError,
     build_dfine_evaluation_report,
 )
-from dortgoz.services.model_registry import (  # noqa: E402
+from dortgoz.services.model_registry import (
     ModelRegistryError,
     ModelRegistryService,
 )
-from dortgoz.services.training_selection import (  # noqa: E402
+from dortgoz.services.training_selection import (
     load_training_selection_policy,
 )
 
@@ -82,7 +91,9 @@ def _parser() -> argparse.ArgumentParser:
         default=REPO_ROOT / "configs" / "dfine_sample_selection.json",
     )
 
-    run = commands.add_parser("run", help="kuyruktaki işi yerel CUDA worker'da çalıştır")
+    run = commands.add_parser(
+        "run", help="kuyruktaki işi yerel CUDA worker'da çalıştır"
+    )
     _common(run)
     run.add_argument("job_id")
     run.add_argument("--dfine-repository", type=_path, required=True)
@@ -104,13 +115,58 @@ def _parser() -> argparse.ArgumentParser:
     artifacts.add_argument("model_version_id")
     artifacts.add_argument("--test-dataset-manifest", type=_path, required=True)
     artifacts.add_argument("--detector-report", type=_path, required=True)
-    artifacts.add_argument(
-        "--e2e-artifact", type=_path, action="append", required=True
-    )
+    artifacts.add_argument("--e2e-artifact", type=_path, action="append", required=True)
     artifacts.add_argument("--evaluator", required=True)
     artifacts.add_argument("--output", type=_path)
 
-    promote = commands.add_parser("promote", help="kapıyı geçen candidate'ı champion yap")
+    prepare_evaluation = commands.add_parser(
+        "prepare-evaluation",
+        help="candidate, COCO test seti ve üç shadow tekrarı hash ile kilitle",
+    )
+    _common(prepare_evaluation)
+    prepare_evaluation.add_argument("model_version_id")
+    prepare_evaluation.add_argument(
+        "--test-dataset-manifest", type=_path, required=True
+    )
+    prepare_evaluation.add_argument("--dfine-repository", type=_path, required=True)
+    prepare_evaluation.add_argument("--coco-annotations", type=_path, required=True)
+    prepare_evaluation.add_argument("--frame-root", type=_path, required=True)
+    prepare_evaluation.add_argument("--created-by", required=True)
+    prepare_evaluation.add_argument(
+        "--python", type=_path, default=Path(sys.executable)
+    )
+    prepare_evaluation.add_argument("--batch-size", type=int, default=2)
+    prepare_evaluation.add_argument("--workers", type=int, default=2)
+    prepare_evaluation.add_argument(
+        "--runs-root", type=_path, default=REPO_ROOT / "runs"
+    )
+    prepare_evaluation.add_argument("--output", type=_path)
+
+    run_evaluation = commands.add_parser(
+        "run-detector-evaluation",
+        help="hazır planı yerel CUDA worker'da bütçeli çalıştır",
+    )
+    run_evaluation.add_argument("--event-store", type=_path, required=True)
+    run_evaluation.add_argument("--plan", type=_path, required=True)
+    run_evaluation.add_argument("--dfine-repository", type=_path, required=True)
+    run_evaluation.add_argument("--python", type=_path, default=Path(sys.executable))
+    run_evaluation.add_argument("--runs-root", type=_path, default=REPO_ROOT / "runs")
+    run_evaluation.add_argument("--gpu-index", type=int, default=0)
+    run_evaluation.add_argument("--batch-size", type=int, default=2)
+    run_evaluation.add_argument("--workers", type=int, default=2)
+    run_evaluation.add_argument("--max-gpu-minutes", type=int, default=60)
+
+    normalize_detector = commands.add_parser(
+        "normalize-detector",
+        help="önceden alınmış resmî D-FINE logunu hash bağlı rapora çevir",
+    )
+    normalize_detector.add_argument("--plan", type=_path, required=True)
+    normalize_detector.add_argument("--log", type=_path, required=True)
+    normalize_detector.add_argument("--output", type=_path, required=True)
+
+    promote = commands.add_parser(
+        "promote", help="kapıyı geçen candidate'ı champion yap"
+    )
     _common(promote)
     promote.add_argument("model_version_id")
     promote.add_argument("--approved-by", required=True)
@@ -169,7 +225,9 @@ def _training_service(
             if getattr(args, "selection_policy", None) is not None
             else None
         ),
-        active_analysis_probe=lambda: _active_analysis_probe(args.event_store.resolve()),
+        active_analysis_probe=lambda: _active_analysis_probe(
+            args.event_store.resolve()
+        ),
     )
 
 
@@ -191,6 +249,42 @@ def main() -> None:
     parser = _parser()
     args = parser.parse_args()
     try:
+        if args.command == "normalize-detector":
+            artifact = normalize_dfine_evaluation_log(
+                plan=load_dfine_evaluation_plan(args.plan),
+                log_path=args.log,
+                output_path=args.output,
+            )
+            _print_json(
+                {
+                    "detector_report": str(args.output.resolve()),
+                    "artifact": artifact.model_dump(mode="json"),
+                }
+            )
+            return
+        if args.command == "run-detector-evaluation":
+            artifact, outcome, report_path = execute_dfine_detector_evaluation(
+                plan=load_dfine_evaluation_plan(args.plan),
+                workspace_root=REPO_ROOT,
+                dfine_repository=args.dfine_repository,
+                python_executable=args.python,
+                runs_root=args.runs_root,
+                gpu_index=args.gpu_index,
+                batch_size=args.batch_size,
+                workers=args.workers,
+                max_gpu_minutes=args.max_gpu_minutes,
+                active_analysis_probe=lambda: _active_analysis_probe(
+                    args.event_store.resolve()
+                ),
+            )
+            _print_json(
+                {
+                    "detector_report": str(report_path),
+                    "elapsed_seconds": outcome.elapsed_seconds,
+                    "artifact": artifact.model_dump(mode="json"),
+                }
+            )
+            return
         training_policy, promotion_policy = _load_policies(args.policy)
         repository = SqliteEventRepository(args.event_store)
         try:
@@ -210,13 +304,20 @@ def main() -> None:
                 )
                 _print_json(job)
             elif args.command == "run":
-                job, version = _training_service(repository, args, training_policy).execute(
+                job, version = _training_service(
+                    repository, args, training_policy
+                ).execute(
                     args.job_id,
                     dfine_repository=args.dfine_repository,
                     base_checkpoint=args.base_checkpoint,
                     python_executable=args.python,
                 )
-                _print_json({"job": job.model_dump(mode="json"), "candidate": version.model_dump(mode="json")})
+                _print_json(
+                    {
+                        "job": job.model_dump(mode="json"),
+                        "candidate": version.model_dump(mode="json"),
+                    }
+                )
             elif args.command == "evaluate":
                 report = DfineEvaluationReport.model_validate_json(
                     args.report.read_text(encoding="utf-8")
@@ -257,6 +358,57 @@ def main() -> None:
                         "model_version": version.model_dump(mode="json"),
                     }
                 )
+            elif args.command == "prepare-evaluation":
+                candidate = repository.get_model_version(args.model_version_id)
+                if candidate is None:
+                    raise ModelRegistryError(
+                        "MODEL_VERSION_NOT_FOUND",
+                        f"model version bulunamadı: {args.model_version_id}",
+                    )
+                training_job = repository.get_training_job(candidate.training_job_id)
+                if training_job is None:
+                    raise ModelRegistryError(
+                        "TRAINING_JOB_NOT_FOUND",
+                        f"training job bulunamadı: {candidate.training_job_id}",
+                    )
+                plan = prepare_dfine_detector_evaluation(
+                    candidate=candidate,
+                    test_dataset_manifest=load_dataset_manifest(
+                        args.test_dataset_manifest
+                    ),
+                    workspace_root=REPO_ROOT,
+                    dfine_repository=args.dfine_repository,
+                    coco_annotations=args.coco_annotations,
+                    frame_root=args.frame_root,
+                    code_revision=inspect_project_revision(REPO_ROOT),
+                    created_by=args.created_by,
+                    expected_category_names=training_job.category_names,
+                )
+                output = args.output or (
+                    args.runs_root
+                    / "dfine-evaluations"
+                    / plan.plan_id
+                    / "evaluation-plan.json"
+                )
+                write_dfine_evaluation_plan(output, plan)
+                command = build_dfine_test_command(
+                    plan=plan,
+                    workspace_root=REPO_ROOT,
+                    dfine_repository=args.dfine_repository,
+                    python_executable=args.python,
+                    output_dir=(
+                        args.runs_root / "dfine-evaluations" / plan.plan_id / "detector"
+                    ),
+                    batch_size=args.batch_size,
+                    workers=args.workers,
+                )
+                _print_json(
+                    {
+                        "evaluation_plan": str(output.resolve()),
+                        "plan": plan.model_dump(mode="json"),
+                        "verified_test_command_argv": command,
+                    }
+                )
             elif args.command == "promote":
                 version = _registry(repository).promote(
                     args.model_version_id,
@@ -275,7 +427,11 @@ def main() -> None:
             elif args.command == "health-check":
                 version = _registry(repository).reconcile_active_manifest()
                 _print_json(
-                    {"active_model": version.model_dump(mode="json") if version else None}
+                    {
+                        "active_model": version.model_dump(mode="json")
+                        if version
+                        else None
+                    }
                 )
             else:
                 _print_json(

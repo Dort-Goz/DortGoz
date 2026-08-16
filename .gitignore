@@ -4,6 +4,7 @@ __pycache__/
 .venv/
 .pytest_cache/
 .pytest-tmp*/
+.tmp/
 .ruff_cache/
 
 # Node

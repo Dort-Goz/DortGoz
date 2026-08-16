@@ -38,6 +38,8 @@ class DetectorEvaluationArtifact(BaseModel):
     map_50_95: float = Field(ge=0, le=1)
     map_50: float = Field(ge=0, le=1)
     measured_at: datetime
+    evaluation_plan_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    source_log_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
     def metrics_are_consistent(self) -> DetectorEvaluationArtifact:
@@ -105,10 +107,7 @@ class DfineEvaluationReport(BaseModel):
             raise ValueError("measured_at saat dilimi içermelidir")
         if len(self.e2e_artifact_sha256s) != len(set(self.e2e_artifact_sha256s)):
             raise ValueError("e2e artifact SHA-256 değerleri benzersiz olmalıdır")
-        if any(
-            not re.fullmatch(r"[0-9a-f]{64}", value)
-            for value in self.e2e_artifact_sha256s
-        ):
+        if any(not re.fullmatch(r"[0-9a-f]{64}", value) for value in self.e2e_artifact_sha256s):
             raise ValueError("e2e artifact SHA-256 değeri geçersiz")
         return self
 
@@ -264,9 +263,7 @@ def _load_shadow_records(path: Path) -> list[ShadowEvaluationRecord]:
                 f"shadow artifact satırı geçersiz: {path}:{line_number}: {exc}",
             ) from exc
     if not records:
-        raise EvaluationReportError(
-            "SHADOW_ARTIFACT_EMPTY", f"shadow artifact boş: {path}"
-        )
+        raise EvaluationReportError("SHADOW_ARTIFACT_EMPTY", f"shadow artifact boş: {path}")
     return records
 
 
