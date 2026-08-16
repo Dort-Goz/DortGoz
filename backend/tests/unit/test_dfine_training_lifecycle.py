@@ -22,6 +22,7 @@ from dortgoz.domain.dataset import (
 )
 from dortgoz.domain.model_lifecycle import (
     DfineArchitecture,
+    DfineDeploymentArtifact,
     DfineTrainingPolicy,
     ModelStage,
     ModelVersion,
@@ -138,9 +139,7 @@ class _SampleRepository(InMemoryEventRepository):
                 approval_id=f"approval-{review.split.value}",
                 video_id=f"video-{review.split.value}",
                 source_video_sha256=(
-                    _sha(b"train")
-                    if review.split == DatasetSplit.TRAIN
-                    else _sha(b"validation")
+                    _sha(b"train") if review.split == DatasetSplit.TRAIN else _sha(b"validation")
                 ),
                 status=TrainingSampleStatus.VERIFIED,
                 dataset_id=review.dataset_id,
@@ -296,9 +295,10 @@ def test_training_plan_and_worker_create_only_a_candidate(tmp_path: Path) -> Non
     assert job.selection_policy_fingerprint is not None
     assert job.selection_fingerprint is not None
     selection_report = workspace / job.export_ref / "selection_report.json"
-    assert json.loads(selection_report.read_text(encoding="utf-8"))[
-        "selection_fingerprint"
-    ] == job.selection_fingerprint
+    assert (
+        json.loads(selection_report.read_text(encoding="utf-8"))["selection_fingerprint"]
+        == job.selection_fingerprint
+    )
     assert finished.status == TrainingJobStatus.SUCCEEDED
     assert finished.elapsed_seconds == 12.5
     assert candidate.stage == ModelStage.CANDIDATE
@@ -369,7 +369,7 @@ def _successful_job(
         }
     )
     repository.update_training_job(succeeded)
-    return repository.create_model_version(
+    candidate = repository.create_model_version(
         ModelVersion(
             model_version_id=f"model-{suffix}",
             training_job_id=succeeded.job_id,
@@ -381,11 +381,68 @@ def _successful_job(
             dfine_repository_revision=succeeded.dfine_repository_revision,
         )
     )
+    onnx = workspace / "models" / "dfine" / "candidates" / suffix / "model.onnx"
+    onnx.parent.mkdir(parents=True, exist_ok=True)
+    onnx.write_bytes(f"onnx-{suffix}".encode())
+    exported_at = datetime.now(UTC)
+    artifact_payload = {
+        "artifact_version": "1.0.0",
+        "onnx_ref": onnx.relative_to(workspace).as_posix(),
+        "onnx_sha256": sha256_file(onnx),
+        "source_checkpoint_sha256": candidate.checkpoint_sha256,
+        "dfine_repository_revision": candidate.dfine_repository_revision,
+        "input_names": ["images", "orig_target_sizes"],
+        "output_names": ["labels", "boxes", "scores"],
+        "input_size": 640,
+        "category_names": ["person"],
+        "source_log_sha256": "9" * 64,
+        "exported_at": exported_at,
+    }
+    draft = DfineDeploymentArtifact.model_construct(
+        **artifact_payload,
+        artifact_fingerprint="0" * 64,
+    )
+    normalized = draft.model_dump(mode="json", exclude={"artifact_fingerprint"})
+    deployment = DfineDeploymentArtifact.model_validate(
+        {
+            **normalized,
+            "artifact_fingerprint": _sha(
+                json.dumps(
+                    normalized,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ),
+        }
+    )
+    (onnx.parent / "config.json").write_text(
+        json.dumps(
+            {
+                "config_version": "1.0.0",
+                "id2label": {"0": "person"},
+                "interest_labels": ["person"],
+                "input_contract": ["images", "orig_target_sizes"],
+                "output_contract": ["labels", "boxes", "scores"],
+                "onnx_sha256": deployment.onnx_sha256,
+                "deployment_fingerprint": deployment.artifact_fingerprint,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return repository.update_model_version(
+        ModelVersion.model_validate(
+            {
+                **candidate.model_dump(),
+                "deployment": deployment.model_dump(),
+                "updated_at": exported_at,
+                "revision": candidate.revision + 1,
+            }
+        )
+    )
 
 
-def _record_good_evaluation(
-    registry: ModelRegistryService, version: ModelVersion
-) -> ModelVersion:
+def _record_good_evaluation(registry: ModelRegistryService, version: ModelVersion) -> ModelVersion:
     return registry.record_evaluation(
         version.model_version_id,
         test_dataset_fingerprint="f" * 64,
@@ -426,18 +483,14 @@ def test_promotion_is_gated_and_failed_champion_rolls_back(tmp_path: Path) -> No
         workspace_root=workspace,
         registry_root=workspace / "models" / "dfine" / "local",
     )
-    first = _record_good_evaluation(
-        registry, _successful_job(repository, workspace, suffix="one")
-    )
+    first = _record_good_evaluation(registry, _successful_job(repository, workspace, suffix="one"))
     champion_one = registry.promote(
         first.model_version_id,
         policy=_promotion_policy(),
         approved_by="operator",
         reason="ilk doğrulanmış sürüm",
     )
-    second = _record_good_evaluation(
-        registry, _successful_job(repository, workspace, suffix="two")
-    )
+    second = _record_good_evaluation(registry, _successful_job(repository, workspace, suffix="two"))
 
     with pytest.raises(ModelRegistryError, match="terfi kapısından geçemedi") as rejected:
         registry.promote(
@@ -487,9 +540,7 @@ def test_sqlite_training_job_and_candidate_survive_restart(tmp_path: Path) -> No
     with sqlite3.connect(database) as connection:
         tables = {
             row[0]
-            for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table'"
-            )
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
         actions = {
             row[0]

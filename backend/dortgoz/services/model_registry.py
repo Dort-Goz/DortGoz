@@ -66,6 +66,11 @@ class ModelRegistryService:
                 "MODEL_NOT_EVALUATABLE",
                 "yalnız değerlendirilmemiş candidate model ölçülebilir",
             )
+        if version.deployment is None:
+            raise ModelRegistryError(
+                "MODEL_DEPLOYMENT_MISSING",
+                "candidate değerlendirmeden önce production ONNX'e aktarılmalıdır",
+            )
         payload = {
             "evaluation_version": "1.0.0",
             "checkpoint_sha256": version.checkpoint_sha256,
@@ -109,6 +114,8 @@ class ModelRegistryService:
         if evaluation is None:
             return ["candidate evaluation kaydı yok"]
         failures: list[str] = []
+        if candidate.deployment is None:
+            failures.append("candidate production ONNX deployment kaydı yok")
         checks = (
             (
                 evaluation.map_50_95 >= policy.minimum_map_50_95,
@@ -120,8 +127,7 @@ class ModelRegistryService:
                 f"{evaluation.critical_recall:.3f} < {policy.minimum_critical_recall:.3f}",
             ),
             (
-                evaluation.false_alarms_per_hour
-                <= policy.maximum_false_alarms_per_hour,
+                evaluation.false_alarms_per_hour <= policy.maximum_false_alarms_per_hour,
                 "yanlış alarm/saat "
                 f"{evaluation.false_alarms_per_hour:.3f} > "
                 f"{policy.maximum_false_alarms_per_hour:.3f}",
@@ -133,8 +139,7 @@ class ModelRegistryService:
             ),
             (
                 evaluation.peak_memory_mb <= policy.maximum_peak_memory_mb,
-                f"tepe bellek {evaluation.peak_memory_mb} MB > "
-                f"{policy.maximum_peak_memory_mb} MB",
+                f"tepe bellek {evaluation.peak_memory_mb} MB > {policy.maximum_peak_memory_mb} MB",
             ),
             (
                 evaluation.repetitions >= policy.minimum_repetitions,
@@ -153,13 +158,11 @@ class ModelRegistryService:
                 ):
                     failures.append("kritik olay recall mevcut champion değerinden düştü")
                 if evaluation.false_alarms_per_hour > (
-                    baseline.false_alarms_per_hour
-                    + policy.maximum_false_alarm_increase
+                    baseline.false_alarms_per_hour + policy.maximum_false_alarm_increase
                 ):
                     failures.append("yanlış alarm/saat mevcut champion değerinden arttı")
                 if evaluation.p95_latency_ms > (
-                    baseline.p95_latency_ms
-                    * (1 + policy.maximum_latency_increase_ratio)
+                    baseline.p95_latency_ms * (1 + policy.maximum_latency_increase_ratio)
                 ):
                     failures.append("p95 gecikme mevcut champion sınırını aştı")
         return failures
@@ -174,10 +177,8 @@ class ModelRegistryService:
     ) -> ModelVersion:
         candidate = self._get_version(model_version_id)
         if candidate.stage != ModelStage.CANDIDATE:
-            raise ModelRegistryError(
-                "MODEL_NOT_CANDIDATE", "yalnız candidate model terfi edebilir"
-            )
-        self._verify_checkpoint(candidate)
+            raise ModelRegistryError("MODEL_NOT_CANDIDATE", "yalnız candidate model terfi edebilir")
+        self._verify_model_artifacts(candidate)
         current = self._current_champion()
         failures = self.promotion_failures(candidate, policy, current)
         if failures:
@@ -227,7 +228,7 @@ class ModelRegistryService:
             raise ModelRegistryError(
                 "ROLLBACK_TARGET_MISSING", "geri dönülecek önceki champion bulunamadı"
             )
-        self._verify_checkpoint(target)
+        self._verify_model_artifacts(target)
         restored = self._champion_version(
             target,
             policy_version=target.promotion_policy_version or "rollback-v1",
@@ -243,7 +244,7 @@ class ModelRegistryService:
         champion = self._current_champion()
         if champion is not None:
             try:
-                self._verify_checkpoint(champion)
+                self._verify_model_artifacts(champion)
             except ModelRegistryError as exc:
                 return self.rollback_failed_champion(
                     champion.model_version_id,
@@ -276,19 +277,53 @@ class ModelRegistryService:
     def _verify_checkpoint(self, version: ModelVersion) -> Path:
         path = self.workspace_root.joinpath(*version.checkpoint_ref.split("/"))
         if path.is_symlink():
-            raise ModelRegistryError(
-                "MODEL_CHECKPOINT_INVALID", "model checkpoint symlink olamaz"
-            )
+            raise ModelRegistryError("MODEL_CHECKPOINT_INVALID", "model checkpoint symlink olamaz")
         resolved = path.resolve()
         if not resolved.is_relative_to(self.workspace_root) or not resolved.is_file():
-            raise ModelRegistryError(
-                "MODEL_CHECKPOINT_MISSING", "model checkpoint bulunamadı"
-            )
+            raise ModelRegistryError("MODEL_CHECKPOINT_MISSING", "model checkpoint bulunamadı")
         if sha256_file(resolved) != version.checkpoint_sha256:
             raise ModelRegistryError(
                 "MODEL_CHECKPOINT_CHANGED", "model checkpoint SHA-256 değeri değişti"
             )
         return resolved
+
+    def _verify_model_artifacts(self, version: ModelVersion) -> tuple[Path, Path]:
+        checkpoint = self._verify_checkpoint(version)
+        deployment = version.deployment
+        if deployment is None:
+            raise ModelRegistryError(
+                "MODEL_DEPLOYMENT_MISSING", "model production ONNX deployment kaydı yok"
+            )
+        path = self.workspace_root.joinpath(*deployment.onnx_ref.split("/"))
+        if path.is_symlink():
+            raise ModelRegistryError("MODEL_ONNX_INVALID", "model ONNX dosyası symlink olamaz")
+        resolved = path.resolve()
+        if not resolved.is_relative_to(self.workspace_root) or not resolved.is_file():
+            raise ModelRegistryError("MODEL_ONNX_MISSING", "model ONNX dosyası bulunamadı")
+        if sha256_file(resolved) != deployment.onnx_sha256:
+            raise ModelRegistryError("MODEL_ONNX_CHANGED", "model ONNX SHA-256 değeri değişti")
+        config = resolved.parent / "config.json"
+        if config.is_symlink() or not config.is_file():
+            raise ModelRegistryError(
+                "MODEL_ONNX_CONFIG_MISSING", "model ONNX config.json dosyası yok"
+            )
+        try:
+            payload = json.loads(config.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ModelRegistryError(
+                "MODEL_ONNX_CONFIG_INVALID", f"model ONNX config okunamadı: {exc}"
+            ) from exc
+        expected_labels = {str(index): name for index, name in enumerate(deployment.category_names)}
+        if (
+            payload.get("id2label") != expected_labels
+            or payload.get("interest_labels") != deployment.category_names
+            or payload.get("onnx_sha256") != deployment.onnx_sha256
+            or payload.get("deployment_fingerprint") != deployment.artifact_fingerprint
+        ):
+            raise ModelRegistryError(
+                "MODEL_ONNX_CONFIG_CHANGED", "model ONNX config deployment ile eşleşmiyor"
+            )
+        return checkpoint, resolved
 
     @staticmethod
     def _champion_version(
@@ -337,6 +372,12 @@ class ModelRegistryService:
             "dataset_fingerprint": version.dataset_fingerprint,
             "export_fingerprint": version.export_fingerprint,
             "dfine_repository_revision": version.dfine_repository_revision,
+            "onnx_ref": version.deployment.onnx_ref if version.deployment else None,
+            "onnx_sha256": (version.deployment.onnx_sha256 if version.deployment else None),
+            "deployment_fingerprint": (
+                version.deployment.artifact_fingerprint if version.deployment else None
+            ),
+            "category_names": (version.deployment.category_names if version.deployment else []),
             "promotion_policy_version": version.promotion_policy_version,
             "activated_at": datetime.now(UTC).isoformat(),
         }

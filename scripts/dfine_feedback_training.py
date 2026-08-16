@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import sqlite3
 import sys
@@ -21,6 +22,7 @@ from dortgoz.domain.model_lifecycle import (
 )
 from dortgoz.repositories.sqlite import SqliteEventRepository
 from dortgoz.services.dataset_manifest import load_dataset_manifest
+from dortgoz.services.dfine_deployment import execute_dfine_onnx_export
 from dortgoz.services.dfine_evaluation import (
     build_dfine_test_command,
     execute_dfine_detector_evaluation,
@@ -42,6 +44,13 @@ from dortgoz.services.evaluation_report import (
 from dortgoz.services.model_registry import (
     ModelRegistryError,
     ModelRegistryService,
+)
+from dortgoz.services.shadow_evaluation import (
+    execute_shadow_evaluation,
+    load_shadow_case_manifest,
+    load_shadow_plan,
+    prepare_shadow_evaluation,
+    write_shadow_plan,
 )
 from dortgoz.services.training_selection import (
     load_training_selection_policy,
@@ -164,6 +173,43 @@ def _parser() -> argparse.ArgumentParser:
     normalize_detector.add_argument("--log", type=_path, required=True)
     normalize_detector.add_argument("--output", type=_path, required=True)
 
+    export_onnx = commands.add_parser(
+        "export-onnx",
+        help="candidate checkpoint'i doğrulanmış production ONNX'e aktar",
+    )
+    _common(export_onnx)
+    export_onnx.add_argument("model_version_id")
+    export_onnx.add_argument("--dfine-repository", type=_path, required=True)
+    export_onnx.add_argument("--python", type=_path, default=Path(sys.executable))
+    export_onnx.add_argument("--runs-root", type=_path, default=REPO_ROOT / "runs")
+    export_onnx.add_argument(
+        "--registry-root",
+        type=_path,
+        default=REPO_ROOT / "models" / "dfine" / "local" / "candidates",
+    )
+    export_onnx.add_argument("--max-minutes", type=int, default=30)
+
+    prepare_shadow = commands.add_parser(
+        "prepare-shadow",
+        help="candidate ve kritik/normal video listesini üç tekrarlı plana kilitle",
+    )
+    _common(prepare_shadow)
+    prepare_shadow.add_argument("model_version_id")
+    prepare_shadow.add_argument("--test-dataset-manifest", type=_path, required=True)
+    prepare_shadow.add_argument("--case-manifest", type=_path, required=True)
+    prepare_shadow.add_argument("--media-root", type=_path, default=REPO_ROOT / "media")
+    prepare_shadow.add_argument("--created-by", required=True)
+    prepare_shadow.add_argument("--output", type=_path)
+
+    run_shadow = commands.add_parser(
+        "run-shadow",
+        help="hazır candidate planını üç kez izole canonical hatta çalıştır",
+    )
+    run_shadow.add_argument("--event-store", type=_path, required=True)
+    run_shadow.add_argument("--plan", type=_path, required=True)
+    run_shadow.add_argument("--runs-root", type=_path, default=REPO_ROOT / "runs")
+    run_shadow.add_argument("--max-minutes", type=int, default=180)
+
     promote = commands.add_parser(
         "promote", help="kapıyı geçen candidate'ı champion yap"
     )
@@ -284,6 +330,32 @@ def main() -> None:
                     "artifact": artifact.model_dump(mode="json"),
                 }
             )
+            return
+        if args.command == "run-shadow":
+            repository = SqliteEventRepository(args.event_store)
+            try:
+                plan = load_shadow_plan(args.plan)
+                candidate = repository.get_model_version(plan.model_version_id)
+                if candidate is None:
+                    raise ModelRegistryError(
+                        "MODEL_VERSION_NOT_FOUND",
+                        f"model version bulunamadı: {plan.model_version_id}",
+                    )
+                outputs = asyncio.run(
+                    execute_shadow_evaluation(
+                        plan=plan,
+                        candidate=candidate,
+                        workspace_root=REPO_ROOT,
+                        runs_root=args.runs_root,
+                        max_minutes=args.max_minutes,
+                        active_analysis_probe=lambda: _active_analysis_probe(
+                            args.event_store.resolve()
+                        ),
+                    )
+                )
+                _print_json({"shadow_artifacts": [str(path) for path in outputs]})
+            finally:
+                repository.close()
             return
         training_policy, promotion_policy = _load_policies(args.policy)
         repository = SqliteEventRepository(args.event_store)
@@ -407,6 +479,74 @@ def main() -> None:
                         "evaluation_plan": str(output.resolve()),
                         "plan": plan.model_dump(mode="json"),
                         "verified_test_command_argv": command,
+                    }
+                )
+            elif args.command == "export-onnx":
+                candidate = repository.get_model_version(args.model_version_id)
+                if candidate is None:
+                    raise ModelRegistryError(
+                        "MODEL_VERSION_NOT_FOUND",
+                        f"model version bulunamadı: {args.model_version_id}",
+                    )
+                training_job = repository.get_training_job(candidate.training_job_id)
+                if training_job is None:
+                    raise ModelRegistryError(
+                        "TRAINING_JOB_NOT_FOUND",
+                        f"training job bulunamadı: {candidate.training_job_id}",
+                    )
+                saved, outcome, log_path = execute_dfine_onnx_export(
+                    repository=repository,
+                    candidate=candidate,
+                    training_job=training_job,
+                    workspace_root=REPO_ROOT,
+                    dfine_repository=args.dfine_repository,
+                    python_executable=args.python,
+                    runs_root=args.runs_root,
+                    registry_root=args.registry_root,
+                    max_minutes=args.max_minutes,
+                    active_analysis_probe=lambda: _active_analysis_probe(
+                        args.event_store.resolve()
+                    ),
+                )
+                _print_json(
+                    {
+                        "model_version": saved.model_dump(mode="json"),
+                        "elapsed_seconds": outcome.elapsed_seconds,
+                        "export_log": str(log_path),
+                    }
+                )
+            elif args.command == "prepare-shadow":
+                candidate = repository.get_model_version(args.model_version_id)
+                if candidate is None:
+                    raise ModelRegistryError(
+                        "MODEL_VERSION_NOT_FOUND",
+                        f"model version bulunamadı: {args.model_version_id}",
+                    )
+                case_manifest = load_shadow_case_manifest(args.case_manifest)
+                plan = prepare_shadow_evaluation(
+                    candidate=candidate,
+                    test_dataset_manifest=load_dataset_manifest(
+                        args.test_dataset_manifest
+                    ),
+                    case_manifest=case_manifest,
+                    case_manifest_path=args.case_manifest,
+                    workspace_root=REPO_ROOT,
+                    media_root=args.media_root,
+                    code_revision=inspect_project_revision(REPO_ROOT),
+                    created_by=args.created_by,
+                )
+                output = args.output or (
+                    REPO_ROOT
+                    / "runs"
+                    / "dfine-evaluations"
+                    / plan.plan_id
+                    / "shadow-plan.json"
+                )
+                write_shadow_plan(output, plan)
+                _print_json(
+                    {
+                        "shadow_plan": str(output.resolve()),
+                        "plan": plan.model_dump(mode="json"),
                     }
                 )
             elif args.command == "promote":

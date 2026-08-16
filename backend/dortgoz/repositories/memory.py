@@ -205,9 +205,7 @@ class InMemoryEventRepository:
             current = self._events.get(event.event_id)
             if current is not None:
                 if event.revision <= current.revision:
-                    raise RepositoryConflictError(
-                        f"event revision ilerlemiyor: {event.event_id}"
-                    )
+                    raise RepositoryConflictError(f"event revision ilerlemiyor: {event.event_id}")
                 self._event_history.setdefault(event.event_id, []).append(_copy(current))
             self._events[event.event_id] = _copy(event)
             return _copy(event)
@@ -217,16 +215,13 @@ class InMemoryEventRepository:
             event = self._events.get(event_id)
             return _copy(event) if event is not None else None
 
-    def list_events(
-        self, analysis_id: str, status: str | None = None
-    ) -> list[VerifiedEvent]:
+    def list_events(self, analysis_id: str, status: str | None = None) -> list[VerifiedEvent]:
         with self._lock:
             parsed = EventStatus(status) if status is not None else None
             events = [
                 event
                 for event in self._events.values()
-                if event.analysis_id == analysis_id
-                and (parsed is None or event.status == parsed)
+                if event.analysis_id == analysis_id and (parsed is None or event.status == parsed)
             ]
             return _copy(sorted(events, key=lambda event: event.created_at))
 
@@ -286,14 +281,10 @@ class InMemoryEventRepository:
         with self._lock:
             if event_id not in self._events:
                 raise RepositoryNotFoundError(f"event bulunamadı: {event_id}")
-            reviews = [
-                review for review in self._reviews.values() if review.event_id == event_id
-            ]
+            reviews = [review for review in self._reviews.values() if review.event_id == event_id]
             return _copy(sorted(reviews, key=lambda review: (review.revision, review.created_at)))
 
-    def save_development_approval(
-        self, approval: DevelopmentApproval
-    ) -> DevelopmentApproval:
+    def save_development_approval(self, approval: DevelopmentApproval) -> DevelopmentApproval:
         with self._lock:
             if approval.event_id not in self._events:
                 raise RepositoryNotFoundError(f"event bulunamadı: {approval.event_id}")
@@ -303,9 +294,7 @@ class InMemoryEventRepository:
             if review.event_id != approval.event_id:
                 raise RepositoryConflictError("development approval review ile eşleşmiyor")
             if approval.approval_id in self._development_approvals:
-                raise RepositoryDuplicateError(
-                    f"approval_id zaten kayıtlı: {approval.approval_id}"
-                )
+                raise RepositoryDuplicateError(f"approval_id zaten kayıtlı: {approval.approval_id}")
 
             history = sorted(
                 (
@@ -352,17 +341,11 @@ class InMemoryEventRepository:
             if event_id not in self._events:
                 raise RepositoryNotFoundError(f"event bulunamadı: {event_id}")
             approvals = [
-                item
-                for item in self._development_approvals.values()
-                if item.event_id == event_id
+                item for item in self._development_approvals.values() if item.event_id == event_id
             ]
-            return _copy(
-                sorted(approvals, key=lambda item: (item.created_at, item.approval_id))
-            )
+            return _copy(sorted(approvals, key=lambda item: (item.created_at, item.approval_id)))
 
-    def create_training_samples(
-        self, samples: list[TrainingSample]
-    ) -> list[TrainingSample]:
+    def create_training_samples(self, samples: list[TrainingSample]) -> list[TrainingSample]:
         with self._lock:
             if not samples:
                 raise RepositoryConflictError("training sample listesi boş olamaz")
@@ -431,21 +414,15 @@ class InMemoryEventRepository:
                 for sample in self._training_samples.values()
                 if event_id is None or sample.event_id == event_id
             ]
-            return _copy(
-                sorted(samples, key=lambda item: (item.created_at, item.sample_id))
-            )
+            return _copy(sorted(samples, key=lambda item: (item.created_at, item.sample_id)))
 
-    def verify_training_sample(
-        self, sample_id: str, review: TrainingFrameReview
-    ) -> TrainingSample:
+    def verify_training_sample(self, sample_id: str, review: TrainingFrameReview) -> TrainingSample:
         with self._lock:
             current = self._training_samples.get(sample_id)
             if current is None:
                 raise RepositoryNotFoundError(f"training sample bulunamadı: {sample_id}")
             if current.status != TrainingSampleStatus.PENDING_REVIEW:
-                raise RepositoryConflictError(
-                    f"training sample inceleme beklemiyor: {sample_id}"
-                )
+                raise RepositoryConflictError(f"training sample inceleme beklemiyor: {sample_id}")
             updated = current.model_copy(
                 update={
                     "status": TrainingSampleStatus.VERIFIED,
@@ -461,9 +438,7 @@ class InMemoryEventRepository:
     def create_training_job(self, job: TrainingJob) -> TrainingJob:
         with self._lock:
             if job.status != TrainingJobStatus.QUEUED or job.revision != 1:
-                raise RepositoryConflictError(
-                    "yeni training job queued ve revision 1 olmalıdır"
-                )
+                raise RepositoryConflictError("yeni training job queued ve revision 1 olmalıdır")
             existing = self._training_jobs.get(job.job_id)
             if existing is not None:
                 if existing.model_dump() != job.model_dump():
@@ -494,9 +469,7 @@ class InMemoryEventRepository:
             if current is None:
                 raise RepositoryNotFoundError(f"training job bulunamadı: {job.job_id}")
             if job.revision != current.revision + 1:
-                raise RepositoryConflictError(
-                    f"training job revision ilerlemiyor: {job.job_id}"
-                )
+                raise RepositoryConflictError(f"training job revision ilerlemiyor: {job.job_id}")
             immutable = {
                 "job_version",
                 "job_id",
@@ -539,13 +512,10 @@ class InMemoryEventRepository:
                 raise RepositoryConflictError(
                     f"geçersiz training job geçişi: {current.status.value} -> {job.status.value}"
                 )
-            if (
-                job.status == TrainingJobStatus.RUNNING
-                and any(
-                    item.status == TrainingJobStatus.RUNNING
-                    for item in self._training_jobs.values()
-                    if item.job_id != job.job_id
-                )
+            if job.status == TrainingJobStatus.RUNNING and any(
+                item.status == TrainingJobStatus.RUNNING
+                for item in self._training_jobs.values()
+                if item.job_id != job.job_id
             ):
                 raise RepositoryConflictError("aynı anda yalnız bir training job çalışabilir")
             self._training_jobs[job.job_id] = _copy(job)
@@ -617,11 +587,23 @@ class InMemoryEventRepository:
             if current.model_dump(include=immutable) != version.model_dump(include=immutable):
                 raise RepositoryConflictError("model version provenance alanları değiştirilemez")
             if current.stage != ModelStage.CANDIDATE or version.stage != ModelStage.CANDIDATE:
+                raise RepositoryConflictError("stage geçişi yalnız switch_champion ile yapılabilir")
+            deployment_added = (
+                current.deployment is None
+                and version.deployment is not None
+                and current.evaluation is None
+                and current.evaluation == version.evaluation
+            )
+            evaluation_added = (
+                current.evaluation is None
+                and version.evaluation is not None
+                and current.deployment is not None
+                and current.deployment == version.deployment
+            )
+            if deployment_added == evaluation_added:
                 raise RepositoryConflictError(
-                    "stage geçişi yalnız switch_champion ile yapılabilir"
+                    "candidate deployment veya evaluation yalnız bir kez kaydedilebilir"
                 )
-            if current.evaluation is not None or version.evaluation is None:
-                raise RepositoryConflictError("candidate evaluation yalnız bir kez kaydedilebilir")
             self._model_versions[version.model_version_id] = _copy(version)
             return _copy(version)
 
@@ -651,7 +633,10 @@ class InMemoryEventRepository:
             if active is None and previous_champion is not None:
                 raise RepositoryConflictError("önceki champion kaydı beklenmiyordu")
             if active is not None:
-                if previous_champion is None or previous_champion.model_version_id != active.model_version_id:
+                if (
+                    previous_champion is None
+                    or previous_champion.model_version_id != active.model_version_id
+                ):
                     raise RepositoryConflictError("önceki champion kaydı eşleşmiyor")
                 if previous_champion.stage != ModelStage.RETIRED:
                     raise RepositoryConflictError("önceki champion retired olmalıdır")
@@ -746,8 +731,7 @@ class InMemoryEventRepository:
                 "confirmed_events": sum(event.status == EventStatus.CONFIRMED for event in events),
                 "rejected_events": sum(event.status == EventStatus.REJECTED for event in events),
                 "human_review_events": sum(
-                    event.status
-                    in {EventStatus.HUMAN_REVIEW, EventStatus.PROCESSING_FAILED}
+                    event.status in {EventStatus.HUMAN_REVIEW, EventStatus.PROCESSING_FAILED}
                     for event in events
                 ),
             }

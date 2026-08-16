@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -16,7 +17,11 @@ from dortgoz.domain.dataset import (
     OfflineDatasetManifest,
     calculate_dataset_fingerprint,
 )
-from dortgoz.domain.model_lifecycle import DfineArchitecture, ModelVersion
+from dortgoz.domain.model_lifecycle import (
+    DfineArchitecture,
+    DfineDeploymentArtifact,
+    ModelVersion,
+)
 from dortgoz.services.dataset_manifest import sha256_file
 from dortgoz.services.evaluation_report import (
     EvaluationReportError,
@@ -25,6 +30,7 @@ from dortgoz.services.evaluation_report import (
 
 CHECKPOINT_SHA = "a" * 64
 CODE_REVISION = "b" * 40
+ONNX_SHA = "8" * 64
 
 
 def _manifest() -> OfflineDatasetManifest:
@@ -55,6 +61,30 @@ def _manifest() -> OfflineDatasetManifest:
 
 
 def _candidate() -> ModelVersion:
+    deployment_payload = {
+        "artifact_version": "1.0.0",
+        "onnx_ref": "models/dfine/candidate/model.onnx",
+        "onnx_sha256": ONNX_SHA,
+        "source_checkpoint_sha256": CHECKPOINT_SHA,
+        "dfine_repository_revision": "f" * 40,
+        "input_names": ["images", "orig_target_sizes"],
+        "output_names": ["labels", "boxes", "scores"],
+        "input_size": 640,
+        "category_names": ["person"],
+        "source_log_sha256": "9" * 64,
+        "exported_at": "2026-08-16T09:00:00Z",
+    }
+    deployment = DfineDeploymentArtifact(
+        **deployment_payload,
+        artifact_fingerprint=hashlib.sha256(
+            json.dumps(
+                deployment_payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest(),
+    )
     return ModelVersion(
         model_version_id="candidate-1",
         training_job_id="job-1",
@@ -64,6 +94,7 @@ def _candidate() -> ModelVersion:
         dataset_fingerprint="d" * 64,
         export_fingerprint="e" * 64,
         dfine_repository_revision="f" * 40,
+        deployment=deployment,
     )
 
 
@@ -90,14 +121,14 @@ def _shadow_artifact(
     critical_hit: bool,
     false_alarm: bool,
 ) -> Path:
-    measured_at = datetime(2026, 8, 16, 10, 0, tzinfo=UTC) + timedelta(
-        minutes=run_number
-    )
+    measured_at = datetime(2026, 8, 16, 10, 0, tzinfo=UTC) + timedelta(minutes=run_number)
     common = {
         "evaluation_run_id": f"shadow-run-{run_number}",
         "candidate_checkpoint_sha256": CHECKPOINT_SHA,
         "test_dataset_fingerprint": manifest.dataset_fingerprint,
         "code_revision": CODE_REVISION,
+        "deployment_fingerprint": _candidate().deployment.artifact_fingerprint,
+        "onnx_sha256": ONNX_SHA,
         "shadow_mode": True,
         "measured_at": measured_at.isoformat(),
     }
@@ -109,6 +140,11 @@ def _shadow_artifact(
             "latency_ms": 100 * run_number,
             "ram_mb": 500 + run_number,
             "vram_mb": 1000 + run_number,
+            "case_id": "critical",
+            "source_video_sha256": "6" * 64,
+            "canonical_run_id": f"shadow-run-{run_number}-critical",
+            "canonical_artifact_sha256": str(run_number) * 64,
+            "resource_scope": "test",
         },
         {
             **common,
@@ -118,11 +154,14 @@ def _shadow_artifact(
             "latency_ms": 100 * run_number + 20,
             "ram_mb": 700 + run_number,
             "vram_mb": 1200 + run_number,
+            "case_id": "normal",
+            "source_video_sha256": "7" * 64,
+            "canonical_run_id": f"shadow-run-{run_number}-normal",
+            "canonical_artifact_sha256": str(run_number + 3) * 64,
+            "resource_scope": "test",
         },
     ]
-    path.write_text(
-        "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
-    )
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
     return path
 
 
@@ -223,3 +262,34 @@ def test_report_rejects_wrong_checkpoint_and_incomplete_repetitions(
             evaluator="operator",
         )
     assert repetitions.value.code == "EVALUATION_REPETITIONS_MISSING"
+
+
+def test_report_rejects_shadow_from_another_onnx(tmp_path: Path) -> None:
+    manifest = _manifest()
+    detector = _detector_report(tmp_path / "detector.json", manifest)
+    artifacts = [
+        _shadow_artifact(
+            tmp_path / f"shadow-{index}.jsonl",
+            manifest,
+            run_number=index,
+            critical_hit=True,
+            false_alarm=False,
+        )
+        for index in range(1, 4)
+    ]
+    rows = [json.loads(line) for line in artifacts[0].read_text(encoding="utf-8").splitlines()]
+    rows[0]["onnx_sha256"] = "0" * 64
+    artifacts[0].write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(EvaluationReportError) as rejected:
+        build_dfine_evaluation_report(
+            candidate=_candidate(),
+            test_dataset_manifest=manifest,
+            detector_report_path=detector,
+            e2e_artifact_paths=artifacts,
+            evaluator="operator",
+        )
+    assert rejected.value.code == "SHADOW_DEPLOYMENT_MISMATCH"

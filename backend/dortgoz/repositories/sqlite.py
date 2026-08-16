@@ -217,9 +217,7 @@ class SqliteEventRepository(InMemoryEventRepository):
                         ON audit_log(subject_type, subject_id, occurred_at);
                     """
                 )
-                self._connection.execute(
-                    f"PRAGMA user_version = {_DATABASE_SCHEMA_VERSION}"
-                )
+                self._connection.execute(f"PRAGMA user_version = {_DATABASE_SCHEMA_VERSION}")
         except sqlite3.Error as exc:
             raise RepositoryError(f"event store şeması oluşturulamadı: {exc}") from exc
 
@@ -280,9 +278,7 @@ class SqliteEventRepository(InMemoryEventRepository):
             payload = json.loads(raw_payload)
             return {
                 "videos": [VideoMetadata.model_validate(item) for item in payload["videos"]],
-                "analyses": [
-                    AnalysisRecord.model_validate(item) for item in payload["analyses"]
-                ],
+                "analyses": [AnalysisRecord.model_validate(item) for item in payload["analyses"]],
                 "candidates": [
                     CandidateEvent.model_validate(item) for item in payload["candidates"]
                 ],
@@ -372,9 +368,7 @@ class SqliteEventRepository(InMemoryEventRepository):
             """
         ):
             item = self._model_from_payload(TraceRecord, row["payload"])
-            self._traces.setdefault(
-                (row["analysis_id"], row["candidate_id"]), []
-            ).append(item)
+            self._traces.setdefault((row["analysis_id"], row["candidate_id"]), []).append(item)
 
     @staticmethod
     def _json_payload(item: BaseModel) -> str:
@@ -567,9 +561,7 @@ class SqliteEventRepository(InMemoryEventRepository):
             ),
         )
 
-    def _write_trace(
-        self, analysis_id: str, candidate_id: str, item: TraceRecord
-    ) -> None:
+    def _write_trace(self, analysis_id: str, candidate_id: str, item: TraceRecord) -> None:
         self._connection.execute(
             """
             INSERT INTO decision_traces(analysis_id, candidate_id, step, payload)
@@ -607,9 +599,7 @@ class SqliteEventRepository(InMemoryEventRepository):
             ),
         )
 
-    def _transaction(
-        self, operation: Callable[[], _T], writer: Callable[[_T], None]
-    ) -> _T:
+    def _transaction(self, operation: Callable[[], _T], writer: Callable[[_T], None]) -> _T:
         with self._lock:
             try:
                 with self._connection:
@@ -640,9 +630,7 @@ class SqliteEventRepository(InMemoryEventRepository):
         if self._batch_mutation:
             return super().update_analysis_status(*args, **kwargs)
         return self._transaction(
-            lambda: super(SqliteEventRepository, self).update_analysis_status(
-                *args, **kwargs
-            ),
+            lambda: super(SqliteEventRepository, self).update_analysis_status(*args, **kwargs),
             self._write_analysis,
         )
 
@@ -718,9 +706,7 @@ class SqliteEventRepository(InMemoryEventRepository):
             lambda: super(SqliteEventRepository, self).save_review(review), write
         )
 
-    def save_development_approval(
-        self, approval: DevelopmentApproval
-    ) -> DevelopmentApproval:
+    def save_development_approval(self, approval: DevelopmentApproval) -> DevelopmentApproval:
         def write(saved: DevelopmentApproval) -> None:
             self._write_development_approval(saved)
             revoked_samples = [
@@ -757,9 +743,7 @@ class SqliteEventRepository(InMemoryEventRepository):
             write,
         )
 
-    def create_training_samples(
-        self, samples: list[TrainingSample]
-    ) -> list[TrainingSample]:
+    def create_training_samples(self, samples: list[TrainingSample]) -> list[TrainingSample]:
         def write(saved: list[TrainingSample]) -> None:
             for item in saved:
                 self._write_training_sample(item)
@@ -781,9 +765,7 @@ class SqliteEventRepository(InMemoryEventRepository):
             write,
         )
 
-    def verify_training_sample(
-        self, sample_id: str, review: TrainingFrameReview
-    ) -> TrainingSample:
+    def verify_training_sample(self, sample_id: str, review: TrainingFrameReview) -> TrainingSample:
         def write(saved: TrainingSample) -> None:
             self._write_training_sample(saved)
             assert saved.frame_review is not None
@@ -801,9 +783,7 @@ class SqliteEventRepository(InMemoryEventRepository):
             )
 
         return self._transaction(
-            lambda: super(SqliteEventRepository, self).verify_training_sample(
-                sample_id, review
-            ),
+            lambda: super(SqliteEventRepository, self).verify_training_sample(sample_id, review),
             write,
         )
 
@@ -874,19 +854,32 @@ class SqliteEventRepository(InMemoryEventRepository):
     def update_model_version(self, version: ModelVersion) -> ModelVersion:
         def write(saved: ModelVersion) -> None:
             self._write_model_version(saved)
-            assert saved.evaluation is not None
-            self._write_audit(
-                action="model_evaluation_saved",
-                subject_type="model_version",
-                subject_id=saved.model_version_id,
-                actor=saved.evaluation.evaluator,
-                occurred_at=saved.evaluation.measured_at,
-                payload={
-                    "evaluation_id": saved.evaluation.evaluation_id,
-                    "metrics_fingerprint": saved.evaluation.metrics_fingerprint,
-                    "shadow_passed": saved.evaluation.shadow_passed,
-                },
-            )
+            if saved.evaluation is not None:
+                self._write_audit(
+                    action="model_evaluation_saved",
+                    subject_type="model_version",
+                    subject_id=saved.model_version_id,
+                    actor=saved.evaluation.evaluator,
+                    occurred_at=saved.evaluation.measured_at,
+                    payload={
+                        "evaluation_id": saved.evaluation.evaluation_id,
+                        "metrics_fingerprint": saved.evaluation.metrics_fingerprint,
+                        "shadow_passed": saved.evaluation.shadow_passed,
+                    },
+                )
+            else:
+                assert saved.deployment is not None
+                self._write_audit(
+                    action="model_deployment_exported",
+                    subject_type="model_version",
+                    subject_id=saved.model_version_id,
+                    actor=None,
+                    occurred_at=saved.deployment.exported_at,
+                    payload={
+                        "onnx_sha256": saved.deployment.onnx_sha256,
+                        "artifact_fingerprint": saved.deployment.artifact_fingerprint,
+                    },
+                )
 
         return self._transaction(
             lambda: super(SqliteEventRepository, self).update_model_version(version),
@@ -899,9 +892,7 @@ class SqliteEventRepository(InMemoryEventRepository):
         previous_champion: ModelVersion | None,
     ) -> ModelVersion:
         def operation() -> ModelVersion:
-            return super(SqliteEventRepository, self).switch_champion(
-                champion, previous_champion
-            )
+            return super(SqliteEventRepository, self).switch_champion(champion, previous_champion)
 
         def write(saved: ModelVersion) -> None:
             if previous_champion is not None:

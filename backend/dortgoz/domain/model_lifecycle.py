@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -94,12 +96,8 @@ class TrainingJob(BaseModel):
     export_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     export_ref: str = Field(min_length=1)
     selection_policy_version: str | None = None
-    selection_policy_fingerprint: str | None = Field(
-        default=None, pattern=r"^[0-9a-f]{64}$"
-    )
-    selection_fingerprint: str | None = Field(
-        default=None, pattern=r"^[0-9a-f]{64}$"
-    )
+    selection_policy_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    selection_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     architecture: DfineArchitecture
     category_names: list[str] = Field(min_length=1)
     verified_frame_count: int = Field(gt=0)
@@ -149,7 +147,9 @@ class TrainingJob(BaseModel):
         if any(value is None for value in selection_values) and any(
             value is not None for value in selection_values
         ):
-            raise ValueError("training job seçim politika ve fingerprint değerlerini birlikte taşır")
+            raise ValueError(
+                "training job seçim politika ve fingerprint değerlerini birlikte taşır"
+            )
         if self.train_frame_count + self.validation_frame_count != self.verified_frame_count:
             raise ValueError("training job split kare sayıları toplam kare sayısıyla eşleşmiyor")
         if self.max_gpu_minutes > self.daily_gpu_minutes:
@@ -164,17 +164,20 @@ class TrainingJob(BaseModel):
             raise ValueError("finished_at geçerli started_at değerinden sonra olmalıdır")
 
         if self.status == TrainingJobStatus.QUEUED:
-            if any(
-                value is not None
-                for value in (
-                    self.started_at,
-                    self.finished_at,
-                    self.checkpoint_ref,
-                    self.checkpoint_sha256,
-                    self.error_code,
-                    self.error_message,
+            if (
+                any(
+                    value is not None
+                    for value in (
+                        self.started_at,
+                        self.finished_at,
+                        self.checkpoint_ref,
+                        self.checkpoint_sha256,
+                        self.error_code,
+                        self.error_message,
+                    )
                 )
-            ) or self.elapsed_seconds != 0:
+                or self.elapsed_seconds != 0
+            ):
                 raise ValueError("queued training job sonuç veya çalışma bilgisi taşıyamaz")
         elif self.status == TrainingJobStatus.RUNNING:
             if self.started_at is None or self.finished_at is not None:
@@ -241,11 +244,46 @@ class ModelEvaluation(BaseModel):
             raise ValueError("measured_at saat dilimi içermelidir")
         if len(self.e2e_artifact_sha256s) != len(set(self.e2e_artifact_sha256s)):
             raise ValueError("e2e artifact SHA-256 değerleri benzersiz olmalıdır")
-        if any(
-            not re.fullmatch(r"[0-9a-f]{64}", value)
-            for value in self.e2e_artifact_sha256s
-        ):
+        if any(not re.fullmatch(r"[0-9a-f]{64}", value) for value in self.e2e_artifact_sha256s):
             raise ValueError("e2e artifact SHA-256 değeri geçersiz")
+        return self
+
+
+class DfineDeploymentArtifact(BaseModel):
+    """Production ONNX derived from one immutable candidate checkpoint."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    artifact_version: Literal["1.0.0"] = "1.0.0"
+    onnx_ref: str = Field(min_length=1)
+    onnx_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_checkpoint_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    dfine_repository_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    input_names: list[str]
+    output_names: list[str]
+    input_size: Literal[640] = 640
+    category_names: list[str] = Field(min_length=1)
+    source_log_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    exported_at: datetime
+    artifact_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def deployment_is_reproducible(self) -> DfineDeploymentArtifact:
+        if not _safe_reference(self.onnx_ref):
+            raise ValueError("onnx_ref güvenli göreli POSIX yol olmalıdır")
+        if self.input_names != ["images", "orig_target_sizes"]:
+            raise ValueError("D-FINE deployment input sözleşmesi geçersiz")
+        if self.output_names != ["labels", "boxes", "scores"]:
+            raise ValueError("D-FINE deployment output sözleşmesi geçersiz")
+        if len(self.category_names) != len(set(self.category_names)):
+            raise ValueError("deployment kategori adları benzersiz olmalıdır")
+        if self.exported_at.utcoffset() is None:
+            raise ValueError("exported_at saat dilimi içermelidir")
+        payload = self.model_dump(mode="json", exclude={"artifact_fingerprint"})
+        canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        expected = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        if self.artifact_fingerprint != expected:
+            raise ValueError("deployment artifact fingerprint içerikle eşleşmiyor")
         return self
 
 
@@ -263,6 +301,7 @@ class ModelVersion(BaseModel):
     dataset_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     export_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     dfine_repository_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    deployment: DfineDeploymentArtifact | None = None
     stage: ModelStage = ModelStage.CANDIDATE
     evaluation: ModelEvaluation | None = None
     promotion_policy_version: str | None = None
@@ -285,6 +324,11 @@ class ModelVersion(BaseModel):
             self.evaluation.checkpoint_sha256 != self.checkpoint_sha256
         ):
             raise ValueError("evaluation checkpoint SHA-256 ile eşleşmiyor")
+        if self.deployment is not None and (
+            self.deployment.source_checkpoint_sha256 != self.checkpoint_sha256
+            or self.deployment.dfine_repository_revision != self.dfine_repository_revision
+        ):
+            raise ValueError("deployment candidate provenance ile eşleşmiyor")
         if self.stage == ModelStage.CANDIDATE:
             if any(
                 value is not None
@@ -300,7 +344,8 @@ class ModelVersion(BaseModel):
                 raise ValueError("candidate model terfi bilgisi taşıyamaz")
         elif self.stage == ModelStage.CHAMPION:
             if (
-                self.evaluation is None
+                self.deployment is None
+                or self.evaluation is None
                 or self.promotion_policy_version is None
                 or self.approved_by is None
                 or self.promotion_reason is None
@@ -311,7 +356,8 @@ class ModelVersion(BaseModel):
                 raise ValueError("champion model evaluation ve insan onayı gerektirir")
         elif self.stage == ModelStage.RETIRED:
             if (
-                self.evaluation is None
+                self.deployment is None
+                or self.evaluation is None
                 or self.promotion_policy_version is None
                 or self.approved_by is None
                 or self.promotion_reason is None
@@ -339,6 +385,7 @@ def _safe_reference(value: str) -> bool:
 
 __all__ = [
     "DfineArchitecture",
+    "DfineDeploymentArtifact",
     "DfineTrainingPolicy",
     "ModelEvaluation",
     "ModelStage",

@@ -53,12 +53,14 @@ class DetectorEvaluationArtifact(BaseModel):
 class ShadowEvaluationRecord(BaseModel):
     """One video-level row from a candidate run executed in shadow mode."""
 
-    model_config = ConfigDict(extra="allow", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     evaluation_run_id: str = Field(min_length=1)
     candidate_checkpoint_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     test_dataset_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     code_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    deployment_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    onnx_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     shadow_mode: Literal[True]
     measured_at: datetime
     expected_critical: bool = False
@@ -69,6 +71,11 @@ class ShadowEvaluationRecord(BaseModel):
     latency_ms: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     ram_mb: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     vram_mb: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    case_id: str = Field(min_length=1)
+    source_video_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    canonical_run_id: str = Field(min_length=1)
+    canonical_artifact_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    resource_scope: str = Field(min_length=1)
 
     @model_validator(mode="after")
     def row_is_measurable(self) -> ShadowEvaluationRecord:
@@ -121,10 +128,14 @@ def build_dfine_evaluation_report(
     evaluator: str,
     output_path: Path | None = None,
 ) -> DfineEvaluationReport:
-    if candidate.stage != ModelStage.CANDIDATE or candidate.evaluation is not None:
+    if (
+        candidate.stage != ModelStage.CANDIDATE
+        or candidate.evaluation is not None
+        or candidate.deployment is None
+    ):
         raise EvaluationReportError(
             "MODEL_NOT_EVALUATABLE",
-            "yalnız değerlendirilmemiş candidate model için rapor üretilebilir",
+            "rapor değerlendirilmemiş ve production ONNX taşıyan candidate gerektirir",
         )
     if not (
         DatasetUse.EVALUATION in test_dataset_manifest.allowed_uses
@@ -172,6 +183,8 @@ def build_dfine_evaluation_report(
 
     expected_checkpoint = candidate.checkpoint_sha256
     expected_dataset = test_dataset_manifest.dataset_fingerprint
+    deployment = candidate.deployment
+    assert deployment is not None
     if detector.candidate_checkpoint_sha256 != expected_checkpoint:
         raise EvaluationReportError(
             "DETECTOR_CHECKPOINT_MISMATCH",
@@ -197,6 +210,14 @@ def build_dfine_evaluation_report(
             raise EvaluationReportError(
                 "EVALUATION_CODE_REVISION_MISMATCH",
                 "detector ve shadow artifact code revision değerleri eşleşmiyor",
+            )
+        if (
+            record.deployment_fingerprint != deployment.artifact_fingerprint
+            or record.onnx_sha256 != deployment.onnx_sha256
+        ):
+            raise EvaluationReportError(
+                "SHADOW_DEPLOYMENT_MISMATCH",
+                "shadow kaydı candidate production ONNX deployment ile eşleşmiyor",
             )
 
     metrics = e2e_metrics([record.model_dump(mode="json") for record in all_records])
@@ -268,6 +289,18 @@ def _load_shadow_records(path: Path) -> list[ShadowEvaluationRecord]:
 
 
 def _validate_run_coverage(records: list[ShadowEvaluationRecord], path: Path) -> None:
+    case_ids = [record.case_id for record in records]
+    canonical_run_ids = [record.canonical_run_id for record in records]
+    canonical_hashes = [record.canonical_artifact_sha256 for record in records]
+    if (
+        len(case_ids) != len(set(case_ids))
+        or len(canonical_run_ids) != len(set(canonical_run_ids))
+        or len(canonical_hashes) != len(set(canonical_hashes))
+    ):
+        raise EvaluationReportError(
+            "SHADOW_CASE_DUPLICATE",
+            f"shadow artifact tekrar eden case veya canonical kanıt taşıyor: {path}",
+        )
     if not any(record.expected_critical for record in records):
         raise EvaluationReportError(
             "SHADOW_CRITICAL_COVERAGE_MISSING",
