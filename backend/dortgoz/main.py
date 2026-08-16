@@ -196,8 +196,11 @@ app.state.live_cctv = live_cctv
 
 # ---- Anomali nöbet kuyruğu (services/triage): insan-döngüde karar katmanı ----
 from .services import triage  # noqa: E402
+from .services.analysis_projection import RuntimeAnalysisProjection  # noqa: E402
 
 manager.observers.append(triage.store.observe)
+runtime_projection = RuntimeAnalysisProjection(api_runtime.repository, settings.runs_dir)
+manager.observers.append(runtime_projection.observe)
 
 
 @app.get("/api/triage")

@@ -84,6 +84,18 @@ class InMemoryEventRepository:
             )
             return _copy(item) if item is not None else None
 
+    def find_video_by_stored_filename(self, stored_filename: str) -> VideoMetadata | None:
+        with self._lock:
+            item = next(
+                (
+                    video
+                    for video in self._videos.values()
+                    if video.stored_filename == stored_filename
+                ),
+                None,
+            )
+            return _copy(item) if item is not None else None
+
     def create_analysis(
         self,
         video_id: str,

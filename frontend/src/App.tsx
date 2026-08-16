@@ -10,6 +10,7 @@ import ExperimentPanel, { type InterpretConfig } from "./components/ExperimentPa
 import FeedStrip from "./components/FeedStrip";
 import LiveGrid from "./components/LiveGrid";
 import UploadPanel from "./components/UploadPanel";
+import TrainingReviewPanel from "./components/TrainingReviewPanel";
 import { includeUploadedVideo, startCanonicalRun } from "./lib/canonicalRun";
 import { consoleReducer, emptyFeed, initialState } from "./state";
 
@@ -36,6 +37,7 @@ export default function App() {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   // Canlı CCTV ızgarası (5×5) — panel yerleşiminin yerine geçer
   const [liveView, setLiveView] = useState(false);
+  const [trainingEventId, setTrainingEventId] = useState("");
 
   useEffect(() => {
     const socket = new DortgozSocket((e: Event) => dispatch({ kind: "event", event: e }));
@@ -184,6 +186,18 @@ export default function App() {
           >
             📡 canlı
           </button>
+          {!liveView && feed.highlight && run?.run_id && run.run_id !== "-" && (
+            <button
+              onClick={() => setTrainingEventId(`${run.run_id}:${feed.highlight!.incident_id}`)}
+              disabled={run.state !== "done"}
+              title={run.state === "done"
+                ? "Seçili olayı insan incelemesine ve kontrollü eğitim verisi hazırlığına aç"
+                : "Eğitim verisi hazırlamak için analiz tamamlanmalıdır"}
+              className="rounded border border-sky-800 px-2 py-1 text-sky-300 hover:bg-sky-950/40 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              ◎ eğitim verisi
+            </button>
+          )}
           {interpretCfg && !liveView && (
             <button
               onClick={() => setShowExperiment((s) => !s)}
@@ -409,6 +423,12 @@ export default function App() {
           />
         </div>
       </div>
+      )}
+      {trainingEventId && (
+        <TrainingReviewPanel
+          eventId={trainingEventId}
+          onClose={() => setTrainingEventId("")}
+        />
       )}
     </div>
   );

@@ -26,6 +26,8 @@ class EventRepository(Protocol):
 
     def find_video_by_hash(self, file_hash_sha256: str) -> VideoMetadata | None: ...
 
+    def find_video_by_stored_filename(self, stored_filename: str) -> VideoMetadata | None: ...
+
     def create_analysis(
         self,
         video_id: str,
