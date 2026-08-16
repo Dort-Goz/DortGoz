@@ -25,6 +25,13 @@ from dortgoz.domain.provenance import (
     ReviewDecision,
     TraceRecord,
 )
+from dortgoz.domain.training import (
+    FrameReviewResult,
+    TrainingFrameReview,
+    TrainingSample,
+    TrainingSampleStatus,
+    VerifiedBoundingBox,
+)
 from dortgoz.domain.video import VideoMetadata
 from dortgoz.repositories.sqlite import SqliteEventRepository
 
@@ -131,7 +138,7 @@ def test_sqlite_repository_persists_event_review_and_trace_after_restart(tmp_pat
     assert [item.revision for item in restarted.list_event_revisions("event-offline-1")] == [1, 2]
 
 
-def test_sqlite_v2_uses_normalized_tables_and_persists_development_gate(
+def test_sqlite_v3_uses_normalized_tables_and_persists_development_gate(
     tmp_path: Path,
 ) -> None:
     database_path = tmp_path / "feedback.sqlite3"
@@ -191,11 +198,12 @@ def test_sqlite_v2_uses_normalized_tables_and_persists_development_gate(
             "event_revisions",
             "human_reviews",
             "development_approvals",
+            "training_samples",
             "decision_traces",
             "audit_log",
         } <= tables
         assert "repository_snapshot" not in tables
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
         assert connection.execute("SELECT COUNT(*) FROM human_reviews").fetchone()[0] == 1
         assert (
             connection.execute("SELECT COUNT(*) FROM development_approvals").fetchone()[0]
@@ -256,7 +264,7 @@ def test_sqlite_v1_snapshot_is_migrated_without_deleting_rollback_data(
 
     migrated = SqliteEventRepository(database_path)
 
-    assert migrated.schema_version == 2
+    assert migrated.schema_version == 3
     assert migrated.get_video(VIDEO_ID) is not None
     assert migrated.get_event("event-offline-1") is not None
     with sqlite3.connect(database_path) as connection:
@@ -268,6 +276,42 @@ def test_sqlite_v1_snapshot_is_migrated_without_deleting_rollback_data(
             ).fetchone()[0]
             == 1
         )
+
+
+def test_sqlite_v2_database_adds_training_samples_without_losing_events(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "schema-v2.sqlite3"
+    repository = SqliteEventRepository(database_path)
+    repository.create_video(_metadata())
+    repository.create_analysis(
+        VIDEO_ID,
+        AnalysisProvenance(
+            contract_version="1.0.0",
+            config_version="test-v1",
+            code_revision="test-revision",
+        ),
+        analysis_id=ANALYSIS_ID,
+    )
+    repository.save_candidate(_candidate())
+    repository.save_event(_event())
+    repository.close()
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("DROP TABLE training_samples")
+        connection.execute("PRAGMA user_version = 2")
+
+    migrated = SqliteEventRepository(database_path)
+
+    assert migrated.schema_version == 3
+    assert migrated.get_event("event-offline-1") is not None
+    with sqlite3.connect(database_path) as connection:
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+    assert "training_samples" in tables
 
 
 def test_sqlite_agent_bundle_is_atomic_and_survives_restart(tmp_path: Path) -> None:
@@ -329,3 +373,188 @@ def test_development_approval_requires_explicit_use_and_revoke_target() -> None:
             reviewer="operator",
             note="Önceki karar belirtilmedi.",
         )
+
+
+def test_sqlite_training_sample_review_and_revocation_survive_restart(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "training-samples.sqlite3"
+    repository = SqliteEventRepository(database_path)
+    repository.create_video(_metadata())
+    repository.create_analysis(
+        VIDEO_ID,
+        AnalysisProvenance(
+            contract_version="1.0.0",
+            config_version="test-v1",
+            code_revision="test-revision",
+        ),
+        analysis_id=ANALYSIS_ID,
+    )
+    repository.save_candidate(_candidate())
+    repository.save_event(_event())
+    human_review = repository.save_review(
+        HumanReview(
+            review_id="review-training-1",
+            event_id="event-offline-1",
+            decision=ReviewDecision.EDIT,
+            start_time=10,
+            peak_time=12,
+            end_time=15,
+            note="Kare aralığı doğrulandı.",
+            reviewer="operator",
+            revision=1,
+        )
+    )
+    approval = repository.save_development_approval(
+        DevelopmentApproval(
+            approval_id="approval-training-1",
+            event_id="event-offline-1",
+            review_id=human_review.review_id,
+            status=DevelopmentApprovalStatus.APPROVED,
+            approved_uses=[DevelopmentUse.D_FINE_TRAINING],
+            reviewer="operator",
+            note="D-FINE için kullanılabilir.",
+        )
+    )
+    sample = repository.create_training_samples(
+        [
+            TrainingSample(
+                sample_id="sample-training-1",
+                event_id="event-offline-1",
+                event_revision=2,
+                review_id=human_review.review_id,
+                approval_id=approval.approval_id,
+                video_id=VIDEO_ID,
+                source_video_sha256="b" * 64,
+                dataset_id="owned-approved",
+                dataset_fingerprint="c" * 64,
+                dataset_video_id="owned/train",
+                source_video_ref="videos/train.mp4",
+                split="train",
+                timestamp_seconds=12,
+                selection_reason="event_peak",
+                frame_ref="_training_samples/sample-training-1.jpg",
+                frame_sha256="d" * 64,
+                frame_size_bytes=1000,
+                image_width=640,
+                image_height=360,
+                status=TrainingSampleStatus.PENDING_REVIEW,
+                prepared_by="operator",
+            )
+        ]
+    )[0]
+    verified = repository.verify_training_sample(
+        sample.sample_id,
+        TrainingFrameReview(
+            annotation_id=sample.sample_id,
+            dataset_id=sample.dataset_id,
+            dataset_fingerprint=sample.dataset_fingerprint,
+            dataset_video_id=sample.dataset_video_id,
+            source_video_ref=sample.source_video_ref,
+            frame_ref=sample.frame_ref,
+            frame_sha256=sample.frame_sha256,
+            frame_size_bytes=sample.frame_size_bytes,
+            timestamp_seconds=sample.timestamp_seconds,
+            image_width=sample.image_width,
+            image_height=sample.image_height,
+            split=sample.split,
+            review_result=FrameReviewResult.VERIFIED_BOXES,
+            boxes=[
+                VerifiedBoundingBox(
+                    category_name="person", x=10, y=20, width=30, height=40
+                )
+            ],
+            human_verified=True,
+            reviewer="operator",
+            annotation_tool="Dortgoz UI",
+            reviewed_at="2026-08-16T12:00:00Z",
+        ),
+    )
+    assert verified.status == TrainingSampleStatus.VERIFIED
+    revocation = repository.save_development_approval(
+        DevelopmentApproval(
+            approval_id="approval-training-revoked",
+            event_id="event-offline-1",
+            review_id=human_review.review_id,
+            status=DevelopmentApprovalStatus.REVOKED,
+            reviewer="operator",
+            note="İzin geri çekildi.",
+            supersedes_approval_id=approval.approval_id,
+        )
+    )
+    replacement = repository.save_development_approval(
+        DevelopmentApproval(
+            approval_id="approval-training-replacement",
+            event_id="event-offline-1",
+            review_id=human_review.review_id,
+            status=DevelopmentApprovalStatus.APPROVED,
+            approved_uses=[DevelopmentUse.D_FINE_TRAINING],
+            reviewer="operator",
+            note="Yeni D-FINE izni verildi.",
+            supersedes_approval_id=revocation.approval_id,
+        )
+    )
+    second_sample = repository.create_training_samples(
+        [
+            TrainingSample(
+                sample_id="sample-training-2",
+                event_id="event-offline-1",
+                event_revision=2,
+                review_id=human_review.review_id,
+                approval_id=replacement.approval_id,
+                video_id=VIDEO_ID,
+                source_video_sha256="b" * 64,
+                dataset_id="owned-approved",
+                dataset_fingerprint="c" * 64,
+                dataset_video_id="owned/train",
+                source_video_ref="videos/train.mp4",
+                split="train",
+                timestamp_seconds=13,
+                selection_reason="operator_selected",
+                frame_ref="_training_samples/sample-training-2.jpg",
+                frame_sha256="e" * 64,
+                frame_size_bytes=1000,
+                image_width=640,
+                image_height=360,
+                status=TrainingSampleStatus.PENDING_REVIEW,
+                prepared_by="operator",
+            )
+        ]
+    )[0]
+    newer_review = repository.save_review(
+        HumanReview(
+            review_id="review-training-newer",
+            event_id="event-offline-1",
+            decision=ReviewDecision.EDIT,
+            note="Olay yeniden incelendi.",
+            reviewer="operator",
+            revision=1,
+        )
+    )
+    repository.close()
+
+    restarted = SqliteEventRepository(database_path)
+    stored = restarted.get_training_sample(sample.sample_id)
+
+    assert stored is not None
+    assert stored.status == TrainingSampleStatus.REVOKED
+    assert stored.frame_review is not None
+    assert stored.revision == 3
+    invalidated = restarted.get_training_sample(second_sample.sample_id)
+    assert invalidated is not None
+    assert invalidated.status == TrainingSampleStatus.REVOKED
+    assert invalidated.invalidated_by_review_id == newer_review.review_id
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM training_samples").fetchone()[0] == 2
+        actions = {
+            row[0]
+            for row in connection.execute(
+                "SELECT action FROM audit_log WHERE subject_type = 'training_sample'"
+            )
+        }
+    assert actions == {
+        "training_sample_prepared",
+        "training_sample_verified",
+        "training_sample_revoked",
+        "training_sample_invalidated_by_review",
+    }

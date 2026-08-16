@@ -13,9 +13,18 @@ from uuid import uuid4
 
 from ..domain.candidate import CandidateEvent
 from ..domain.event import EventStatus, VerifiedEvent
-from ..domain.feedback import DevelopmentApproval, DevelopmentApprovalStatus
+from ..domain.feedback import (
+    DevelopmentApproval,
+    DevelopmentApprovalStatus,
+    DevelopmentUse,
+)
 from ..domain.memory import AnalysisRecord, AnalysisResult, AnalysisStatus
 from ..domain.provenance import AnalysisProvenance, HumanReview, ReviewDecision, TraceRecord
+from ..domain.training import (
+    TrainingFrameReview,
+    TrainingSample,
+    TrainingSampleStatus,
+)
 from ..domain.video import VideoMetadata
 from .errors import (
     RepositoryConflictError,
@@ -38,6 +47,7 @@ class InMemoryEventRepository:
         self._event_history: dict[str, list[VerifiedEvent]] = {}
         self._reviews: dict[str, HumanReview] = {}
         self._development_approvals: dict[str, DevelopmentApproval] = {}
+        self._training_samples: dict[str, TrainingSample] = {}
         self._traces: dict[tuple[str, str], list[TraceRecord]] = {}
 
     def create_video(self, metadata: VideoMetadata) -> VideoMetadata:
@@ -236,6 +246,20 @@ class InMemoryEventRepository:
             self._event_history.setdefault(event.event_id, []).append(_copy(event))
             self._events[event.event_id] = updated_event
             self._reviews[stored_review.review_id] = stored_review
+            for sample_id, sample in list(self._training_samples.items()):
+                if (
+                    sample.event_id == stored_review.event_id
+                    and sample.status != TrainingSampleStatus.REVOKED
+                ):
+                    self._training_samples[sample_id] = TrainingSample.model_validate(
+                        {
+                            **sample.model_dump(),
+                            "status": TrainingSampleStatus.REVOKED,
+                            "invalidated_by_review_id": stored_review.review_id,
+                            "updated_at": max(sample.updated_at, stored_review.created_at),
+                            "revision": sample.revision + 1,
+                        }
+                    )
             return _copy(stored_review)
 
     def list_reviews(self, event_id: str) -> list[HumanReview]:
@@ -286,6 +310,21 @@ class InMemoryEventRepository:
                 raise RepositoryConflictError("yalnız approved decision revoke edilebilir")
 
             self._development_approvals[approval.approval_id] = _copy(approval)
+            if approval.supersedes_approval_id is not None:
+                for sample_id, sample in list(self._training_samples.items()):
+                    if (
+                        sample.approval_id == approval.supersedes_approval_id
+                        and sample.status != TrainingSampleStatus.REVOKED
+                    ):
+                        self._training_samples[sample_id] = TrainingSample.model_validate(
+                            {
+                                **sample.model_dump(),
+                                "status": TrainingSampleStatus.REVOKED,
+                                "revoked_by_approval_id": approval.approval_id,
+                                "updated_at": max(sample.updated_at, approval.created_at),
+                                "revision": sample.revision + 1,
+                            }
+                        )
             return _copy(approval)
 
     def list_development_approvals(self, event_id: str) -> list[DevelopmentApproval]:
@@ -300,6 +339,104 @@ class InMemoryEventRepository:
             return _copy(
                 sorted(approvals, key=lambda item: (item.created_at, item.approval_id))
             )
+
+    def create_training_samples(
+        self, samples: list[TrainingSample]
+    ) -> list[TrainingSample]:
+        with self._lock:
+            if not samples:
+                raise RepositoryConflictError("training sample listesi boş olamaz")
+            if len({sample.sample_id for sample in samples}) != len(samples):
+                raise RepositoryDuplicateError("training sample batch kimliği tekrar ediyor")
+            snapshot = deepcopy(self._training_samples)
+            try:
+                stored: list[TrainingSample] = []
+                for sample in samples:
+                    event = self._events.get(sample.event_id)
+                    if event is None:
+                        raise RepositoryNotFoundError(f"event bulunamadı: {sample.event_id}")
+                    review = self._reviews.get(sample.review_id)
+                    if review is None:
+                        raise RepositoryNotFoundError(f"review bulunamadı: {sample.review_id}")
+                    approval = self._development_approvals.get(sample.approval_id)
+                    if approval is None:
+                        raise RepositoryNotFoundError(
+                            f"development approval bulunamadı: {sample.approval_id}"
+                        )
+                    if (
+                        sample.video_id != event.video_id
+                        or sample.event_revision != event.revision
+                        or review.event_id != event.event_id
+                        or approval.event_id != event.event_id
+                        or approval.review_id != review.review_id
+                    ):
+                        raise RepositoryConflictError(
+                            "training sample event, review veya approval ile eşleşmiyor"
+                        )
+                    if (
+                        approval.status != DevelopmentApprovalStatus.APPROVED
+                        or DevelopmentUse.D_FINE_TRAINING not in approval.approved_uses
+                    ):
+                        raise RepositoryConflictError(
+                            "training sample için etkin D-FINE onayı zorunludur"
+                        )
+                    if sample.status != TrainingSampleStatus.PENDING_REVIEW or sample.revision != 1:
+                        raise RepositoryConflictError(
+                            "yeni training sample pending_review ve revision 1 olmalıdır"
+                        )
+                    existing = self._training_samples.get(sample.sample_id)
+                    if existing is not None:
+                        if existing.model_dump() != sample.model_dump():
+                            raise RepositoryDuplicateError(
+                                f"training sample farklı içerikle kayıtlı: {sample.sample_id}"
+                            )
+                        stored.append(existing)
+                        continue
+                    self._training_samples[sample.sample_id] = _copy(sample)
+                    stored.append(sample)
+                return _copy(stored)
+            except Exception:
+                self._training_samples = snapshot
+                raise
+
+    def get_training_sample(self, sample_id: str) -> TrainingSample | None:
+        with self._lock:
+            sample = self._training_samples.get(sample_id)
+            return _copy(sample) if sample is not None else None
+
+    def list_training_samples(self, event_id: str | None = None) -> list[TrainingSample]:
+        with self._lock:
+            samples = [
+                sample
+                for sample in self._training_samples.values()
+                if event_id is None or sample.event_id == event_id
+            ]
+            return _copy(
+                sorted(samples, key=lambda item: (item.created_at, item.sample_id))
+            )
+
+    def verify_training_sample(
+        self, sample_id: str, review: TrainingFrameReview
+    ) -> TrainingSample:
+        with self._lock:
+            current = self._training_samples.get(sample_id)
+            if current is None:
+                raise RepositoryNotFoundError(f"training sample bulunamadı: {sample_id}")
+            if current.status != TrainingSampleStatus.PENDING_REVIEW:
+                raise RepositoryConflictError(
+                    f"training sample inceleme beklemiyor: {sample_id}"
+                )
+            updated = current.model_copy(
+                update={
+                    "status": TrainingSampleStatus.VERIFIED,
+                    "frame_review": review,
+                    "updated_at": datetime.now(UTC),
+                    "revision": current.revision + 1,
+                }
+            )
+            updated = TrainingSample.model_validate(updated.model_dump())
+            self._training_samples[sample_id] = updated
+            return _copy(updated)
 
     def list_event_revisions(self, event_id: str) -> list[VerifiedEvent]:
         with self._lock:

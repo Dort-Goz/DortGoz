@@ -13,7 +13,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from ..domain.dataset import DatasetLicenseStatus, DatasetSplit, DatasetUse, OfflineDatasetManifest
-from ..domain.training import TrainingFrameReview
+from ..domain.training import TrainingFrameReview, TrainingSample, TrainingSampleStatus
 from .dataset_manifest import sha256_file
 
 
@@ -47,6 +47,22 @@ def load_training_frame_reviews(annotation_dir: Path) -> list[TrainingFrameRevie
     return reviews
 
 
+def training_reviews_from_samples(
+    samples: list[TrainingSample], dataset_manifest: OfflineDatasetManifest
+) -> list[TrainingFrameReview]:
+    reviews = [
+        sample.frame_review
+        for sample in samples
+        if sample.status == TrainingSampleStatus.VERIFIED
+        and sample.dataset_id == dataset_manifest.dataset_id
+        and sample.dataset_fingerprint == dataset_manifest.dataset_fingerprint
+        and sample.frame_review is not None
+    ]
+    if not reviews:
+        raise ValueError("dataset için etkin ve doğrulanmış training sample bulunamadı")
+    return reviews
+
+
 def export_verified_frames_to_coco(
     *,
     dataset_manifest: OfflineDatasetManifest,
@@ -56,7 +72,7 @@ def export_verified_frames_to_coco(
 ) -> CocoExportResult:
     """Validate provenance and emit COCO JSON without copying any image or video."""
 
-    _require_training_licence(dataset_manifest)
+    ensure_training_manifest_allowed(dataset_manifest)
     root = frame_root.resolve()
     if not root.is_dir():
         raise ValueError(f"frame root bulunamadı: {frame_root}")
@@ -181,7 +197,7 @@ def export_verified_frames_to_coco(
     )
 
 
-def _require_training_licence(manifest: OfflineDatasetManifest) -> None:
+def ensure_training_manifest_allowed(manifest: OfflineDatasetManifest) -> None:
     if (
         not manifest.training_allowed
         or DatasetUse.TRAINING not in manifest.allowed_uses

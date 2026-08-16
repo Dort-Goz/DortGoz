@@ -13,6 +13,7 @@ from ..domain.provenance import (
     HumanReview,
     TraceRecord,
 )
+from ..domain.training import TrainingFrameReview, TrainingSample
 from ..domain.video import VideoMetadata
 
 
@@ -72,6 +73,18 @@ class EventRepository(Protocol):
     def list_development_approvals(
         self, event_id: str
     ) -> list[DevelopmentApproval]: ...
+
+    def create_training_samples(
+        self, samples: list[TrainingSample]
+    ) -> list[TrainingSample]: ...
+
+    def get_training_sample(self, sample_id: str) -> TrainingSample | None: ...
+
+    def list_training_samples(self, event_id: str | None = None) -> list[TrainingSample]: ...
+
+    def verify_training_sample(
+        self, sample_id: str, review: TrainingFrameReview
+    ) -> TrainingSample: ...
 
     def get_analysis_result(self, analysis_id: str) -> AnalysisResult | None: ...
 

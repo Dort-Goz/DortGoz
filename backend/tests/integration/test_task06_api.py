@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -9,11 +10,21 @@ from fastapi.testclient import TestClient
 from dortgoz.api import router as api_module
 from dortgoz.api.router import ApiRuntime
 from dortgoz.domain.candidate import CandidateEvent, CandidateType
+from dortgoz.domain.dataset import (
+    DatasetLicenseStatus,
+    DatasetSplit,
+    DatasetUse,
+    DatasetVideoRecord,
+    OfflineDatasetManifest,
+    calculate_dataset_fingerprint,
+)
 from dortgoz.domain.event import EventStatus, VerifiedEvent
 from dortgoz.domain.evidence import VerifiedEventType
 from dortgoz.domain.provenance import AnalysisProvenance
 from dortgoz.domain.video import VideoMetadata
 from dortgoz.main import app
+from dortgoz.services.dataset_manifest import write_dataset_manifest
+from dortgoz.services.training_sample import TrainingSampleService
 
 
 def metadata(video_id: str = "00000000-0000-0000-0000-000000000021") -> VideoMetadata:
@@ -154,3 +165,164 @@ def test_review_and_development_approval_are_separate_api_decisions(
         approvals = client.get("/api/events/event-feedback-api/development-approvals")
         assert len(reviews.json()) == 1
         assert len(approvals.json()) == 1
+
+
+def test_training_sample_api_prepares_and_verifies_approved_event(
+    monkeypatch, tmp_path: Path
+) -> None:
+    runtime = ApiRuntime()
+    monkeypatch.setattr(api_module, "runtime", runtime)
+    video_payload = b"team-owned-api-video"
+    video = metadata("00000000-0000-0000-0000-000000000024").model_copy(
+        update={
+            "file_size_bytes": len(video_payload),
+            "file_hash_sha256": hashlib.sha256(video_payload).hexdigest(),
+        }
+    )
+    media_root = tmp_path / "media"
+    media_root.mkdir()
+    (media_root / video.media_path).write_bytes(video_payload)
+    entry = DatasetVideoRecord(
+        dataset_video_id="owned/api-video",
+        source_ref="videos/api-video.mp4",
+        source_label="owned",
+        split=DatasetSplit.TRAIN,
+        file_size_bytes=len(video_payload),
+        file_sha256=video.file_hash_sha256,
+        allowed_uses=[DatasetUse.TRAINING],
+    )
+    manifest = OfflineDatasetManifest(
+        dataset_id="owned-api",
+        source_name="Team-owned API fixture",
+        source_url="https://example.invalid/owned-api",
+        citation="Team-owned API fixture.",
+        license_status=DatasetLicenseStatus.VERIFIED,
+        license_id="MIT",
+        redistribution_allowed=True,
+        training_allowed=True,
+        allowed_uses=[DatasetUse.TRAINING],
+        entries=[entry],
+        dataset_fingerprint=calculate_dataset_fingerprint([entry]),
+    )
+    manifest_root = tmp_path / "manifests"
+    write_dataset_manifest(manifest_root / "owned.json", manifest)
+
+    async def fetcher(_video: Path, timestamp: float, _width: int) -> bytes:
+        components = b"\x03\x01\x11\x00\x02\x11\x00\x03\x11\x00"
+        sof = b"\x08\x01\x68\x02\x80" + components
+        marker = f"frame-{timestamp}".encode()
+        comment = b"\xff\xfe" + (len(marker) + 2).to_bytes(2, "big") + marker
+        return (
+            b"\xff\xd8\xff\xc0"
+            + (len(sof) + 2).to_bytes(2, "big")
+            + sof
+            + comment
+            + b"\xff\xd9"
+        )
+
+    runtime.training_samples = TrainingSampleService(
+        runtime.repository,
+        media_root=media_root,
+        dataset_manifest_root=manifest_root,
+        frame_root=media_root / "_training_samples",
+        frame_fetcher=fetcher,
+    )
+    analysis_id = "analysis-training-api"
+    candidate = CandidateEvent(
+        candidate_id="candidate-training-api",
+        analysis_id=analysis_id,
+        video_id=video.video_id,
+        start_time=10,
+        peak_time=12,
+        end_time=15,
+        candidate_type=CandidateType.POSSIBLE_FIGHT,
+        peak_score=0.8,
+        anomaly_score=0.8,
+        trigger_signals=["fixture"],
+        screening_model_id="fixture-screening",
+        threshold_version="test-v1",
+    )
+    event = VerifiedEvent(
+        event_id="event-training-api",
+        analysis_id=analysis_id,
+        video_id=video.video_id,
+        candidate_id=candidate.candidate_id,
+        status=EventStatus.HUMAN_REVIEW,
+        event_type=VerifiedEventType.PHYSICAL_FIGHT,
+        start_time=10,
+        peak_time=12,
+        end_time=15,
+        confidence=0.8,
+    )
+    runtime.repository.create_video(video)
+    runtime.repository.create_analysis(
+        video.video_id,
+        AnalysisProvenance(
+            contract_version="1.0.0",
+            config_version="test-v1",
+            code_revision="test-revision",
+        ),
+        analysis_id=analysis_id,
+    )
+    runtime.repository.save_candidate(candidate)
+    runtime.repository.save_event(event)
+
+    with TestClient(app) as client:
+        reviewed = client.post(
+            "/api/events/event-training-api/review",
+            json={
+                "decision": "edit",
+                "reviewer": "operator",
+                "note": "Olay zamanları doğrulandı.",
+                "start_time": 10,
+                "peak_time": 12,
+                "end_time": 15,
+            },
+        )
+        approved = client.post(
+            "/api/events/event-training-api/development-approval",
+            json={
+                "review_id": reviewed.json()["review_id"],
+                "status": "approved",
+                "approved_uses": ["d_fine_training"],
+                "reviewer": "operator",
+                "note": "D-FINE kutu incelemesi için onaylandı.",
+            },
+        )
+        prepared = client.post(
+            "/api/events/event-training-api/training-samples",
+            json={
+                "approval_id": approved.json()["approval_id"],
+                "dataset_manifest_name": "owned.json",
+                "prepared_by": "operator",
+            },
+        )
+        assert prepared.status_code == 200
+        assert len(prepared.json()) == 3
+        assert all(item["status"] == "pending_review" for item in prepared.json())
+        assert all(item["frame_url"].startswith("/media/_training_samples/") for item in prepared.json())
+
+        sample_id = prepared.json()[1]["sample_id"]
+        verified = client.post(
+            f"/api/training-samples/{sample_id}/review",
+            json={
+                "review_result": "verified_boxes",
+                "boxes": [
+                    {
+                        "category_name": "person",
+                        "x": 10,
+                        "y": 20,
+                        "width": 30,
+                        "height": 40,
+                    }
+                ],
+                "reviewer": "operator",
+                "annotation_tool": "Dortgoz UI",
+            },
+        )
+        assert verified.status_code == 200
+        assert verified.json()["status"] == "verified"
+        assert verified.json()["frame_review"]["human_verified"] is True
+
+        listed = client.get("/api/events/event-training-api/training-samples")
+        assert len(listed.json()) == 3

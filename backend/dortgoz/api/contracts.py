@@ -19,6 +19,11 @@ from ..domain.feedback import (
 )
 from ..domain.memory import AnalysisResult
 from ..domain.provenance import ProcedureSource, TraceRecord
+from ..domain.training import (
+    FrameReviewResult,
+    TrainingSample,
+    VerifiedBoundingBox,
+)
 from ..services.analysis_job import AnalysisJobStatus
 
 
@@ -93,6 +98,28 @@ class DevelopmentApprovalInput(BaseModel):
         return self
 
 
+class TrainingSamplePrepareInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    approval_id: str = Field(min_length=1)
+    dataset_manifest_name: str = Field(min_length=6, max_length=255)
+    prepared_by: str = Field(min_length=1, max_length=120)
+    timestamps: list[float] | None = Field(default=None, min_length=1, max_length=9)
+
+
+class TrainingSampleReviewInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    review_result: FrameReviewResult
+    boxes: list[VerifiedBoundingBox] = Field(default_factory=list, max_length=500)
+    reviewer: str = Field(min_length=1, max_length=120)
+    annotation_tool: str = Field(min_length=1, max_length=120)
+
+
+class TrainingSampleView(TrainingSample):
+    frame_url: str = Field(pattern=r"^/media/[A-Za-z0-9_./-]+$")
+
+
 class QueryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -152,5 +179,8 @@ __all__ = [
     "QueryResponse",
     "ReportResponse",
     "SystemMetrics",
+    "TrainingSamplePrepareInput",
+    "TrainingSampleReviewInput",
+    "TrainingSampleView",
     "event_to_json",
 ]

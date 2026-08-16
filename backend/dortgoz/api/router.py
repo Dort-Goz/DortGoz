@@ -45,6 +45,7 @@ from ..services.ingest_service import VideoIngestService
 from ..services.mock_vertical import MockVerticalAnalysisService
 from ..services.procedure_service import ProcedureService
 from ..services.risk_engine import RiskEngine, load_risk_ruleset
+from ..services.training_sample import TrainingSampleError, TrainingSampleService
 from ..tools.local_agent import LocalVlmAgentTools
 from ..tools.local_vlm import LocalVlmManifest
 from ..tools.screening import LocalCandidateScreeningTool
@@ -58,6 +59,9 @@ from .contracts import (
     QueryResponse,
     ReportResponse,
     SystemMetrics,
+    TrainingSamplePrepareInput,
+    TrainingSampleReviewInput,
+    TrainingSampleView,
 )
 from .errors import error_response
 
@@ -77,6 +81,13 @@ class ApiRuntime:
             max_bytes=settings.video_max_bytes,
         )
         self.ingest = VideoIngestService(self.storage)
+        self.training_samples = TrainingSampleService(
+            self.repository,
+            media_root=settings.media_dir,
+            dataset_manifest_root=settings.runs_dir / "datasets",
+            frame_root=settings.media_dir / "_training_samples",
+            frame_width=settings.training_frame_width,
+        )
         self.candidate_scorer: CandidateScorer = load_candidate_scorer(
             settings.candidate_manifest_path
         )
@@ -375,6 +386,65 @@ async def record_development_approval(
 )
 async def list_development_approvals(event_id: str) -> list[DevelopmentApproval]:
     return runtime.repository.list_development_approvals(event_id)
+
+
+def _training_sample_view(sample) -> TrainingSampleView:
+    return TrainingSampleView.model_validate(
+        {**sample.model_dump(), "frame_url": f"/media/{sample.frame_ref}"}
+    )
+
+
+@router.post(
+    "/events/{event_id}/training-samples",
+    response_model=list[TrainingSampleView],
+)
+async def prepare_training_samples(
+    event_id: str, request: TrainingSamplePrepareInput
+) -> list[TrainingSampleView] | JSONResponse:
+    try:
+        samples = await runtime.training_samples.prepare(
+            event_id,
+            request.approval_id,
+            request.dataset_manifest_name,
+            prepared_by=request.prepared_by,
+            timestamps=request.timestamps,
+        )
+    except TrainingSampleError as exc:
+        return error_response(exc.code, str(exc), status_code=exc.status_code)
+    return [_training_sample_view(sample) for sample in samples]
+
+
+@router.get(
+    "/events/{event_id}/training-samples",
+    response_model=list[TrainingSampleView],
+)
+async def list_training_samples(event_id: str) -> list[TrainingSampleView]:
+    if runtime.repository.get_event(event_id) is None:
+        raise RepositoryNotFoundError(f"event bulunamadı: {event_id}")
+    return [
+        _training_sample_view(sample)
+        for sample in runtime.repository.list_training_samples(event_id)
+    ]
+
+
+@router.post(
+    "/training-samples/{sample_id}/review",
+    response_model=TrainingSampleView,
+)
+async def review_training_sample(
+    sample_id: str, request: TrainingSampleReviewInput
+) -> TrainingSampleView | JSONResponse:
+    try:
+        sample = runtime.training_samples.verify(
+            sample_id,
+            review_result=request.review_result,
+            boxes=request.boxes,
+            reviewer=request.reviewer,
+            annotation_tool=request.annotation_tool,
+        )
+    except TrainingSampleError as exc:
+        return error_response(exc.code, str(exc), status_code=exc.status_code)
+    return _training_sample_view(sample)
 
 
 @router.post("/analyses/{analysis_id}/query", response_model=QueryResponse)

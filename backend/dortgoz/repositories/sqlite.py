@@ -1,6 +1,6 @@
 """Normalized SQLite-backed, local-only event memory adapter.
 
-Schema v2 stores each entity in its own row. Existing schema-v1 JSON snapshots
+Schema v3 stores each entity in its own row. Existing schema-v1 JSON snapshots
 are imported once and kept untouched as a rollback artifact.
 """
 
@@ -21,12 +21,13 @@ from ..domain.event import VerifiedEvent
 from ..domain.feedback import DevelopmentApproval
 from ..domain.memory import AnalysisRecord
 from ..domain.provenance import HumanReview, TraceRecord
+from ..domain.training import TrainingFrameReview, TrainingSample
 from ..domain.video import VideoMetadata
 from .errors import RepositoryError
 from .memory import InMemoryEventRepository
 
 _T = TypeVar("_T")
-_DATABASE_SCHEMA_VERSION = 2
+_DATABASE_SCHEMA_VERSION = 3
 _LEGACY_SNAPSHOT_VERSION = 1
 
 
@@ -138,6 +139,26 @@ class SqliteEventRepository(InMemoryEventRepository):
                     CREATE INDEX IF NOT EXISTS idx_development_approvals_event
                         ON development_approvals(event_id, created_at);
 
+                    CREATE TABLE IF NOT EXISTS training_samples (
+                        sample_id TEXT PRIMARY KEY,
+                        event_id TEXT NOT NULL REFERENCES events(event_id),
+                        review_id TEXT NOT NULL REFERENCES human_reviews(review_id),
+                        approval_id TEXT NOT NULL REFERENCES development_approvals(approval_id),
+                        dataset_id TEXT NOT NULL,
+                        dataset_fingerprint TEXT NOT NULL,
+                        split TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        timestamp_seconds REAL NOT NULL,
+                        frame_sha256 TEXT NOT NULL,
+                        revision INTEGER NOT NULL,
+                        created_at TEXT NOT NULL,
+                        payload TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_training_samples_event_status
+                        ON training_samples(event_id, status, created_at);
+                    CREATE INDEX IF NOT EXISTS idx_training_samples_dataset
+                        ON training_samples(dataset_id, dataset_fingerprint, split);
+
                     CREATE TABLE IF NOT EXISTS decision_traces (
                         analysis_id TEXT NOT NULL REFERENCES analyses(analysis_id),
                         candidate_id TEXT NOT NULL REFERENCES candidates(candidate_id),
@@ -211,7 +232,7 @@ class SqliteEventRepository(InMemoryEventRepository):
                     subject_type="database",
                     subject_id=str(self.database_path),
                     actor=None,
-                    payload={"from_version": 1, "to_version": 2},
+                    payload={"from_version": 1, "to_version": 3},
                 )
         except sqlite3.Error as exc:
             raise RepositoryError(f"legacy event store taşınamadı: {exc}") from exc
@@ -289,6 +310,11 @@ class SqliteEventRepository(InMemoryEventRepository):
             item.approval_id: item
             for row in self._connection.execute("SELECT payload FROM development_approvals")
             if (item := self._model_from_payload(DevelopmentApproval, row["payload"]))
+        }
+        self._training_samples = {
+            item.sample_id: item
+            for row in self._connection.execute("SELECT payload FROM training_samples")
+            if (item := self._model_from_payload(TrainingSample, row["payload"]))
         }
         self._traces = {}
         for row in self._connection.execute(
@@ -404,6 +430,36 @@ class SqliteEventRepository(InMemoryEventRepository):
                 item.review_id,
                 item.status.value,
                 item.reviewer,
+                item.created_at.isoformat(),
+                self._json_payload(item),
+            ),
+        )
+
+    def _write_training_sample(self, item: TrainingSample) -> None:
+        self._connection.execute(
+            """
+            INSERT INTO training_samples(
+                sample_id, event_id, review_id, approval_id,
+                dataset_id, dataset_fingerprint, split, status,
+                timestamp_seconds, frame_sha256, revision, created_at, payload
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(sample_id) DO UPDATE SET
+                status = excluded.status,
+                revision = excluded.revision,
+                payload = excluded.payload
+            """,
+            (
+                item.sample_id,
+                item.event_id,
+                item.review_id,
+                item.approval_id,
+                item.dataset_id,
+                item.dataset_fingerprint,
+                item.split.value,
+                item.status.value,
+                item.timestamp_seconds,
+                item.frame_sha256,
+                item.revision,
                 item.created_at.isoformat(),
                 self._json_payload(item),
             ),
@@ -531,6 +587,13 @@ class SqliteEventRepository(InMemoryEventRepository):
             self._write_event_revision(previous)
             self._write_event(current)
             self._write_review(saved)
+            invalidated_samples = [
+                sample
+                for sample in self._training_samples.values()
+                if sample.invalidated_by_review_id == saved.review_id
+            ]
+            for sample in invalidated_samples:
+                self._write_training_sample(sample)
             self._write_audit(
                 action="human_review_saved",
                 subject_type="event",
@@ -539,6 +602,15 @@ class SqliteEventRepository(InMemoryEventRepository):
                 occurred_at=saved.created_at,
                 payload={"review_id": saved.review_id, "decision": saved.decision.value},
             )
+            for sample in invalidated_samples:
+                self._write_audit(
+                    action="training_sample_invalidated_by_review",
+                    subject_type="training_sample",
+                    subject_id=sample.sample_id,
+                    actor=saved.reviewer,
+                    occurred_at=saved.created_at,
+                    payload={"review_id": saved.review_id},
+                )
 
         return self._transaction(
             lambda: super(SqliteEventRepository, self).save_review(review), write
@@ -549,6 +621,13 @@ class SqliteEventRepository(InMemoryEventRepository):
     ) -> DevelopmentApproval:
         def write(saved: DevelopmentApproval) -> None:
             self._write_development_approval(saved)
+            revoked_samples = [
+                sample
+                for sample in self._training_samples.values()
+                if sample.revoked_by_approval_id == saved.approval_id
+            ]
+            for sample in revoked_samples:
+                self._write_training_sample(sample)
             self._write_audit(
                 action="development_approval_saved",
                 subject_type="event",
@@ -561,9 +640,68 @@ class SqliteEventRepository(InMemoryEventRepository):
                     "approved_uses": [item.value for item in saved.approved_uses],
                 },
             )
+            for sample in revoked_samples:
+                self._write_audit(
+                    action="training_sample_revoked",
+                    subject_type="training_sample",
+                    subject_id=sample.sample_id,
+                    actor=saved.reviewer,
+                    occurred_at=saved.created_at,
+                    payload={"revoked_by_approval_id": saved.approval_id},
+                )
 
         return self._transaction(
             lambda: super(SqliteEventRepository, self).save_development_approval(approval),
+            write,
+        )
+
+    def create_training_samples(
+        self, samples: list[TrainingSample]
+    ) -> list[TrainingSample]:
+        def write(saved: list[TrainingSample]) -> None:
+            for item in saved:
+                self._write_training_sample(item)
+                self._write_audit(
+                    action="training_sample_prepared",
+                    subject_type="training_sample",
+                    subject_id=item.sample_id,
+                    actor=item.prepared_by,
+                    occurred_at=item.created_at,
+                    payload={
+                        "event_id": item.event_id,
+                        "approval_id": item.approval_id,
+                        "frame_sha256": item.frame_sha256,
+                    },
+                )
+
+        return self._transaction(
+            lambda: super(SqliteEventRepository, self).create_training_samples(samples),
+            write,
+        )
+
+    def verify_training_sample(
+        self, sample_id: str, review: TrainingFrameReview
+    ) -> TrainingSample:
+        def write(saved: TrainingSample) -> None:
+            self._write_training_sample(saved)
+            assert saved.frame_review is not None
+            self._write_audit(
+                action="training_sample_verified",
+                subject_type="training_sample",
+                subject_id=saved.sample_id,
+                actor=saved.frame_review.reviewer,
+                occurred_at=saved.frame_review.reviewed_at,
+                payload={
+                    "review_result": saved.frame_review.review_result.value,
+                    "box_count": len(saved.frame_review.boxes),
+                    "revision": saved.revision,
+                },
+            )
+
+        return self._transaction(
+            lambda: super(SqliteEventRepository, self).verify_training_sample(
+                sample_id, review
+            ),
             write,
         )
 
