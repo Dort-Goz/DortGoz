@@ -198,9 +198,21 @@ app.state.live_cctv = live_cctv
 from .services import triage  # noqa: E402
 from .services.analysis_projection import RuntimeAnalysisProjection  # noqa: E402
 
-manager.observers.append(triage.store.observe)
-runtime_projection = RuntimeAnalysisProjection(api_runtime.repository, settings.runs_dir)
+runtime_projection = RuntimeAnalysisProjection(
+    api_runtime.repository,
+    settings.runs_dir,
+    allow_virtual_sources=settings.mock,
+)
+live_cctv.prepare_run = runtime_projection.register_runtime_source
+# Projection önce çalışır. Böylece nöbet kartı aynı yayın turunda kalıcı event_id
+# alır ve operatör kararı JSONL yerine canonical SQLite review'a bağlanır.
+triage.store.configure(
+    api_runtime.repository,
+    api_runtime.events,
+    runtime_projection.event_id_for,
+)
 manager.observers.append(runtime_projection.observe)
+manager.observers.append(triage.store.observe)
 
 
 @app.get("/api/triage")
@@ -209,10 +221,47 @@ async def triage_snapshot() -> dict:
     return triage.store.snapshot()
 
 
-@app.post("/api/triage/rule_sil")
-async def triage_revoke_rule(body: dict) -> dict:
-    """Bastırma kuralını iptal et: {feed, category} — çift yeniden kuyruğa düşer."""
-    triage.store.revoke_rule(body.get("feed", ""), body.get("category", ""))
+@app.post("/api/triage/rules/{proposal_id}/approve")
+async def triage_approve_rule(proposal_id: str, body: dict) -> dict:
+    """Öneriyi süreli etkinleştir; ayrı operatör kararı zorunludur."""
+    try:
+        triage.store.approve_rule(
+            proposal_id,
+            body.get("reviewer", "operator-console"),
+            int(body.get("duration_hours", triage.DEFAULT_RULE_HOURS)),
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return triage.store.snapshot()
+
+
+@app.post("/api/triage/rules/{proposal_id}/reject")
+async def triage_reject_rule(proposal_id: str, body: dict) -> dict:
+    """Kural önerisini uygulatmadan reddet."""
+    try:
+        triage.store.reject_rule(
+            proposal_id, body.get("reviewer", "operator-console")
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return triage.store.snapshot()
+
+
+@app.post("/api/triage/rules/{proposal_id}/revoke")
+async def triage_revoke_rule(proposal_id: str, body: dict) -> dict:
+    """Toplanan, önerilen veya etkin kuralı geri al."""
+    try:
+        triage.store.revoke_rule(
+            proposal_id, body.get("reviewer", "operator-console")
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     return triage.store.snapshot()
 
 
@@ -222,11 +271,14 @@ async def triage_decide(body: dict) -> dict:
     try:
         item = triage.store.decide(
             body.get("key", ""), body.get("verdict", ""),
-            category=body.get("category", ""), note=body.get("note", ""))
+            category=body.get("category", ""), note=body.get("note", ""),
+            reviewer=body.get("reviewer", "operator-console"))
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    except triage.TriagePersistenceError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     from dataclasses import asdict
     return asdict(item)
 

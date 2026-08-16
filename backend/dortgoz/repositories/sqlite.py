@@ -1,6 +1,6 @@
 """Normalized SQLite-backed, local-only event memory adapter.
 
-Schema v4 stores each entity in its own row. Existing schema-v1 JSON snapshots
+Schema v5 stores each entity in its own row. Existing schema-v1 JSON snapshots
 are imported once and kept untouched as a rollback artifact.
 """
 
@@ -18,7 +18,7 @@ from pydantic import BaseModel, ValidationError
 
 from ..domain.candidate import CandidateEvent
 from ..domain.event import VerifiedEvent
-from ..domain.feedback import DevelopmentApproval
+from ..domain.feedback import DevelopmentApproval, RuleProposal
 from ..domain.memory import AnalysisRecord
 from ..domain.model_lifecycle import ModelVersion, TrainingJob
 from ..domain.provenance import HumanReview, TraceRecord
@@ -28,7 +28,7 @@ from .errors import RepositoryError
 from .memory import InMemoryEventRepository
 
 _T = TypeVar("_T")
-_DATABASE_SCHEMA_VERSION = 4
+_DATABASE_SCHEMA_VERSION = 5
 _LEGACY_SNAPSHOT_VERSION = 1
 
 
@@ -139,6 +139,23 @@ class SqliteEventRepository(InMemoryEventRepository):
                     );
                     CREATE INDEX IF NOT EXISTS idx_development_approvals_event
                         ON development_approvals(event_id, created_at);
+
+                    CREATE TABLE IF NOT EXISTS rule_proposals (
+                        proposal_id TEXT PRIMARY KEY,
+                        feed TEXT NOT NULL,
+                        category TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        expires_at TEXT,
+                        revision INTEGER NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        payload TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_rule_proposals_scope_status
+                        ON rule_proposals(feed, category, status, created_at);
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_rule_proposals_active_scope
+                        ON rule_proposals(feed, category)
+                        WHERE status IN ('collecting', 'proposed', 'approved');
 
                     CREATE TABLE IF NOT EXISTS training_samples (
                         sample_id TEXT PRIMARY KEY,
@@ -267,7 +284,7 @@ class SqliteEventRepository(InMemoryEventRepository):
                     subject_type="database",
                     subject_id=str(self.database_path),
                     actor=None,
-                    payload={"from_version": 1, "to_version": 4},
+                    payload={"from_version": 1, "to_version": 5},
                 )
         except sqlite3.Error as exc:
             raise RepositoryError(f"legacy event store taşınamadı: {exc}") from exc
@@ -343,6 +360,11 @@ class SqliteEventRepository(InMemoryEventRepository):
             item.approval_id: item
             for row in self._connection.execute("SELECT payload FROM development_approvals")
             if (item := self._model_from_payload(DevelopmentApproval, row["payload"]))
+        }
+        self._rule_proposals = {
+            item.proposal_id: item
+            for row in self._connection.execute("SELECT payload FROM rule_proposals")
+            if (item := self._model_from_payload(RuleProposal, row["payload"]))
         }
         self._training_samples = {
             item.sample_id: item
@@ -472,6 +494,33 @@ class SqliteEventRepository(InMemoryEventRepository):
                 item.status.value,
                 item.reviewer,
                 item.created_at.isoformat(),
+                self._json_payload(item),
+            ),
+        )
+
+    def _write_rule_proposal(self, item: RuleProposal) -> None:
+        self._connection.execute(
+            """
+            INSERT INTO rule_proposals(
+                proposal_id, feed, category, status, expires_at,
+                revision, created_at, updated_at, payload
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(proposal_id) DO UPDATE SET
+                status = excluded.status,
+                expires_at = excluded.expires_at,
+                revision = excluded.revision,
+                updated_at = excluded.updated_at,
+                payload = excluded.payload
+            """,
+            (
+                item.proposal_id,
+                item.feed,
+                item.category,
+                item.status.value,
+                item.expires_at.isoformat() if item.expires_at is not None else None,
+                item.revision,
+                item.created_at.isoformat(),
+                item.updated_at.isoformat(),
                 self._json_payload(item),
             ),
         )
@@ -740,6 +789,56 @@ class SqliteEventRepository(InMemoryEventRepository):
 
         return self._transaction(
             lambda: super(SqliteEventRepository, self).save_development_approval(approval),
+            write,
+        )
+
+    def create_rule_proposal(self, proposal: RuleProposal) -> RuleProposal:
+        def write(saved: RuleProposal) -> None:
+            self._write_rule_proposal(saved)
+            self._write_audit(
+                action="rule_proposal_created",
+                subject_type="rule_proposal",
+                subject_id=saved.proposal_id,
+                actor=saved.proposed_by,
+                occurred_at=saved.created_at,
+                payload={
+                    "feed": saved.feed,
+                    "category": saved.category,
+                    "status": saved.status.value,
+                    "dismissal_count": saved.dismissal_count,
+                },
+            )
+
+        return self._transaction(
+            lambda: super(SqliteEventRepository, self).create_rule_proposal(proposal),
+            write,
+        )
+
+    def update_rule_proposal(self, proposal: RuleProposal) -> RuleProposal:
+        def write(saved: RuleProposal) -> None:
+            self._write_rule_proposal(saved)
+            self._write_audit(
+                action=f"rule_proposal_{saved.status.value}",
+                subject_type="rule_proposal",
+                subject_id=saved.proposal_id,
+                actor=saved.decided_by or saved.proposed_by,
+                occurred_at=saved.updated_at,
+                payload={
+                    "feed": saved.feed,
+                    "category": saved.category,
+                    "dismissal_count": saved.dismissal_count,
+                    "auto_applied_count": saved.auto_applied_count,
+                    "expires_at": (
+                        saved.expires_at.isoformat()
+                        if saved.expires_at is not None
+                        else None
+                    ),
+                    "revision": saved.revision,
+                },
+            )
+
+        return self._transaction(
+            lambda: super(SqliteEventRepository, self).update_rule_proposal(proposal),
             write,
         )
 

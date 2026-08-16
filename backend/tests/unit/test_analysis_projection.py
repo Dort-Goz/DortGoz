@@ -5,7 +5,7 @@ from pathlib import Path
 
 from dortgoz.domain.event import EventStatus
 from dortgoz.domain.memory import AnalysisStatus
-from dortgoz.domain.video import VideoMetadata
+from dortgoz.domain.video import VideoMetadata, VideoProbe
 from dortgoz.events import Event, IncidentUpdate, RunStatus
 from dortgoz.repositories.memory import InMemoryEventRepository
 from dortgoz.services.analysis_projection import RuntimeAnalysisProjection
@@ -66,6 +66,10 @@ def test_completed_runtime_run_projects_one_reviewable_event(tmp_path: Path) -> 
             olay_bitis=20,
         ),
     )
+    # Event koşu bitmeden oluşur. Nöbet kararı aynı yayın turunda bu kimliğe
+    # bağlanabilir; JSONL yan kanalı gerekmez.
+    assert projection.event_id_for("", "incident-1") == f"{run_id}:incident-1"
+    assert repository.get_event(f"{run_id}:incident-1") is not None
     _emit(
         projection,
         IncidentUpdate(
@@ -142,3 +146,78 @@ def test_unregistered_media_and_failed_run_do_not_create_training_events(
     assert analysis.status == AnalysisStatus.FAILED
     assert analysis.error == "model yanıt vermedi"
     assert repository.list_events("failed") == []
+
+
+def test_mock_virtual_source_keeps_operator_feedback_canonical(tmp_path: Path) -> None:
+    repository = InMemoryEventRepository()
+    projection = RuntimeAnalysisProjection(
+        repository, tmp_path, allow_virtual_sources=True
+    )
+
+    _emit(projection, RunStatus(run_id="mock-1", state="processing"))
+    _emit(
+        projection,
+        IncidentUpdate(
+            incident_id="mock-incident",
+            t=3,
+            phase="basladi",
+            title="Mock olay",
+            anomaly_type="bilinmeyen",
+            risk="orta",
+        ),
+    )
+
+    event_id = projection.event_id_for("", "mock-incident")
+    assert event_id == "mock-1:mock-incident"
+    event = repository.get_event(event_id)
+    assert event is not None
+    video = repository.get_video(event.video_id)
+    assert video is not None
+    assert "NOT_TRAINING_ELIGIBLE" in video.warnings
+
+
+async def test_live_runtime_source_is_registered_without_copy(tmp_path: Path) -> None:
+    repository = InMemoryEventRepository()
+
+    async def fake_probe(_path: Path) -> VideoProbe:
+        return VideoProbe(
+            container="mp4",
+            codec="h264",
+            width=640,
+            height=360,
+            fps=25,
+            duration_seconds=30,
+            has_audio=False,
+            time_base="1/25",
+        )
+
+    source = tmp_path / "seg_1.mp4"
+    source.write_bytes(b"live-segment")
+    projection = RuntimeAnalysisProjection(
+        repository, tmp_path, source_probe=fake_probe
+    )
+    metadata = await projection.register_runtime_source(
+        "live-run", "canli/KAM-1/seg_1.mp4", source
+    )
+
+    assert source.read_bytes() == b"live-segment"
+    assert metadata.media_path == "canli/KAM-1/seg_1.mp4"
+    assert "RUNTIME_SOURCE_REFERENCE" in metadata.warnings
+    _emit(
+        projection,
+        RunStatus(run_id="live-run", state="processing", video="canli/KAM-1/seg_1.mp4"),
+        feed="KAM-1",
+    )
+    _emit(
+        projection,
+        IncidentUpdate(
+            incident_id="live-event",
+            t=5,
+            phase="basladi",
+            title="Canlı olay",
+            anomaly_type="vandalizm",
+            risk="orta",
+        ),
+        feed="KAM-1",
+    )
+    assert projection.event_id_for("KAM-1", "live-event") == "live-run:live-event"

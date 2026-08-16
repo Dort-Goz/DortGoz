@@ -2,19 +2,27 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import json
 import logging
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import NAMESPACE_URL, uuid5
 
 from ..domain.candidate import CandidateEvent, CandidateType
 from ..domain.event import EventStatus, VerifiedEvent
 from ..domain.memory import AnalysisStatus
 from ..domain.provenance import AnalysisProvenance, ModelRunRef
 from ..domain.taxonomy import VerifiedEventType, canonical_event_type_from_ws_label
+from ..domain.video import VideoMetadata, VideoProbe
 from ..events import Event, IncidentUpdate, RunStatus
+from ..infrastructure.ffmpeg import probe_video
 from ..repositories.protocols import EventRepository
 
 LOGGER = logging.getLogger(__name__)
+ProbeFunction = Callable[[Path], Awaitable[VideoProbe]]
 
 _RISK_SCORE = {"dusuk": 0.25, "orta": 0.5, "yuksek": 0.75, "kritik": 1.0}
 
@@ -22,11 +30,22 @@ _RISK_SCORE = {"dusuk": 0.25, "orta": 0.5, "yuksek": 0.75, "kritik": 1.0}
 class RuntimeAnalysisProjection:
     """Keep the WS runtime and canonical feedback store on one event identity."""
 
-    def __init__(self, repository: EventRepository, runs_dir: Path) -> None:
+    def __init__(
+        self,
+        repository: EventRepository,
+        runs_dir: Path,
+        *,
+        allow_virtual_sources: bool = False,
+        source_probe: ProbeFunction = probe_video,
+    ) -> None:
         self.repository = repository
         self.runs_dir = runs_dir
+        self.allow_virtual_sources = allow_virtual_sources
+        self.source_probe = source_probe
         self._run_by_feed: dict[str, str] = {}
+        self._video_by_run: dict[str, str] = {}
         self._incidents: dict[str, dict[str, IncidentUpdate]] = {}
+        self._event_by_incident: dict[tuple[str, str], str] = {}
 
     def observe(self, envelope: Event) -> None:
         """ConnectionManager observer; failures are logged and never break analysis."""
@@ -36,9 +55,13 @@ class RuntimeAnalysisProjection:
             if isinstance(payload, RunStatus):
                 self._observe_run(envelope.feed or "", payload)
             elif isinstance(payload, IncidentUpdate):
-                run_id = self._run_by_feed.get(envelope.feed or "")
+                feed = envelope.feed or ""
+                run_id = self._run_by_feed.get(feed)
                 if run_id is not None:
                     self._incidents.setdefault(run_id, {})[payload.incident_id] = payload
+                    event_id = self._persist_incident(run_id, payload)
+                    if event_id is not None:
+                        self._event_by_incident[(feed, payload.incident_id)] = event_id
         except Exception:
             LOGGER.exception("runtime incident projection failed")
 
@@ -46,7 +69,13 @@ class RuntimeAnalysisProjection:
         if status.run_id == "-":
             return
         if status.state == "processing":
-            video = self.repository.find_video_by_stored_filename(status.video)
+            video_id = self._video_by_run.get(status.run_id)
+            video = self.repository.get_video(video_id) if video_id is not None else None
+            if video is None:
+                video = self.repository.find_video_by_stored_filename(status.video)
+            if video is None and self.allow_virtual_sources:
+                video = self._virtual_video(status.run_id)
+                self.repository.create_video(video)
             if video is None:
                 return
             if self.repository.get_analysis(status.run_id) is None:
@@ -81,14 +110,85 @@ class RuntimeAnalysisProjection:
             return
         self._run_by_feed.pop(feed, None)
         self._incidents.pop(run_id, None)
+        self._video_by_run.pop(run_id, None)
 
-    def _persist_incident(self, analysis_id: str, incident: IncidentUpdate) -> None:
+    async def register_runtime_source(
+        self, run_id: str, media_path: str, source: Path
+    ) -> VideoMetadata:
+        """Canlı segmenti kopyalamadan canonical video parent'ına kaydet."""
+
+        resolved = source.resolve()
+        if not resolved.is_file() or resolved.is_symlink():
+            raise ValueError("runtime video kaynağı güvenli bir dosya değil")
+        digest = await asyncio.to_thread(self._file_hash, resolved)
+        existing = self.repository.find_video_by_hash(digest)
+        if existing is not None:
+            self._video_by_run[run_id] = existing.video_id
+            return existing
+        probed = await self.source_probe(resolved)
+        video_id = str(uuid5(NAMESPACE_URL, f"dortgoz-runtime:{digest}"))
+        metadata = VideoMetadata(
+            video_id=video_id,
+            original_filename=resolved.name,
+            stored_filename=f"{video_id}{resolved.suffix.lower()}",
+            media_path=media_path,
+            file_size_bytes=resolved.stat().st_size,
+            file_hash_sha256=digest,
+            warnings=["RUNTIME_SOURCE_REFERENCE", "MEDIA_MAY_BE_PRUNED"],
+            **probed.model_dump(),
+        )
+        stored = self.repository.create_video(metadata)
+        self._video_by_run[run_id] = stored.video_id
+        return stored
+
+    def event_id_for(self, feed: str, incident_id: str) -> str | None:
+        """Nöbet kuyruğu ile canonical event kimliğini aynı kayda bağla."""
+
+        return self._event_by_incident.get((feed, incident_id))
+
+    def _persist_incident(self, analysis_id: str, incident: IncidentUpdate) -> str | None:
         analysis = self.repository.get_analysis(analysis_id)
         if analysis is None:
-            return
+            return None
         event_id = f"{analysis_id}:{incident.incident_id}"
-        if self.repository.get_event(event_id) is not None:
-            return
+        current = self.repository.get_event(event_id)
+
+        if current is not None:
+            # Operatör kararı append-only review ile geldikten sonra runtime
+            # yaşam döngüsü o kararı ve düzeltilmiş alanları geri yazamaz.
+            if current.review is not None:
+                return event_id
+            start = (
+                incident.olay_baslangic
+                if incident.olay_baslangic is not None
+                else current.start_time if current.start_time is not None else incident.t
+            )
+            raw_end = (
+                incident.olay_bitis
+                if incident.olay_bitis is not None
+                else max(current.end_time or 0.0, incident.t)
+            )
+            end = max(start, raw_end, 0.001)
+            peak = min(max(incident.t, start), end)
+            updated = current.model_copy(
+                update={
+                    "event_type": VerifiedEventType(
+                        canonical_event_type_from_ws_label(incident.anomaly_type).value
+                    ),
+                    "start_time": start,
+                    "peak_time": peak,
+                    "end_time": end,
+                    "uncertainties": (
+                        [incident.review_reason] if incident.needs_review else []
+                    ),
+                    "legacy_event_type": incident.anomaly_type,
+                    "during": incident.detail or incident.title,
+                    "updated_at": datetime.now(UTC),
+                    "revision": current.revision + 1,
+                }
+            )
+            self.repository.save_event(updated)
+            return event_id
 
         start = incident.olay_baslangic if incident.olay_baslangic is not None else incident.t
         raw_end = incident.olay_bitis if incident.olay_bitis is not None else incident.t
@@ -133,6 +233,7 @@ class RuntimeAnalysisProjection:
                 during=incident.detail or incident.title,
             )
         )
+        return event_id
 
     def _provenance(self, analysis_id: str) -> AnalysisProvenance:
         metadata: dict = {}
@@ -156,3 +257,34 @@ class RuntimeAnalysisProjection:
                 )
             ],
         )
+
+    @staticmethod
+    def _virtual_video(run_id: str) -> VideoMetadata:
+        """Mock arayüz feedback'ini de canonical kimliğe bağlayan kaynak."""
+
+        video_id = str(uuid5(NAMESPACE_URL, f"dortgoz-mock:{run_id}"))
+        return VideoMetadata(
+            video_id=video_id,
+            original_filename=f"{run_id}.mp4",
+            stored_filename=f"{video_id}.mp4",
+            media_path=f"mock/{video_id}.mp4",
+            file_size_bytes=1,
+            file_hash_sha256=hashlib.sha256(f"mock:{run_id}".encode()).hexdigest(),
+            container="mp4",
+            codec="mock",
+            width=1,
+            height=1,
+            fps=1,
+            duration_seconds=1,
+            has_audio=False,
+            time_base="1/1",
+            warnings=["MOCK_VIRTUAL_SOURCE", "NOT_TRAINING_ELIGIBLE"],
+        )
+
+    @staticmethod
+    def _file_hash(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            while chunk := handle.read(1024 * 1024):
+                digest.update(chunk)
+        return digest.hexdigest()

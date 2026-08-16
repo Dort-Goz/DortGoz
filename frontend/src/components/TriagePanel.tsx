@@ -5,6 +5,7 @@ interface TriageItem {
   key: string;
   feed: string;
   incident_id: string;
+  event_id: string | null;
   t: number;
   wall: number;
   title: string;
@@ -19,6 +20,18 @@ interface TriageItem {
   note: string;
   decided_wall: number | null;
   tekrar: number;
+  review_ids: string[];
+}
+
+interface RuleProposal {
+  proposal_id: string;
+  feed: string;
+  category: string;
+  status: "proposed" | "approved";
+  dismissal_count: number;
+  reason: string;
+  expires_at: string | null;
+  auto_applied_count: number;
 }
 
 interface Snapshot {
@@ -26,8 +39,9 @@ interface Snapshot {
   confirmed: TriageItem[];
   dismissed_count: number;
   auto_dismissed: number;
-  rules: { feed: string; category: string; auto_count: number }[];
+  rule_proposals: RuleProposal[];
   categories: string[];
+  protected_categories: string[];
 }
 
 /** Teknik gerekçe metnini operatör diline çevirir (ham metin tooltip'te kalır).
@@ -140,6 +154,7 @@ export default function TriagePanel({ onSelectFeed, feedNames = {} }: {
   feedNames?: Record<string, string>;
 }) {
   const [snap, setSnap] = useState<Snapshot | null>(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -156,14 +171,38 @@ export default function TriagePanel({ onSelectFeed, feedNames = {} }: {
   }, []);
 
   const decide = async (key: string, verdict: string, category?: string) => {
-    await fetch("/api/triage/decide", {
+    const response = await fetch("/api/triage/decide", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ key, verdict, category }),
     });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      setError(body.detail || "Karar kalıcı kayda yazılamadı.");
+      return;
+    }
+    setError("");
     // Kuyruğu hemen tazele (sonraki poll'u bekletme)
     const r = await fetch("/api/triage");
     setSnap(await r.json());
+  };
+
+  const ruleAction = async (
+    proposalId: string,
+    action: "approve" | "reject" | "revoke",
+  ) => {
+    const response = await fetch(`/api/triage/rules/${proposalId}/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(action === "approve" ? { duration_hours: 24 } : {}),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(body.detail || "Kural kararı kaydedilemedi.");
+      return;
+    }
+    setError("");
+    setSnap(body);
   };
 
   if (!snap) return null;
@@ -178,6 +217,11 @@ export default function TriagePanel({ onSelectFeed, feedNames = {} }: {
             </span>
           )}
         </div>
+        {error && (
+          <div className="mb-1.5 rounded border border-red-900 bg-red-950/50 px-2 py-1 text-xs text-red-200">
+            {error}
+          </div>
+        )}
         <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5">
           {snap.pending.length === 0 && (
             <div className="text-zinc-500 text-xs">Bekleyen olay yok.</div>
@@ -190,33 +234,51 @@ export default function TriagePanel({ onSelectFeed, feedNames = {} }: {
             </div>
           ))}
         </div>
-        {/* Öğrenilen bastırma kuralları: 3× "sorun değil" → otomatik eleme.
-            Kural görünür ve tek tıkla iptal edilir — sessiz kara kutu değil. */}
-        {snap.rules.length > 0 && (
+        {/* Üç ret yalnız öneri üretir. Ayrı onay ve süre olmadan kural çalışmaz. */}
+        {snap.rule_proposals.length > 0 && (
           <div className="mt-1.5 pt-1.5 border-t border-zinc-800 text-xs space-y-1">
             <div className="text-zinc-500">
-              Öğrenilen kurallar · {snap.auto_dismissed} otomatik elendi
+              Kontrollü kural önerileri · {snap.auto_dismissed} süreli elendi
             </div>
-            {snap.rules.map((r) => (
-              <div key={`${r.feed}:${r.category}`}
-                   className="flex items-center gap-1 text-zinc-400">
-                <span className="truncate">
-                  {feedNames[r.feed] || r.feed}: {CATEGORY_TR[r.category] ?? r.category}
-                  {" "}olağan ({r.auto_count}× elendi)
-                </span>
-                <button
-                  onClick={async () => {
-                    await fetch("/api/triage/rule_sil", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ feed: r.feed, category: r.category }),
-                    });
-                  }}
-                  title="Kuralı iptal et — bu tespitler yeniden kuyruğa düşer"
-                  className="ml-auto shrink-0 text-zinc-600 hover:text-red-400"
-                >
-                  ✕
-                </button>
+            {snap.rule_proposals.map((proposal) => (
+              <div key={proposal.proposal_id}
+                   className="rounded border border-zinc-800 p-1.5 text-zinc-400 space-y-1">
+                <div>
+                  {feedNames[proposal.feed] || proposal.feed}: {CATEGORY_TR[proposal.category] ?? proposal.category}
+                  {" "}· {proposal.dismissal_count} operatör reddi
+                </div>
+                {proposal.status === "proposed" ? (
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => ruleAction(proposal.proposal_id, "approve")}
+                      className="rounded bg-amber-800 px-1.5 py-0.5 text-amber-100 hover:bg-amber-700"
+                      title="Kuralı yalnız 24 saat için etkinleştir"
+                    >
+                      24 saat onayla
+                    </button>
+                    <button
+                      onClick={() => ruleAction(proposal.proposal_id, "reject")}
+                      className="rounded bg-zinc-800 px-1.5 py-0.5 hover:bg-zinc-700"
+                    >
+                      Reddet
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <span className="text-amber-300">
+                      Etkin · {proposal.auto_applied_count}× · {proposal.expires_at
+                        ? new Date(proposal.expires_at).toLocaleString("tr-TR")
+                        : "süre yok"}
+                    </span>
+                    <button
+                      onClick={() => ruleAction(proposal.proposal_id, "revoke")}
+                      className="ml-auto text-zinc-500 hover:text-red-400"
+                      title="Kuralı hemen geri al"
+                    >
+                      Geri al
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

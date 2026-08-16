@@ -6,7 +6,7 @@ from typing import Protocol
 
 from ..domain.candidate import CandidateEvent
 from ..domain.event import VerifiedEvent
-from ..domain.feedback import DevelopmentApproval
+from ..domain.feedback import DevelopmentApproval, RuleProposal
 from ..domain.memory import AnalysisRecord, AnalysisResult
 from ..domain.model_lifecycle import ModelVersion, TrainingJob
 from ..domain.provenance import (
@@ -76,6 +76,14 @@ class EventRepository(Protocol):
     def list_development_approvals(
         self, event_id: str
     ) -> list[DevelopmentApproval]: ...
+
+    def create_rule_proposal(self, proposal: RuleProposal) -> RuleProposal: ...
+
+    def get_rule_proposal(self, proposal_id: str) -> RuleProposal | None: ...
+
+    def list_rule_proposals(self) -> list[RuleProposal]: ...
+
+    def update_rule_proposal(self, proposal: RuleProposal) -> RuleProposal: ...
 
     def create_training_samples(
         self, samples: list[TrainingSample]

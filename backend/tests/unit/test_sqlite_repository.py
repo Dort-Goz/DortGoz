@@ -17,6 +17,8 @@ from dortgoz.domain.feedback import (
     DevelopmentApprovalStatus,
     DevelopmentUse,
     FalseAlarmReason,
+    RuleProposal,
+    RuleProposalStatus,
 )
 from dortgoz.domain.memory import AnalysisRecord
 from dortgoz.domain.provenance import (
@@ -138,7 +140,7 @@ def test_sqlite_repository_persists_event_review_and_trace_after_restart(tmp_pat
     assert [item.revision for item in restarted.list_event_revisions("event-offline-1")] == [1, 2]
 
 
-def test_sqlite_v3_uses_normalized_tables_and_persists_development_gate(
+def test_sqlite_v5_uses_normalized_tables_and_persists_development_gate(
     tmp_path: Path,
 ) -> None:
     database_path = tmp_path / "feedback.sqlite3"
@@ -198,6 +200,7 @@ def test_sqlite_v3_uses_normalized_tables_and_persists_development_gate(
             "event_revisions",
             "human_reviews",
             "development_approvals",
+            "rule_proposals",
             "training_samples",
             "training_jobs",
             "model_versions",
@@ -205,7 +208,7 @@ def test_sqlite_v3_uses_normalized_tables_and_persists_development_gate(
             "audit_log",
         } <= tables
         assert "repository_snapshot" not in tables
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
         assert connection.execute("SELECT COUNT(*) FROM human_reviews").fetchone()[0] == 1
         assert (
             connection.execute("SELECT COUNT(*) FROM development_approvals").fetchone()[0]
@@ -266,7 +269,7 @@ def test_sqlite_v1_snapshot_is_migrated_without_deleting_rollback_data(
 
     migrated = SqliteEventRepository(database_path)
 
-    assert migrated.schema_version == 4
+    assert migrated.schema_version == 5
     assert migrated.get_video(VIDEO_ID) is not None
     assert migrated.get_event("event-offline-1") is not None
     with sqlite3.connect(database_path) as connection:
@@ -278,6 +281,52 @@ def test_sqlite_v1_snapshot_is_migrated_without_deleting_rollback_data(
             ).fetchone()[0]
             == 1
         )
+
+
+def test_rule_proposal_lifecycle_persists_with_audit_after_restart(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "rules.sqlite3"
+    repository = SqliteEventRepository(database_path)
+    created = repository.create_rule_proposal(
+        RuleProposal(
+            proposal_id="proposal-1",
+            feed="KAM-1",
+            category="vandalizm",
+            source_event_ids=["event-1"],
+            source_review_ids=["review-1"],
+            reason="İlk ret toplandı.",
+        )
+    )
+    proposed = RuleProposal.model_validate(
+        {
+            **created.model_dump(),
+            "status": RuleProposalStatus.PROPOSED,
+            "dismissal_count": 3,
+            "source_review_ids": ["review-1", "review-2", "review-3"],
+            "source_event_ids": ["event-1", "event-2", "event-3"],
+            "reason": "Üç operatör reddi toplandı.",
+            "revision": 2,
+        }
+    )
+    repository.update_rule_proposal(proposed)
+    repository.close()
+
+    restarted = SqliteEventRepository(database_path)
+    stored = restarted.get_rule_proposal("proposal-1")
+    assert stored is not None
+    assert stored.status == RuleProposalStatus.PROPOSED
+    assert stored.dismissal_count == 3
+    restarted.close()
+
+    with sqlite3.connect(database_path) as connection:
+        actions = {
+            row[0]
+            for row in connection.execute(
+                "SELECT action FROM audit_log WHERE subject_id = 'proposal-1'"
+            )
+        }
+    assert actions == {"rule_proposal_created", "rule_proposal_proposed"}
 
 
 def test_sqlite_v2_database_adds_training_samples_without_losing_events(
@@ -304,7 +353,7 @@ def test_sqlite_v2_database_adds_training_samples_without_losing_events(
 
     migrated = SqliteEventRepository(database_path)
 
-    assert migrated.schema_version == 4
+    assert migrated.schema_version == 5
     assert migrated.get_event("event-offline-1") is not None
     with sqlite3.connect(database_path) as connection:
         tables = {

@@ -31,15 +31,18 @@ import asyncio
 import contextlib
 import logging
 import time
-from dataclasses import dataclass, field
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from ..config import settings
+from ..domain.video import VideoMetadata
 from ..ws import ConnectionManager
 
 log = logging.getLogger(__name__)
 
 SEGMENT_GLOB = "seg_*.mp4"
+PrepareRun = Callable[[str, str, Path], Awaitable[VideoMetadata]]
 
 
 @dataclass
@@ -94,10 +97,12 @@ def plan_segments(pending: list[Path], max_backlog: int) -> tuple[list[Path], li
 
 class LiveFeedWorker:
     def __init__(self, name: str, url: str, manager: ConnectionManager,
-                 mode: str = "", desc: str = "") -> None:
+                 mode: str = "", desc: str = "",
+                 prepare_run: PrepareRun | None = None) -> None:
         self.status = FeedStatus(name=name, url=url, desc=desc)
         self.manager = manager
         self.mode = mode
+        self.prepare_run = prepare_run
         self.dir = settings.media_dir / "canli" / name
         self.running = False
         self._done: set[str] = set()
@@ -213,7 +218,7 @@ class LiveFeedWorker:
         run_id = f"canli-{self.status.name}-{seg.stem.removeprefix('seg_')}"
         self.status.state = "isleniyor"
         try:
-            from ..pipeline.runner import run_video   # geç import (mock kipte ağır hat yüklenmesin)
+            from ..pipeline.runner import run_video  # geç import (mock kipte ağır hat yüklenmesin)
             from .triage import store as triage_store
 
             # Uyarlanma döngüsü: operatör bu kamerada bir durumu defalarca
@@ -223,6 +228,8 @@ class LiveFeedWorker:
             if note:
                 from ..pipeline.interpret import SYSTEM_TR
                 system_prompt = SYSTEM_TR + note
+            if self.prepare_run is not None:
+                await self.prepare_run(run_id, rel, seg)
             await run_video(self.manager, rel, run_id,
                             feed=self.status.name, mode=self.mode, live=True,
                             system_prompt=system_prompt)
@@ -273,8 +280,11 @@ class LiveFeedWorker:
 class LiveCctvService:
     """Tüm canlı akış işçilerinin sahibi — REST uçları buna bağlanır."""
 
-    def __init__(self, manager: ConnectionManager) -> None:
+    def __init__(
+        self, manager: ConnectionManager, prepare_run: PrepareRun | None = None
+    ) -> None:
         self.manager = manager
+        self.prepare_run = prepare_run
         self.workers: dict[str, LiveFeedWorker] = {}
 
     @property
@@ -290,7 +300,8 @@ class LiveCctvService:
                 f"akış sınırı {settings.max_feeds}, listede {len(feed_list)} var")
         for f in feed_list:
             worker = LiveFeedWorker(f["name"], f["url"], self.manager,
-                                    mode=mode, desc=f.get("desc", ""))
+                                    mode=mode, desc=f.get("desc", ""),
+                                    prepare_run=self.prepare_run)
             worker.start()
             self.workers[f["name"]] = worker
         log.info("canlı kip başladı: %d akış", len(self.workers))

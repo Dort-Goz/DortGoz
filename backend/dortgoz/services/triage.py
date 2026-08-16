@@ -1,235 +1,563 @@
-"""Anomali nöbet kuyruğu — operatör insan-döngüde karar katmanı.
+"""Kalıcı anomali nöbet kuyruğu ve kontrollü kural önerileri.
 
-Sistem tespit eder, İNSAN hükmeder: defterin açtığı her olay (herhangi bir
-akıştan/koşudan, `incident_update` yayınından toplanır) nöbet kuyruğuna düşer.
-Operatör her kaydı inceler ve karara bağlar:
-
-- **sorun_degil** — yanlış/önemsiz; kayıt kuyruğun dışına alınır (sayısı tutulur).
-- **anomali** — doğrulanmış; operatör taksonomiden kategori seçer (modelin
-  önerisini düzeltebilir) ve kayıt "bu oturumda tespit edilenler" listesine
-  geçer.
-
-Durum sunucu tarafındadır (görüntüleyiciler arasında ortak, yenilemeye
-dayanıklı) ve her karar `runs/nobet_defteri.jsonl`'e eklenir — oturum sonrası
-iz (kim ne zaman neye ne dedi) kaybolmaz. Bellek 7/24 bütçelidir: bekleyen ve
-çözülen listeler son-N ile sınırlanır.
-
-## Uyarlanma: sistem operatör kararlarından öğrenir
-
-1. **Tekrar birleştirme** — aynı kameradan aynı sınıfta yeni tespit, bekleyen
-   kart varken İKİNCİ kart açmaz; mevcut kartın `tekrar` sayacı artar
-   (kuyruk hareket eden her araçla dolamaz).
-2. **Bastırma kuralı** — operatör aynı (kamera, sınıf) çiftini
-   `RULE_THRESHOLD` kez "sorun değil" derse kural doğar: sonraki aynı
-   tespitler kuyruğa DÜŞMEDEN otomatik elenir (nöbet defterine yazılır,
-   sayacı görünür, kural tek tıkla iptal edilir).
-3. **İstem notu** — kuraldan `feed_note()` üretilir: canlı işçi o kameranın
-   sonraki segmentlerinde VLM istemine "bu kamerada şu OLAĞANDIR" notunu
-   ekler — model tespit ÜRETMEDEN öğrenir, filtre değil davranış değişir.
-
-Uzun vade: nobet_defteri.jsonl operatör-etiketli korpus olarak birikir
-(eşik ayarı, few-shot örnekleri, tarama sınıflandırıcısı eğitimi).
+Her operatör kararı canonical ``HumanReview`` olarak event repository'ye
+yazılır. Aynı kamera ve sınıf için üç ret doğrudan kural üretmez. Yalnız bir
+``RuleProposal`` oluşturur. Öneri ayrı bir operatör onayı ve süre sonu olmadan
+etkinleşmez. Kritik olay sınıfları hiçbir zaman bastırılamaz.
 """
+
 from __future__ import annotations
 
-import json
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
-from ..config import settings
+from ..domain.feedback import (
+    DevelopmentApprovalStatus,
+    DevelopmentUse,
+    FalseAlarmReason,
+    RuleProposal,
+    RuleProposalStatus,
+)
+from ..domain.provenance import HumanReview, ReviewDecision
+from ..domain.taxonomy import canonical_event_type_from_ws_label
 from ..events import Event
+from ..repositories.protocols import EventRepository
+from .event_service import EventMemoryService
 
-# Operatörün seçebileceği kategoriler (events.AnomalyType eksi "normal" —
-# "normal" bir kategori değil karardır: onun yolu "sorun_degil").
-CATEGORIES = ["kavga", "saldiri", "hirsizlik", "silahli_olay", "yangin",
-              "patlama", "arac_kazasi", "vandalizm", "bilinmeyen"]
+CATEGORIES = [
+    "kavga", "saldiri", "hirsizlik", "silahli_olay", "yangin",
+    "patlama", "arac_kazasi", "vandalizm", "bilinmeyen",
+]
 MAX_PENDING = 200
 MAX_RESOLVED = 500
-RULE_THRESHOLD = 3     # bu kadar "sorun değil" → o (kamera, sınıf) çifti bastırılır
-RISK = ["dusuk", "orta", "yuksek", "kritik"]
+RULE_THRESHOLD = 3
+DEFAULT_RULE_HOURS = 24
+MAX_RULE_HOURS = 24 * 30
+PROTECTED_CATEGORIES = frozenset(
+    {"kavga", "saldiri", "silahli_olay", "yangin", "patlama", "arac_kazasi"}
+)
+PROTECTED_RISKS = frozenset({"yuksek", "kritik"})
 
-# İstem notu şablonları: kural doğunca modele söylenecek "olağan durum" cümlesi
 _NOTE_TR = {
-    "arac_kazasi": "duran/yavaşlayan araçlar ve yanlarında bekleyen kişiler",
-    "hirsizlik": "araç ve eşya çevresindeki olağan yükleme/bekleme hareketleri",
-    "kavga": "yakın duran veya el kol hareketi yapan kişiler",
-    "saldiri": "yakın temas hâlindeki kişiler",
-    "vandalizm": "yapı/eşya yakınında çalışan veya bekleyen kişiler",
-    "silahli_olay": "elde taşınan uzun cisimler (alet, şemsiye vb.)",
-    "yangin": "egzoz/buhar/yansıma kaynaklı duman-ışık görüntüleri",
-    "patlama": "ani ışık/parlama değişimleri",
+    "hirsizlik": "araç ve eşya çevresindeki olağan yükleme veya bekleme hareketleri",
+    "vandalizm": "yapı veya eşya yakınında çalışan ya da bekleyen kişiler",
     "bilinmeyen": "bu kameranın olağan sahne hareketleri",
 }
 
 
+class TriagePersistenceError(RuntimeError):
+    """Karar canonical event kaydına güvenle bağlanamadı."""
+
+
 @dataclass
 class TriageItem:
-    key: str                       # "<feed>:<incident_id>"
+    key: str
     feed: str
     incident_id: str
-    t: float                       # olay video zamanı
-    wall: float                    # kuyruğa düşme anı (epoch)
+    t: float
+    wall: float
     title: str
-    model_category: str            # modelin önerisi
+    model_category: str
     risk: str
     phase: str
+    event_id: str | None = None
     thumbnail: str | None = None
     needs_review: bool = False
     review_reason: str = ""
-    # Operatör kararı (bekleyende boş):
-    verdict: str = ""              # "" | "anomali" | "sorun_degil"
+    verdict: str = ""
     operator_category: str = ""
     note: str = ""
     decided_wall: float | None = None
-    tekrar: int = 1                # aynı (kamera, sınıf) tespitinin tekrar sayısı
+    tekrar: int = 1
+    review_ids: list[str] = field(default_factory=list)
 
 
 class TriageStore:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        repository: EventRepository | None = None,
+        event_service: EventMemoryService | None = None,
+        event_id_resolver: Callable[[str, str], str | None] | None = None,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
         self._pending: dict[str, TriageItem] = {}
         self._resolved: list[TriageItem] = []
         self.dismissed_count = 0
         self.auto_dismissed = 0
-        # (feed, kategori) → "sorun değil" sayısı; eşiği aşınca kurala döner
-        self._dismissals: dict[tuple[str, str], int] = {}
-        # etkin bastırma kuralları: (feed, kategori) → otomatik elenen sayısı
-        self.rules: dict[tuple[str, str], int] = {}
+        self.repository = repository
+        self.event_service = event_service or (
+            EventMemoryService(repository) if repository is not None else None
+        )
+        self.event_id_resolver = event_id_resolver
+        self._clock = clock or (lambda: datetime.now(UTC))
 
-    # ---- alım (WS yayın dinleyicisi) ----
+    def configure(
+        self,
+        repository: EventRepository,
+        event_service: EventMemoryService,
+        event_id_resolver: Callable[[str, str], str | None],
+    ) -> None:
+        """Uygulama composition sınırındaki canonical adapterları bağla."""
+
+        self.repository = repository
+        self.event_service = event_service
+        self.event_id_resolver = event_id_resolver
 
     def observe(self, event: Event) -> None:
-        p = event.payload
-        if getattr(p, "type", "") != "incident_update":
+        payload = event.payload
+        if getattr(payload, "type", "") != "incident_update":
             return
-        key = f"{event.feed}:{p.incident_id}"
-        if key in self._pending:      # yaşam döngüsü güncellemesi: kartı tazele
+        key = f"{event.feed}:{payload.incident_id}"
+        event_id = self._resolve_event_id(event.feed, payload.incident_id)
+        if key in self._pending:
             item = self._pending[key]
-            item.t, item.risk, item.phase = p.t, p.risk, p.phase
-            item.title = p.title
-            item.model_category = p.anomaly_type
-            item.thumbnail = p.thumbnail or item.thumbnail
-            item.needs_review = p.needs_review
-            item.review_reason = p.review_reason
+            item.t, item.risk, item.phase = payload.t, payload.risk, payload.phase
+            item.title = payload.title
+            item.model_category = payload.anomaly_type
+            item.event_id = event_id or item.event_id
+            item.thumbnail = payload.thumbnail or item.thumbnail
+            item.needs_review = payload.needs_review
+            item.review_reason = payload.review_reason
             return
-        if any(r.key == key for r in self._resolved):
-            return                    # karar verilmiş olaya geri dönülmez
-        # Bastırma kuralı: operatör bu (kamera, sınıf) çiftine yeterince
-        # "sorun değil" dedi → kuyruğa düşürmeden otomatik ele (defter kaydı
-        # tutulur, sayaç arayüzde görünür, kural tek tıkla iptal edilir).
-        pair = (event.feed, p.anomaly_type)
-        if pair in self.rules:
-            self.rules[pair] += 1
+        if any(item.key == key for item in self._resolved):
+            return
+
+        rule = self._active_rule(event.feed, payload.anomaly_type)
+        if (
+            rule is not None
+            and payload.anomaly_type not in PROTECTED_CATEGORIES
+            and payload.risk not in PROTECTED_RISKS
+            and event_id is not None
+        ):
+            review = self._save_review(
+                event_id,
+                ReviewDecision.REJECT,
+                reviewer=f"approved-rule:{rule.proposal_id}",
+                note=(
+                    "Süreli operatör kuralı uygulandı. "
+                    f"Kapsam: {event.feed}/{payload.anomaly_type}."
+                ),
+                false_alarm_reason=FalseAlarmReason.NORMAL_ACTIVITY,
+                intervention_required=False,
+            )
+            self._mark_rule_applied(rule)
             self.auto_dismissed += 1
-            self._log(TriageItem(
-                key=key, feed=event.feed, incident_id=p.incident_id,
-                t=p.t, wall=time.time(), title=p.title,
-                model_category=p.anomaly_type, risk=p.risk, phase=p.phase,
-                verdict="sorun_degil", decided_wall=time.time(),
-                note=f"otomatik: operatör kuralı ({self._dismissals.get(pair, 0)}× sorun değil)"))
+            item = self._new_item(event, event_id)
+            item.verdict = "sorun_degil"
+            item.note = f"onaylı süreli kural: {rule.proposal_id}"
+            item.decided_wall = time.time()
+            item.review_ids = [review.review_id]
+            self._append_resolved(item)
             return
-        # Tekrar birleştirme: aynı kameradan aynı sınıfta BEKLEYEN kart varsa
-        # ikinci kart açılmaz — sayaç artar (kuyruk tekrar tespitle dolamaz).
-        for item in self._pending.values():
-            if item.feed == event.feed and item.model_category == p.anomaly_type:
-                item.tekrar += 1
-                item.t, item.wall = p.t, time.time()
-                if RISK.index(p.risk) > RISK.index(item.risk):
-                    item.risk = p.risk
-                item.thumbnail = p.thumbnail or item.thumbnail
-                return
-        self._pending[key] = TriageItem(
-            key=key, feed=event.feed, incident_id=p.incident_id,
-            t=p.t, wall=time.time(), title=p.title,
-            model_category=p.anomaly_type, risk=p.risk, phase=p.phase,
-            thumbnail=p.thumbnail, needs_review=p.needs_review,
-            review_reason=p.review_reason)
-        # 7/24 bütçesi: kuyruk taşarsa EN ESKİ bekleyen düşer (karar verilmeden
-        # kaybolan sayılmaz — operatör yetişemiyorsa bu zaten görünür sorundur)
+
+        item = self._new_item(event, event_id)
+        if rule is not None and event_id is None:
+            suffix = "Canonical olay kaydı hazır değil; kural güvenli biçimde uygulanmadı."
+            item.needs_review = True
+            item.review_reason = " · ".join(filter(None, [item.review_reason, suffix]))
+        self._pending[key] = item
         while len(self._pending) > MAX_PENDING:
             self._pending.pop(next(iter(self._pending)))
 
-    # ---- operatör kararı ----
-
-    def decide(self, key: str, verdict: str, category: str = "",
-               note: str = "") -> TriageItem:
+    def decide(
+        self,
+        key: str,
+        verdict: str,
+        category: str = "",
+        note: str = "",
+        reviewer: str = "operator-console",
+    ) -> TriageItem:
         if verdict not in {"anomali", "sorun_degil"}:
             raise ValueError(f"geçersiz karar: {verdict}")
-        item = self._pending.pop(key, None)
+        item = self._pending.get(key)
         if item is None:
             raise KeyError(f"bekleyen kayıt yok: {key}")
+        if verdict == "anomali" and category not in CATEGORIES:
+            raise ValueError(f"geçersiz kategori: {category}")
+        if not reviewer.strip():
+            raise ValueError("reviewer boş olamaz")
+
+        event_id = item.event_id or self._resolve_event_id(item.feed, item.incident_id)
+        if event_id is None or self.repository is None or self.repository.get_event(event_id) is None:
+            raise TriagePersistenceError(
+                "Olay henüz canonical SQLite kaydına bağlanamadı; karar kaydedilmedi."
+            )
+        item.event_id = event_id
+
         if verdict == "anomali":
-            if category not in CATEGORIES:
-                raise ValueError(f"geçersiz kategori: {category}")
+            event = self.repository.get_event(event_id)
+            assert event is not None
+            decision = (
+                ReviewDecision.CONFIRM
+                if event.validation is not None
+                and event.validation.permits_confirmation
+                and bool(event.evidence)
+                else ReviewDecision.EDIT
+            )
+            review = self._save_review(
+                event_id,
+                decision,
+                reviewer=reviewer.strip(),
+                note=note.strip() or "Operatör nöbet kuyruğunda anomaliyi doğruladı.",
+                event_type=canonical_event_type_from_ws_label(category).value,
+                risk_level=item.risk,
+                intervention_required=True,
+            )
             item.operator_category = category
-            # Doğrulama, aynı çiftin bastırılma sayacını sıfırlar — gerçek
-            # olay çıkan yerde otomatik eleme kuralı OLUŞMAMALI.
-            self._dismissals.pop((item.feed, item.model_category), None)
+            self._cancel_scope(item.feed, item.model_category, reviewer.strip())
         else:
+            review = self._save_review(
+                event_id,
+                ReviewDecision.REJECT,
+                reviewer=reviewer.strip(),
+                note=note.strip() or "Operatör nöbet kuyruğunda sorun olmadığını belirtti.",
+                false_alarm_reason=FalseAlarmReason.NORMAL_ACTIVITY,
+                intervention_required=False,
+            )
             self.dismissed_count += 1
-            pair = (item.feed, item.model_category)
-            self._dismissals[pair] = self._dismissals.get(pair, 0) + 1
-            if self._dismissals[pair] >= RULE_THRESHOLD and pair not in self.rules:
-                self.rules[pair] = 0
+            if not self._scope_is_protected(item.model_category, item.risk):
+                self._record_dismissal(item, review.review_id, reviewer.strip())
+
+        self._pending.pop(key)
+        item.review_ids = [review.review_id]
         item.verdict = verdict
         item.note = note[:500]
         item.decided_wall = time.time()
-        self._resolved.append(item)
-        del self._resolved[:-MAX_RESOLVED]
-        self._log(item)
+        self._append_resolved(item)
         return item
 
-    def _log(self, item: TriageItem) -> None:
-        """Karar izi: oturum kapansa da nöbet defteri diskte kalır."""
-        try:
-            settings.runs_dir.mkdir(parents=True, exist_ok=True)
-            with (settings.runs_dir / "nobet_defteri.jsonl").open("a") as fh:
-                fh.write(json.dumps(asdict(item), ensure_ascii=False) + "\n")
-        except OSError:
-            pass                      # disk hatası kararı düşürmez
+    def approve_rule(
+        self,
+        proposal_id: str,
+        reviewer: str,
+        duration_hours: int = DEFAULT_RULE_HOURS,
+    ) -> RuleProposal:
+        proposal = self._proposal(proposal_id)
+        if proposal.status != RuleProposalStatus.PROPOSED:
+            raise ValueError("yalnız proposed kural onaylanabilir")
+        if proposal.category in PROTECTED_CATEGORIES:
+            raise ValueError("kritik olay sınıfı için bastırma kuralı onaylanamaz")
+        if not reviewer.strip():
+            raise ValueError("reviewer boş olamaz")
+        if not 1 <= duration_hours <= MAX_RULE_HOURS:
+            raise ValueError(f"kural süresi 1-{MAX_RULE_HOURS} saat olmalıdır")
+        now = self._clock()
+        approval_ids = self._approve_development_use(proposal, reviewer.strip())
+        return self._update_proposal(
+            proposal,
+            status=RuleProposalStatus.APPROVED,
+            decided_by=reviewer.strip(),
+            expires_at=now + timedelta(hours=duration_hours),
+            development_approval_ids=approval_ids,
+            updated_at=now,
+        )
 
-    # ---- uyarlanma ----
+    def reject_rule(self, proposal_id: str, reviewer: str) -> RuleProposal:
+        proposal = self._proposal(proposal_id)
+        if proposal.status != RuleProposalStatus.PROPOSED:
+            raise ValueError("yalnız proposed kural reddedilebilir")
+        if not reviewer.strip():
+            raise ValueError("reviewer boş olamaz")
+        return self._update_proposal(
+            proposal,
+            status=RuleProposalStatus.REJECTED,
+            decided_by=reviewer.strip(),
+            updated_at=self._clock(),
+        )
 
-    def revoke_rule(self, feed: str, category: str) -> None:
-        """Bastırma kuralını iptal eder — aynı çift yeniden kuyruğa düşer."""
-        self.rules.pop((feed, category), None)
-        self._dismissals.pop((feed, category), None)
+    def revoke_rule(self, proposal_id: str, reviewer: str) -> RuleProposal:
+        proposal = self._proposal(proposal_id)
+        if proposal.status not in {
+            RuleProposalStatus.COLLECTING,
+            RuleProposalStatus.PROPOSED,
+            RuleProposalStatus.APPROVED,
+        }:
+            raise ValueError("etkin olmayan kural geri alınamaz")
+        if not reviewer.strip():
+            raise ValueError("reviewer boş olamaz")
+        self._revoke_development_use(proposal, reviewer.strip())
+        return self._update_proposal(
+            proposal,
+            status=RuleProposalStatus.REVOKED,
+            decided_by=reviewer.strip(),
+            expires_at=None,
+            updated_at=self._clock(),
+        )
 
     def feed_note(self, feed: str) -> str:
-        """Kameraya özgü 'olağan durum' istem notu (kural yoksa boş).
-
-        Canlı işçi bunu VLM sistem istemine ekler: model o kamerada operatörün
-        defalarca elediği durumu ANOMALİ SAYMAMAYI öğrenir — eleme filtreyle
-        değil, modelin çıktısında gerçekleşir.
-        """
-        parts = [_NOTE_TR.get(cat, cat) for (f, cat) in self.rules if f == feed]
+        parts = [
+            _NOTE_TR.get(rule.category, rule.category)
+            for rule in self._approved_rules()
+            if rule.feed == feed and rule.category not in PROTECTED_CATEGORIES
+        ]
         if not parts:
             return ""
-        return ("\n\n## Bu kameraya özgü OLAĞAN durumlar (operatör geri bildirimi)\n"
-                + "".join(f"- {p} bu kamerada olağandır; tek başına alarm üretme.\n"
-                          for p in parts))
-
-    # ---- görünüm ----
+        return (
+            "\n\n## Bu kameraya özgü OLAĞAN durumlar (süreli operatör onayı)\n"
+            + "".join(
+                f"- {part} bu kamerada olağandır; tek başına alarm üretme.\n"
+                for part in parts
+            )
+        )
 
     def snapshot(self) -> dict:
-        confirmed = [asdict(i) for i in reversed(self._resolved)
-                     if i.verdict == "anomali"]
+        self._expire_rules()
+        confirmed = [
+            asdict(item)
+            for item in reversed(self._resolved)
+            if item.verdict == "anomali"
+        ]
+        proposals = []
+        if self.repository is not None:
+            proposals = [
+                item.model_dump(mode="json")
+                for item in self.repository.list_rule_proposals()
+                if item.status in {RuleProposalStatus.PROPOSED, RuleProposalStatus.APPROVED}
+            ]
         return {
-            "pending": [asdict(i) for i in reversed(list(self._pending.values()))],
+            "pending": [asdict(item) for item in reversed(list(self._pending.values()))],
             "confirmed": confirmed,
             "dismissed_count": self.dismissed_count,
             "auto_dismissed": self.auto_dismissed,
-            "rules": [{"feed": f, "category": c, "auto_count": n}
-                      for (f, c), n in self.rules.items()],
+            "rule_proposals": proposals,
             "categories": CATEGORIES,
+            "protected_categories": sorted(PROTECTED_CATEGORIES),
         }
 
-    def clear(self) -> None:          # testler için
+    def clear(self) -> None:
         self._pending.clear()
         self._resolved.clear()
         self.dismissed_count = 0
         self.auto_dismissed = 0
-        self._dismissals.clear()
-        self.rules.clear()
+
+    def _new_item(self, event: Event, event_id: str | None) -> TriageItem:
+        payload = event.payload
+        return TriageItem(
+            key=f"{event.feed}:{payload.incident_id}",
+            feed=event.feed,
+            incident_id=payload.incident_id,
+            event_id=event_id,
+            t=payload.t,
+            wall=time.time(),
+            title=payload.title,
+            model_category=payload.anomaly_type,
+            risk=payload.risk,
+            phase=payload.phase,
+            thumbnail=payload.thumbnail,
+            needs_review=payload.needs_review,
+            review_reason=payload.review_reason,
+        )
+
+    def _resolve_event_id(self, feed: str, incident_id: str) -> str | None:
+        if self.event_id_resolver is None:
+            return None
+        return self.event_id_resolver(feed, incident_id)
+
+    def _save_review(
+        self, event_id: str, decision: ReviewDecision, **kwargs
+    ) -> HumanReview:
+        if self.event_service is None:
+            raise TriagePersistenceError("canonical feedback servisi yapılandırılmadı")
+        return self.event_service.review_event(event_id, decision, **kwargs)
+
+    def _record_dismissal(
+        self, item: TriageItem, review_id: str, reviewer: str
+    ) -> RuleProposal:
+        assert self.repository is not None
+        active = self._scope_proposal(item.feed, item.model_category)
+        now = self._clock()
+        if active is None:
+            return self.repository.create_rule_proposal(
+                RuleProposal(
+                    proposal_id=str(uuid4()),
+                    feed=item.feed,
+                    category=item.model_category,
+                    source_event_ids=[item.event_id],
+                    source_review_ids=[review_id],
+                    reason="Aynı kapsam için operatör retleri toplanıyor.",
+                    proposed_by=reviewer,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+        if active.status == RuleProposalStatus.APPROVED:
+            return active
+        count = active.dismissal_count + 1
+        status = (
+            RuleProposalStatus.PROPOSED
+            if count >= RULE_THRESHOLD
+            else RuleProposalStatus.COLLECTING
+        )
+        reason = (
+            f"Operatör aynı kamera ve sınıfı {count} kez sorun değil olarak işaretledi."
+            if status == RuleProposalStatus.PROPOSED
+            else "Aynı kapsam için operatör retleri toplanıyor."
+        )
+        return self._update_proposal(
+            active,
+            status=status,
+            dismissal_count=count,
+            source_review_ids=[*active.source_review_ids, review_id],
+            source_event_ids=[*active.source_event_ids, item.event_id],
+            reason=reason,
+            updated_at=now,
+        )
+
+    def _cancel_scope(self, feed: str, category: str, reviewer: str) -> None:
+        proposal = self._scope_proposal(feed, category)
+        if proposal is not None:
+            self.revoke_rule(proposal.proposal_id, reviewer)
+
+    def _scope_proposal(self, feed: str, category: str) -> RuleProposal | None:
+        if self.repository is None:
+            return None
+        active = {
+            RuleProposalStatus.COLLECTING,
+            RuleProposalStatus.PROPOSED,
+            RuleProposalStatus.APPROVED,
+        }
+        return next(
+            (
+                item
+                for item in reversed(self.repository.list_rule_proposals())
+                if item.feed == feed and item.category == category and item.status in active
+            ),
+            None,
+        )
+
+    def _active_rule(self, feed: str, category: str) -> RuleProposal | None:
+        self._expire_rules()
+        proposal = self._scope_proposal(feed, category)
+        return (
+            proposal
+            if proposal is not None and proposal.status == RuleProposalStatus.APPROVED
+            else None
+        )
+
+    def _approved_rules(self) -> list[RuleProposal]:
+        self._expire_rules()
+        if self.repository is None:
+            return []
+        return [
+            item
+            for item in self.repository.list_rule_proposals()
+            if item.status == RuleProposalStatus.APPROVED
+        ]
+
+    def _expire_rules(self) -> None:
+        if self.repository is None:
+            return
+        now = self._clock()
+        for item in self.repository.list_rule_proposals():
+            if (
+                item.status == RuleProposalStatus.APPROVED
+                and item.expires_at is not None
+                and item.expires_at <= now
+            ):
+                self._revoke_development_use(item, "system-expiry")
+                self._update_proposal(
+                    item,
+                    status=RuleProposalStatus.EXPIRED,
+                    decided_by="system-expiry",
+                    updated_at=now,
+                )
+
+    def _mark_rule_applied(self, proposal: RuleProposal) -> RuleProposal:
+        now = self._clock()
+        return self._update_proposal(
+            proposal,
+            auto_applied_count=proposal.auto_applied_count + 1,
+            last_applied_at=now,
+            updated_at=now,
+        )
+
+    def _approve_development_use(
+        self, proposal: RuleProposal, reviewer: str
+    ) -> list[str]:
+        if self.repository is None or self.event_service is None:
+            raise TriagePersistenceError("canonical development approval servisi yok")
+        for event_id, review_id in zip(
+            proposal.source_event_ids, proposal.source_review_ids, strict=True
+        ):
+            reviews = self.repository.list_reviews(event_id)
+            if not any(item.review_id == review_id for item in reviews):
+                raise TriagePersistenceError("kural kaynağı human review ile eşleşmiyor")
+            if self.repository.list_development_approvals(event_id):
+                raise ValueError(
+                    "Kaynak olay için daha yeni geliştirme kararı var; kural onaylanmadı."
+                )
+        approvals = [
+            self.event_service.record_development_decision(
+                event_id,
+                review_id,
+                DevelopmentApprovalStatus.APPROVED,
+                approved_uses=[DevelopmentUse.CAMERA_RULE],
+                reviewer=reviewer,
+                note=(
+                    "Operatör bu geri bildirimi süreli kamera kuralı için onayladı."
+                ),
+            )
+            for event_id, review_id in zip(
+                proposal.source_event_ids, proposal.source_review_ids, strict=True
+            )
+        ]
+        return [item.approval_id for item in approvals]
+
+    def _revoke_development_use(self, proposal: RuleProposal, reviewer: str) -> None:
+        if self.repository is None or self.event_service is None:
+            return
+        for event_id, approval_id in zip(
+            proposal.source_event_ids,
+            proposal.development_approval_ids,
+            strict=False,
+        ):
+            history = self.repository.list_development_approvals(event_id)
+            latest = history[-1] if history else None
+            if (
+                latest is None
+                or latest.approval_id != approval_id
+                or latest.status != DevelopmentApprovalStatus.APPROVED
+            ):
+                continue
+            self.event_service.record_development_decision(
+                event_id,
+                latest.review_id,
+                DevelopmentApprovalStatus.REVOKED,
+                approved_uses=[],
+                reviewer=reviewer,
+                note="Süreli kamera kuralının geliştirme izni sona erdi.",
+                supersedes_approval_id=latest.approval_id,
+            )
+
+    def _proposal(self, proposal_id: str) -> RuleProposal:
+        if self.repository is None:
+            raise TriagePersistenceError("canonical feedback repository yapılandırılmadı")
+        proposal = self.repository.get_rule_proposal(proposal_id)
+        if proposal is None:
+            raise KeyError(f"rule proposal bulunamadı: {proposal_id}")
+        return proposal
+
+    def _update_proposal(self, proposal: RuleProposal, **changes) -> RuleProposal:
+        assert self.repository is not None
+        updated = RuleProposal.model_validate(
+            {
+                **proposal.model_dump(),
+                **changes,
+                "revision": proposal.revision + 1,
+            }
+        )
+        return self.repository.update_rule_proposal(updated)
+
+    @staticmethod
+    def _scope_is_protected(category: str, risk: str) -> bool:
+        return category in PROTECTED_CATEGORIES or risk in PROTECTED_RISKS
+
+    def _append_resolved(self, item: TriageItem) -> None:
+        self._resolved.append(item)
+        del self._resolved[:-MAX_RESOLVED]
 
 
-store = TriageStore()   # süreç-küresel tekil — tüm akışlar tek nöbet kuyruğu
+store = TriageStore()

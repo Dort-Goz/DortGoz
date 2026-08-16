@@ -17,6 +17,8 @@ from ..domain.feedback import (
     DevelopmentApproval,
     DevelopmentApprovalStatus,
     DevelopmentUse,
+    RuleProposal,
+    RuleProposalStatus,
 )
 from ..domain.memory import AnalysisRecord, AnalysisResult, AnalysisStatus
 from ..domain.model_lifecycle import (
@@ -53,6 +55,7 @@ class InMemoryEventRepository:
         self._event_history: dict[str, list[VerifiedEvent]] = {}
         self._reviews: dict[str, HumanReview] = {}
         self._development_approvals: dict[str, DevelopmentApproval] = {}
+        self._rule_proposals: dict[str, RuleProposal] = {}
         self._training_samples: dict[str, TrainingSample] = {}
         self._training_jobs: dict[str, TrainingJob] = {}
         self._model_versions: dict[str, ModelVersion] = {}
@@ -344,6 +347,90 @@ class InMemoryEventRepository:
                 item for item in self._development_approvals.values() if item.event_id == event_id
             ]
             return _copy(sorted(approvals, key=lambda item: (item.created_at, item.approval_id)))
+
+    def create_rule_proposal(self, proposal: RuleProposal) -> RuleProposal:
+        with self._lock:
+            if proposal.proposal_id in self._rule_proposals:
+                raise RepositoryDuplicateError(
+                    f"rule proposal zaten kayıtlı: {proposal.proposal_id}"
+                )
+            active = {
+                RuleProposalStatus.COLLECTING,
+                RuleProposalStatus.PROPOSED,
+                RuleProposalStatus.APPROVED,
+            }
+            if proposal.status in active and any(
+                item.feed == proposal.feed
+                and item.category == proposal.category
+                and item.status in active
+                for item in self._rule_proposals.values()
+            ):
+                raise RepositoryConflictError(
+                    "kamera ve kategori için etkin rule proposal zaten var"
+                )
+            self._rule_proposals[proposal.proposal_id] = _copy(proposal)
+            return _copy(proposal)
+
+    def get_rule_proposal(self, proposal_id: str) -> RuleProposal | None:
+        with self._lock:
+            item = self._rule_proposals.get(proposal_id)
+            return _copy(item) if item is not None else None
+
+    def list_rule_proposals(self) -> list[RuleProposal]:
+        with self._lock:
+            return _copy(
+                sorted(
+                    self._rule_proposals.values(),
+                    key=lambda item: (item.created_at, item.proposal_id),
+                )
+            )
+
+    def update_rule_proposal(self, proposal: RuleProposal) -> RuleProposal:
+        with self._lock:
+            current = self._rule_proposals.get(proposal.proposal_id)
+            if current is None:
+                raise RepositoryNotFoundError(
+                    f"rule proposal bulunamadı: {proposal.proposal_id}"
+                )
+            if proposal.feed != current.feed or proposal.category != current.category:
+                raise RepositoryConflictError("rule proposal kapsamı değiştirilemez")
+            if proposal.revision != current.revision + 1:
+                raise RepositoryConflictError("rule proposal revision sıralı ilerlemelidir")
+            allowed = {
+                RuleProposalStatus.COLLECTING: {
+                    RuleProposalStatus.COLLECTING,
+                    RuleProposalStatus.PROPOSED,
+                    RuleProposalStatus.REVOKED,
+                },
+                RuleProposalStatus.PROPOSED: {
+                    RuleProposalStatus.APPROVED,
+                    RuleProposalStatus.REJECTED,
+                    RuleProposalStatus.REVOKED,
+                },
+                RuleProposalStatus.APPROVED: {
+                    RuleProposalStatus.APPROVED,
+                    RuleProposalStatus.REVOKED,
+                    RuleProposalStatus.EXPIRED,
+                },
+            }
+            if proposal.status not in allowed.get(current.status, set()):
+                raise RepositoryConflictError(
+                    f"geçersiz rule proposal geçişi: {current.status} -> {proposal.status}"
+                )
+            if not set(current.source_review_ids).issubset(proposal.source_review_ids):
+                raise RepositoryConflictError("rule proposal kaynak incelemeleri silinemez")
+            if not set(current.source_event_ids).issubset(proposal.source_event_ids):
+                raise RepositoryConflictError("rule proposal kaynak olayları silinemez")
+            if not set(current.development_approval_ids).issubset(
+                proposal.development_approval_ids
+            ):
+                raise RepositoryConflictError("rule proposal geliştirme izinleri silinemez")
+            if proposal.dismissal_count < current.dismissal_count:
+                raise RepositoryConflictError("rule proposal ret sayısı azaltılamaz")
+            if proposal.auto_applied_count < current.auto_applied_count:
+                raise RepositoryConflictError("rule proposal uygulama sayısı azaltılamaz")
+            self._rule_proposals[proposal.proposal_id] = _copy(proposal)
+            return _copy(proposal)
 
     def create_training_samples(self, samples: list[TrainingSample]) -> list[TrainingSample]:
         with self._lock:

@@ -534,7 +534,7 @@ def test_sqlite_training_job_and_candidate_survive_restart(tmp_path: Path) -> No
     repository.close()
 
     restarted = SqliteEventRepository(database)
-    assert restarted.schema_version == 4
+    assert restarted.schema_version == 5
     assert restarted.get_training_job("job-one").status == TrainingJobStatus.SUCCEEDED
     assert restarted.get_model_version(candidate.model_version_id) == candidate
     with sqlite3.connect(database) as connection:

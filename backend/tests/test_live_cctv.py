@@ -7,13 +7,11 @@ import json
 import pytest
 
 from dortgoz.config import settings
-from dortgoz.services import live_cctv
 from dortgoz.services.live_cctv import (
     LiveFeedWorker,
     load_feeds,
     plan_segments,
 )
-
 
 # ---- akış listesi ----
 
@@ -83,8 +81,18 @@ def _seg(worker, epoch: int, size: int = 100):
 @pytest.mark.asyncio
 async def test_step_processes_oldest_closed_segment(worker, monkeypatch):
     calls = []
+    order = []
+
+    async def prepare_run(run_id, video, source):
+        order.append("prepare")
+        assert run_id == "canli-kavsak1-1000"
+        assert video == "canli/kavsak1/seg_1000.mp4"
+        assert source.name == "seg_1000.mp4"
+
+    worker.prepare_run = prepare_run
 
     async def fake_run_video(manager, video, run_id, **kw):
+        order.append("run")
         calls.append((video, run_id, kw))
     monkeypatch.setattr("dortgoz.pipeline.runner.run_video", fake_run_video)
 
@@ -99,6 +107,7 @@ async def test_step_processes_oldest_closed_segment(worker, monkeypatch):
     assert worker.status.segments_done == 1
     assert worker.status.lag_s is not None
     assert worker.status.snapshot.endswith("latest.jpg")
+    assert order == ["prepare", "run"]
 
 
 @pytest.mark.asyncio
