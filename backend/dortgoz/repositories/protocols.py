@@ -6,6 +6,7 @@ from typing import Protocol
 
 from ..domain.candidate import CandidateEvent
 from ..domain.event import VerifiedEvent
+from ..domain.feedback import DevelopmentApproval
 from ..domain.memory import AnalysisRecord, AnalysisResult
 from ..domain.provenance import (
     AnalysisProvenance,
@@ -61,6 +62,16 @@ class EventRepository(Protocol):
     ) -> list[VerifiedEvent]: ...
 
     def save_review(self, review: HumanReview) -> HumanReview: ...
+
+    def list_reviews(self, event_id: str) -> list[HumanReview]: ...
+
+    def save_development_approval(
+        self, approval: DevelopmentApproval
+    ) -> DevelopmentApproval: ...
+
+    def list_development_approvals(
+        self, event_id: str
+    ) -> list[DevelopmentApproval]: ...
 
     def get_analysis_result(self, analysis_id: str) -> AnalysisResult | None: ...
 

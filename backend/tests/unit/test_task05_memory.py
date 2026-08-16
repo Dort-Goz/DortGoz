@@ -13,6 +13,11 @@ from dortgoz.domain.evidence import (
     EvidenceValidationResult,
     VerifiedEventType,
 )
+from dortgoz.domain.feedback import (
+    DevelopmentApproval,
+    DevelopmentApprovalStatus,
+    DevelopmentUse,
+)
 from dortgoz.domain.provenance import (
     AnalysisProvenance,
     HumanReview,
@@ -186,6 +191,49 @@ def test_human_review_creates_revision_without_erasing_automatic_event() -> None
     assert current is not None and current.status == EventStatus.CONFIRMED
     assert current.revision == 2
     assert [item.status for item in revisions] == [EventStatus.HUMAN_REVIEW, EventStatus.CONFIRMED]
+
+
+def test_development_decision_is_separate_and_revocable() -> None:
+    repository = ready_repository()
+    repository.save_event(event())
+    review = repository.save_review(
+        HumanReview(
+            review_id="review-development-1",
+            event_id="event-memory-1",
+            decision=ReviewDecision.REJECT,
+            note="Yanlış alarm örneği.",
+            reviewer="operator-1",
+            revision=1,
+        )
+    )
+    approved = repository.save_development_approval(
+        DevelopmentApproval(
+            approval_id="approval-development-1",
+            event_id="event-memory-1",
+            review_id=review.review_id,
+            status=DevelopmentApprovalStatus.APPROVED,
+            approved_uses=[DevelopmentUse.THRESHOLD_CALIBRATION],
+            reviewer="operator-1",
+            note="Kalibrasyon için uygun.",
+        )
+    )
+    revoked = repository.save_development_approval(
+        DevelopmentApproval(
+            approval_id="approval-development-2",
+            event_id="event-memory-1",
+            review_id=review.review_id,
+            status=DevelopmentApprovalStatus.REVOKED,
+            reviewer="operator-1",
+            note="Onay geri alındı.",
+            supersedes_approval_id=approved.approval_id,
+        )
+    )
+
+    assert [item.status for item in repository.list_development_approvals(event().event_id)] == [
+        DevelopmentApprovalStatus.APPROVED,
+        DevelopmentApprovalStatus.REVOKED,
+    ]
+    assert revoked.supersedes_approval_id == approved.approval_id
 
 
 def test_bundle_is_atomic_when_trace_write_fails() -> None:

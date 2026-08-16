@@ -9,6 +9,12 @@ from pydantic import BaseModel, ConfigDict
 
 from ..agent.state import EventAgentState
 from ..domain.event import EventStatus, VerifiedEvent
+from ..domain.feedback import (
+    DevelopmentApproval,
+    DevelopmentApprovalStatus,
+    DevelopmentUse,
+    FalseAlarmReason,
+)
 from ..domain.memory import AnalysisRecord, AnalysisResult, AnalysisStatus
 from ..domain.provenance import (
     AnalysisProvenance,
@@ -92,6 +98,8 @@ class EventMemoryService:
         peak_time: float | None = None,
         end_time: float | None = None,
         risk_level: str | None = None,
+        false_alarm_reason: FalseAlarmReason | None = None,
+        intervention_required: bool | None = None,
     ) -> HumanReview:
         review = HumanReview(
             review_id=str(uuid4()),
@@ -102,11 +110,36 @@ class EventMemoryService:
             peak_time=peak_time,
             end_time=end_time,
             risk_level=risk_level,
+            false_alarm_reason=false_alarm_reason,
+            intervention_required=intervention_required,
             note=note,
             reviewer=reviewer,
             revision=1,
         )
         return self.repository.save_review(review)
+
+    def record_development_decision(
+        self,
+        event_id: str,
+        review_id: str,
+        status: DevelopmentApprovalStatus,
+        *,
+        approved_uses: list[DevelopmentUse],
+        reviewer: str,
+        note: str,
+        supersedes_approval_id: str | None = None,
+    ) -> DevelopmentApproval:
+        approval = DevelopmentApproval(
+            approval_id=str(uuid4()),
+            event_id=event_id,
+            review_id=review_id,
+            status=status,
+            approved_uses=approved_uses,
+            reviewer=reviewer,
+            note=note,
+            supersedes_approval_id=supersedes_approval_id,
+        )
+        return self.repository.save_development_approval(approval)
 
     def get_analysis_result(self, analysis_id: str) -> AnalysisResult | None:
         return self.repository.get_analysis_result(analysis_id)

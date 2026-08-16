@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from ..domain.candidate import CandidateEvent
 from ..domain.event import EventStatus, VerifiedEvent
+from ..domain.feedback import DevelopmentApproval, DevelopmentApprovalStatus
 from ..domain.memory import AnalysisRecord, AnalysisResult, AnalysisStatus
 from ..domain.provenance import AnalysisProvenance, HumanReview, ReviewDecision, TraceRecord
 from ..domain.video import VideoMetadata
@@ -36,6 +37,7 @@ class InMemoryEventRepository:
         self._events: dict[str, VerifiedEvent] = {}
         self._event_history: dict[str, list[VerifiedEvent]] = {}
         self._reviews: dict[str, HumanReview] = {}
+        self._development_approvals: dict[str, DevelopmentApproval] = {}
         self._traces: dict[tuple[str, str], list[TraceRecord]] = {}
 
     def create_video(self, metadata: VideoMetadata) -> VideoMetadata:
@@ -235,6 +237,69 @@ class InMemoryEventRepository:
             self._events[event.event_id] = updated_event
             self._reviews[stored_review.review_id] = stored_review
             return _copy(stored_review)
+
+    def list_reviews(self, event_id: str) -> list[HumanReview]:
+        with self._lock:
+            if event_id not in self._events:
+                raise RepositoryNotFoundError(f"event bulunamadı: {event_id}")
+            reviews = [
+                review for review in self._reviews.values() if review.event_id == event_id
+            ]
+            return _copy(sorted(reviews, key=lambda review: (review.revision, review.created_at)))
+
+    def save_development_approval(
+        self, approval: DevelopmentApproval
+    ) -> DevelopmentApproval:
+        with self._lock:
+            if approval.event_id not in self._events:
+                raise RepositoryNotFoundError(f"event bulunamadı: {approval.event_id}")
+            review = self._reviews.get(approval.review_id)
+            if review is None:
+                raise RepositoryNotFoundError(f"review bulunamadı: {approval.review_id}")
+            if review.event_id != approval.event_id:
+                raise RepositoryConflictError("development approval review ile eşleşmiyor")
+            if approval.approval_id in self._development_approvals:
+                raise RepositoryDuplicateError(
+                    f"approval_id zaten kayıtlı: {approval.approval_id}"
+                )
+
+            history = sorted(
+                (
+                    item
+                    for item in self._development_approvals.values()
+                    if item.event_id == approval.event_id
+                ),
+                key=lambda item: (item.created_at, item.approval_id),
+            )
+            latest = history[-1] if history else None
+            if latest is None and approval.supersedes_approval_id is not None:
+                raise RepositoryConflictError("supersedes approval bulunamadı")
+            if latest is not None and approval.supersedes_approval_id != latest.approval_id:
+                raise RepositoryConflictError(
+                    "yeni development decision son approval kaydını supersede etmelidir"
+                )
+            if (
+                approval.status == DevelopmentApprovalStatus.REVOKED
+                and latest is not None
+                and latest.status != DevelopmentApprovalStatus.APPROVED
+            ):
+                raise RepositoryConflictError("yalnız approved decision revoke edilebilir")
+
+            self._development_approvals[approval.approval_id] = _copy(approval)
+            return _copy(approval)
+
+    def list_development_approvals(self, event_id: str) -> list[DevelopmentApproval]:
+        with self._lock:
+            if event_id not in self._events:
+                raise RepositoryNotFoundError(f"event bulunamadı: {event_id}")
+            approvals = [
+                item
+                for item in self._development_approvals.values()
+                if item.event_id == event_id
+            ]
+            return _copy(
+                sorted(approvals, key=lambda item: (item.created_at, item.approval_id))
+            )
 
     def list_event_revisions(self, event_id: str) -> list[VerifiedEvent]:
         with self._lock:

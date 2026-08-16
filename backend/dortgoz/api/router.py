@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from ..config import settings
 from ..domain.event import VerifiedEvent
 from ..domain.evidence import EvidenceItem, VerifiedEventType
+from ..domain.feedback import DevelopmentApproval
 from ..domain.memory import AnalysisStatus
 from ..domain.provenance import (
     HumanReview,
@@ -51,6 +52,7 @@ from .contracts import (
     AnalysisAccepted,
     AnalysisProgress,
     AnalyzeRequest,
+    DevelopmentApprovalInput,
     HumanReviewInput,
     QueryRequest,
     QueryResponse,
@@ -338,8 +340,41 @@ async def review_event(event_id: str, request: HumanReviewInput) -> HumanReview 
         peak_time=request.peak_time,
         end_time=request.end_time,
         risk_level=request.risk_level,
+        false_alarm_reason=request.false_alarm_reason,
+        intervention_required=request.intervention_required,
     )
     return review.model_dump(mode="json")
+
+
+@router.get("/events/{event_id}/reviews", response_model=list[HumanReview])
+async def list_event_reviews(event_id: str) -> list[HumanReview]:
+    return runtime.repository.list_reviews(event_id)
+
+
+@router.post(
+    "/events/{event_id}/development-approval",
+    response_model=DevelopmentApproval,
+)
+async def record_development_approval(
+    event_id: str, request: DevelopmentApprovalInput
+) -> DevelopmentApproval:
+    return runtime.events.record_development_decision(
+        event_id,
+        request.review_id,
+        request.status,
+        approved_uses=request.approved_uses,
+        reviewer=request.reviewer,
+        note=request.note,
+        supersedes_approval_id=request.supersedes_approval_id,
+    )
+
+
+@router.get(
+    "/events/{event_id}/development-approvals",
+    response_model=list[DevelopmentApproval],
+)
+async def list_development_approvals(event_id: str) -> list[DevelopmentApproval]:
+    return runtime.repository.list_development_approvals(event_id)
 
 
 @router.post("/analyses/{analysis_id}/query", response_model=QueryResponse)

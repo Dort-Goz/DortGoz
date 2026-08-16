@@ -12,6 +12,12 @@ from .evidence import (
     VLMResult,
     VLMStatus,
 )
+from .feedback import (
+    DevelopmentApproval,
+    DevelopmentApprovalStatus,
+    DevelopmentUse,
+    FalseAlarmReason,
+)
 from .memory import AnalysisProvenance, AnalysisRecord, AnalysisResult, AnalysisStatus
 from .provenance import (
     HumanReview,
@@ -64,6 +70,10 @@ __all__ = [
     "VLMResult",
     "VLMStatus",
     "EventStatus",
+    "DevelopmentApproval",
+    "DevelopmentApprovalStatus",
+    "DevelopmentUse",
+    "FalseAlarmReason",
     "AnalysisProvenance",
     "AnalysisRecord",
     "AnalysisResult",

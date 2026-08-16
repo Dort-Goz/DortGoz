@@ -7,6 +7,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .feedback import FalseAlarmReason
+
 
 class TraceRecord(BaseModel):
     """Repository katmanının agent paketine bağımlı olmayan trace görünümü."""
@@ -78,6 +80,8 @@ class HumanReview(BaseModel):
     peak_time: float | None = Field(default=None, ge=0)
     end_time: float | None = Field(default=None, ge=0)
     risk_level: str | None = None
+    false_alarm_reason: FalseAlarmReason | None = None
+    intervention_required: bool | None = None
     note: str = Field(min_length=1)
     reviewer: str = Field(min_length=1)
     revision: int = Field(ge=1)

@@ -9,9 +9,14 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..domain.event import VerifiedEvent
+from ..domain.feedback import (
+    DevelopmentApprovalStatus,
+    DevelopmentUse,
+    FalseAlarmReason,
+)
 from ..domain.memory import AnalysisResult
 from ..domain.provenance import ProcedureSource, TraceRecord
 from ..services.analysis_job import AnalysisJobStatus
@@ -58,6 +63,34 @@ class HumanReviewInput(BaseModel):
     peak_time: float | None = Field(default=None, ge=0)
     end_time: float | None = Field(default=None, ge=0)
     risk_level: str | None = None
+    false_alarm_reason: FalseAlarmReason | None = None
+    intervention_required: bool | None = None
+
+
+class DevelopmentApprovalInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    review_id: str = Field(min_length=1)
+    status: DevelopmentApprovalStatus
+    approved_uses: list[DevelopmentUse] = Field(default_factory=list)
+    reviewer: str = Field(min_length=1, max_length=120)
+    note: str = Field(min_length=1, max_length=4000)
+    supersedes_approval_id: str | None = None
+
+    @model_validator(mode="after")
+    def approval_fields_match_status(self) -> DevelopmentApprovalInput:
+        if len(set(self.approved_uses)) != len(self.approved_uses):
+            raise ValueError("approved_uses tekrar eden değer içeremez")
+        if self.status == DevelopmentApprovalStatus.APPROVED and not self.approved_uses:
+            raise ValueError("approved decision en az bir kullanım gerektirir")
+        if self.status != DevelopmentApprovalStatus.APPROVED and self.approved_uses:
+            raise ValueError("rejected veya revoked decision kullanım izni taşıyamaz")
+        if (
+            self.status == DevelopmentApprovalStatus.REVOKED
+            and self.supersedes_approval_id is None
+        ):
+            raise ValueError("revoked decision önceki approval kaydını belirtmelidir")
+        return self
 
 
 class QueryRequest(BaseModel):
@@ -112,6 +145,7 @@ __all__ = [
     "AnalysisAccepted",
     "AnalysisProgress",
     "AnalyzeRequest",
+    "DevelopmentApprovalInput",
     "EventListResponse",
     "HumanReviewInput",
     "QueryRequest",
