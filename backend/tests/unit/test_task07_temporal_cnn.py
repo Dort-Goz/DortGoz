@@ -11,6 +11,14 @@ from pathlib import Path
 import pytest
 
 from dortgoz.config import Settings
+from dortgoz.domain.dataset import (
+    DatasetLicenseStatus,
+    DatasetSplit,
+    DatasetUse,
+    DatasetVideoRecord,
+    OfflineDatasetManifest,
+    calculate_dataset_fingerprint,
+)
 from dortgoz.pipeline.candidate_model import load_candidate_scorer
 from dortgoz.pipeline.ingest import MotionSample
 from dortgoz.pipeline.temporal_cnn import (
@@ -139,7 +147,7 @@ def test_training_cli_writes_local_artifact_from_separated_annotations(
     annotation_dir.mkdir()
     video_root.mkdir()
     for name, split in (("train.mp4", "train"), ("validation.mp4", "validation")):
-        (video_root / name).write_bytes(b"fixture")
+        (video_root / name).write_bytes(f"fixture-{split}".encode())
         (annotation_dir / f"{split}.json").write_text(
             json.dumps(
                 {
@@ -151,6 +159,35 @@ def test_training_cli_writes_local_artifact_from_separated_annotations(
             ),
             encoding="utf-8",
         )
+    dataset_entries = [
+        DatasetVideoRecord(
+            dataset_video_id=f"fixture/{path.stem}",
+            source_ref=path.name,
+            source_label="fixture",
+            split=DatasetSplit.TRAIN if path.name == "train.mp4" else DatasetSplit.VALIDATION,
+            file_size_bytes=path.stat().st_size,
+            file_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+            allowed_uses=[DatasetUse.TRAINING, DatasetUse.EVALUATION],
+        )
+        for path in sorted(video_root.glob("*.mp4"))
+    ]
+    dataset_manifest = OfflineDatasetManifest(
+        dataset_id="fixture-approved",
+        source_name="Fixture approved dataset",
+        source_url="https://example.invalid/fixture",
+        citation="Local test fixture.",
+        license_status=DatasetLicenseStatus.VERIFIED,
+        license_id="Apache-2.0",
+        redistribution_allowed=True,
+        training_allowed=True,
+        allowed_uses=[DatasetUse.TRAINING, DatasetUse.EVALUATION],
+        entries=dataset_entries,
+        dataset_fingerprint=calculate_dataset_fingerprint(dataset_entries),
+    )
+    dataset_manifest_path = tmp_path / "dataset-manifest.json"
+    dataset_manifest_path.write_text(
+        dataset_manifest.model_dump_json(indent=2), encoding="utf-8"
+    )
 
     async def fake_motion_profile(_: Path, *, base_fps: float) -> list[MotionSample]:
         assert base_fps == 1.0
@@ -160,6 +197,7 @@ def test_training_cli_writes_local_artifact_from_separated_annotations(
     manifest_path = module.train_and_write_temporal_cnn(
         annotation_dir=annotation_dir,
         video_root=video_root,
+        dataset_manifest_path=dataset_manifest_path,
         output_dir=tmp_path / "models" / "candidate" / "local" / "fixture",
         model_id="temporal-cnn-cli-v1",
         version="1.0.0",
@@ -176,4 +214,7 @@ def test_training_cli_writes_local_artifact_from_separated_annotations(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["model_type"] == "temporal_cnn"
     assert manifest["artifact_path"].startswith("models/candidate/local/")
+    assert manifest["training_dataset"]["dataset_fingerprint"] == (
+        dataset_manifest.dataset_fingerprint
+    )
     assert "validation" in manifest["notes"]

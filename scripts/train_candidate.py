@@ -31,6 +31,10 @@ from dortgoz.pipeline.temporal_cnn import (  # noqa: E402
     evaluate_temporal_cnn,
     train_temporal_cnn,
 )
+from dortgoz.services.dataset_manifest import (  # noqa: E402
+    load_dataset_manifest,
+    verify_training_sources,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -168,6 +172,7 @@ def train_and_write_temporal_cnn(
     *,
     annotation_dir: Path,
     video_root: Path,
+    dataset_manifest_path: Path,
     output_dir: Path,
     model_id: str,
     version: str,
@@ -187,6 +192,15 @@ def train_and_write_temporal_cnn(
         raise ValueError("temporal CNN için ayrı train ve validation video bölmeleri zorunlu")
     if {record.video_id for record in train_records} & {record.video_id for record in validation_records}:
         raise ValueError("train ve validation video_id kümeleri ayrık olmalı")
+    dataset_manifest = load_dataset_manifest(dataset_manifest_path)
+    verify_training_sources(
+        dataset_manifest,
+        video_root,
+        {
+            record.source_ref: record.split
+            for record in [*train_records, *validation_records]
+        },
+    )
     train_examples = asyncio.run(build_examples(train_records, video_root=video_root, base_fps=base_fps))
     validation_examples = asyncio.run(
         build_examples(validation_records, video_root=video_root, base_fps=base_fps)
@@ -217,6 +231,9 @@ def train_and_write_temporal_cnn(
         input_fps=base_fps,
         train_metrics=train_metrics,
         validation_metrics=validation_metrics,
+        training_dataset_id=dataset_manifest.dataset_id,
+        training_dataset_fingerprint=dataset_manifest.dataset_fingerprint,
+        training_dataset_license=dataset_manifest.license_id,
     )
 
 
@@ -227,6 +244,9 @@ def write_temporal_cnn(
     input_fps: float,
     train_metrics: object,
     validation_metrics: object,
+    training_dataset_id: str,
+    training_dataset_fingerprint: str,
+    training_dataset_license: str | None,
 ) -> Path:
     """Temporal CNN artifact + hash'li manifest'i git-dışı local dizine yazar."""
 
@@ -250,6 +270,11 @@ def write_temporal_cnn(
         "license": model.artifact.license,
         "input_fps": input_fps,
         "feature_schema": list(model.artifact.feature_schema),
+        "training_dataset": {
+            "dataset_id": training_dataset_id,
+            "dataset_fingerprint": training_dataset_fingerprint,
+            "license": training_dataset_license,
+        },
         "notes": (
             "Yerel project annotation bölmesiyle eğitilmiş temporal CNN. "
             f"train={_metrics_payload(train_metrics)}; validation={_metrics_payload(validation_metrics)}"
@@ -283,6 +308,7 @@ def main() -> None:
     parser.add_argument("--interaction-scale", type=float, default=5.0)
     parser.add_argument("--annotations-dir", type=Path)
     parser.add_argument("--video-root", type=Path)
+    parser.add_argument("--dataset-manifest", type=Path)
     parser.add_argument("--model-id", default="temporal-cnn-v1")
     parser.add_argument("--version", default="1.0.0")
     parser.add_argument("--base-fps", type=float, default=1.0)
@@ -299,8 +325,15 @@ def main() -> None:
         output_dir = args.output_dir or Path("models/candidate")
         print(write_baseline(output_dir, args.activity_scale, args.interaction_scale))
         return
-    if args.annotations_dir is None or args.video_root is None:
-        parser.error("temporal-cnn için --annotations-dir ve --video-root zorunlu")
+    if (
+        args.annotations_dir is None
+        or args.video_root is None
+        or args.dataset_manifest is None
+    ):
+        parser.error(
+            "temporal-cnn için --annotations-dir, --video-root ve "
+            "--dataset-manifest zorunlu"
+        )
     if args.artifact_license is None:
         parser.error("temporal-cnn için --artifact-license zorunlu")
     if not 0 <= args.min_validation_recall <= 1:
@@ -309,6 +342,7 @@ def main() -> None:
         train_and_write_temporal_cnn(
             annotation_dir=args.annotations_dir,
             video_root=args.video_root,
+            dataset_manifest_path=args.dataset_manifest,
             output_dir=args.output_dir or Path("models/candidate/local") / args.model_id,
             model_id=args.model_id,
             version=args.version,

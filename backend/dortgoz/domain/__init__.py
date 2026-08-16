@@ -2,6 +2,14 @@
 
 from .candidate import CandidateEvent, CandidateType, ScreeningSample
 from .context import ContextClip, DenseAnalysisResult, KeyframeRef
+from .dataset import (
+    DatasetLicenseStatus,
+    DatasetSplit,
+    DatasetUse,
+    DatasetVideoRecord,
+    OfflineDatasetManifest,
+    calculate_dataset_fingerprint,
+)
 from .event import EventStatus, ProcedureAction, RiskAssessment, RiskLevel, VerifiedEvent
 from .evidence import (
     EvidenceClaim,
@@ -47,6 +55,12 @@ __all__ = [
     "CandidateEvent",
     "CandidateType",
     "ContextClip",
+    "DatasetLicenseStatus",
+    "DatasetSplit",
+    "DatasetUse",
+    "DatasetVideoRecord",
+    "OfflineDatasetManifest",
+    "calculate_dataset_fingerprint",
     "DenseAnalysisResult",
     "ScreeningSample",
     "EvidenceClaim",
