@@ -21,6 +21,12 @@ interface TriageItem {
   decided_wall: number | null;
   tekrar: number;
   review_ids: string[];
+  operator_risk: string;
+  false_alarm_reason: string;
+  intervention_required: boolean | null;
+  review_start: number | null;
+  review_peak: number | null;
+  review_end: number | null;
   clip_url: string | null;
   clip_start: number | null;
   clip_end: number | null;
@@ -29,6 +35,24 @@ interface TriageItem {
   intervention_band: "routine" | "review" | "high" | "urgent";
   intervention_reasons: string[];
   priority_ruleset_version: string;
+  event_start: number | null;
+  event_peak: number | null;
+  event_end: number | null;
+}
+
+type TriageVerdict = "anomali" | "sorun_degil";
+
+interface TriageDecision {
+  key: string;
+  verdict: TriageVerdict;
+  category?: string;
+  risk_level?: string;
+  start_time?: number;
+  peak_time?: number;
+  end_time?: number;
+  false_alarm_reason?: string;
+  intervention_required: boolean;
+  note: string;
 }
 
 interface RuleProposal {
@@ -82,6 +106,23 @@ const RISK_CLS: Record<string, string> = {
   yuksek: "bg-orange-900 text-orange-200", kritik: "bg-red-900 text-red-200",
 };
 
+const RISK_TR: Record<string, string> = {
+  dusuk: "Düşük",
+  orta: "Orta",
+  yuksek: "Yüksek",
+  kritik: "Kritik",
+};
+
+const FALSE_ALARM_TR: Record<string, string> = {
+  normal_activity: "Olağan hareket",
+  camera_condition: "Kamera veya ışık koşulu",
+  occlusion: "Görüş engeli",
+  reflection_or_shadow: "Yansıma veya gölge",
+  duplicate_event: "Aynı olayın tekrarı",
+  wrong_classification: "Yanlış sınıflandırma",
+  other: "Diğer",
+};
+
 const PRIORITY_TR = {
   routine: "Rutin",
   review: "İncelenmeli",
@@ -105,11 +146,49 @@ function PendingCard({ item, categories, feedLabel, onDecide }: {
   item: TriageItem;
   categories: string[];
   feedLabel: string;
-  onDecide: (key: string, verdict: string, category?: string) => void;
+  onDecide: (decision: TriageDecision) => Promise<boolean>;
 }) {
-  // Kategori varsayılanı modelin önerisi — operatör düzeltebilir
+  const [verdict, setVerdict] = useState<TriageVerdict | "">("");
   const [cat, setCat] = useState(
     categories.includes(item.model_category) ? item.model_category : "bilinmeyen");
+  const [risk, setRisk] = useState(item.risk);
+  const [start, setStart] = useState(item.event_start ?? item.clip_start ?? item.t);
+  const [peak, setPeak] = useState(item.event_peak ?? item.t);
+  const [end, setEnd] = useState(item.event_end ?? item.clip_end ?? item.t);
+  const [falseAlarmReason, setFalseAlarmReason] = useState("");
+  const [intervention, setIntervention] = useState<"" | "yes" | "no">("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const validTimes = start >= 0 && start <= peak && peak <= end;
+  const canSubmit = intervention !== ""
+    && (verdict === "anomali"
+      ? validTimes
+      : Boolean(falseAlarmReason)
+        && (falseAlarmReason !== "other" || Boolean(note.trim())));
+
+  const submit = async () => {
+    if (!verdict || !canSubmit) return;
+    setBusy(true);
+    const saved = await onDecide({
+      key: item.key,
+      verdict,
+      ...(verdict === "anomali" ? {
+        category: cat,
+        risk_level: risk,
+        start_time: start,
+        peak_time: peak,
+        end_time: end,
+      } : {
+        false_alarm_reason: falseAlarmReason,
+      }),
+      intervention_required: intervention === "yes",
+      note: note.trim(),
+    });
+    setBusy(false);
+    if (saved) setVerdict("");
+  };
+
   return (
     <div className="rounded border border-zinc-700 bg-zinc-900/70 p-2 space-y-1.5 text-xs">
       <div className="flex items-center gap-2">
@@ -164,43 +243,154 @@ function PendingCard({ item, categories, feedLabel, onDecide }: {
           Tarayıcınız olay klibini oynatamıyor.
         </video>
       )}
-      <div className="flex items-center gap-1">
-        <select
-          value={cat}
-          onChange={(e) => setCat(e.target.value)}
-          className="flex-1 min-w-0 bg-zinc-800 border border-zinc-700 rounded px-1 py-0.5"
-          title="Doğrulanan anomalinin kategorisi (model önerisini düzeltebilirsiniz)"
-        >
-          {categories.map((c) => (
-            <option key={c} value={c}>{CATEGORY_TR[c] ?? c}</option>
-          ))}
-        </select>
-        <button
-          onClick={() => onDecide(item.key, "anomali", cat)}
-          className="rounded px-2 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white"
-          title="Gerçek anomali olarak doğrula ve oturum listesine geçir"
-        >
-          ✔ Anomali
-        </button>
-        <button
-          onClick={() => onDecide(item.key, "sorun_degil")}
-          className="rounded px-2 py-0.5 bg-zinc-700 hover:bg-zinc-600"
-          title="Yanlış/önemsiz — kuyruktan düş"
-        >
-          ✘ Değil
-        </button>
-      </div>
+      {!verdict ? (
+        <div className="grid grid-cols-2 gap-1">
+          <button
+            onClick={() => setVerdict("anomali")}
+            className="rounded bg-emerald-700 px-2 py-1 text-white hover:bg-emerald-600"
+          >
+            ✔ Anomali
+          </button>
+          <button
+            onClick={() => setVerdict("sorun_degil")}
+            className="rounded bg-zinc-700 px-2 py-1 hover:bg-zinc-600"
+          >
+            ✘ Sorun değil
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-2 rounded border border-zinc-700 bg-zinc-950/70 p-2">
+          <div className="flex items-center justify-between">
+            <span className={verdict === "anomali" ? "text-emerald-300" : "text-zinc-300"}>
+              {verdict === "anomali" ? "Anomali geri bildirimi" : "Yanlış alarm geri bildirimi"}
+            </span>
+            <button onClick={() => setVerdict("")} className="text-zinc-500 hover:text-zinc-200">
+              Vazgeç ×
+            </button>
+          </div>
+
+          {verdict === "anomali" ? (
+            <>
+              <label className="block text-zinc-400">
+                Doğru olay türü
+                <select
+                  value={cat}
+                  onChange={(event) => setCat(event.target.value)}
+                  className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-zinc-200"
+                >
+                  {categories.map((category) => (
+                    <option key={category} value={category}>
+                      {CATEGORY_TR[category] ?? category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-zinc-400">
+                Doğru risk seviyesi
+                <select
+                  value={risk}
+                  onChange={(event) => setRisk(event.target.value)}
+                  className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-zinc-200"
+                >
+                  {Object.entries(RISK_TR).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </label>
+              <div>
+                <div className="mb-0.5 text-zinc-400">Olay zamanı (saniye)</div>
+                <div className="grid grid-cols-3 gap-1">
+                  {([
+                    ["Başlangıç", start, setStart],
+                    ["Zirve", peak, setPeak],
+                    ["Bitiş", end, setEnd],
+                  ] as const).map(([label, value, setter]) => (
+                    <label key={label} className="text-[10px] text-zinc-500">
+                      {label}
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        value={value}
+                        onChange={(event) => setter(Number(event.target.value))}
+                        className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-1 py-1 text-right text-xs text-zinc-200"
+                      />
+                    </label>
+                  ))}
+                </div>
+                {!validTimes && <div className="mt-1 text-red-300">Başlangıç ≤ zirve ≤ bitiş olmalı.</div>}
+              </div>
+            </>
+          ) : (
+            <label className="block text-zinc-400">
+              Yanlış alarm nedeni
+              <select
+                value={falseAlarmReason}
+                onChange={(event) => setFalseAlarmReason(event.target.value)}
+                className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-zinc-200"
+              >
+                <option value="">Neden seçin</option>
+                {Object.entries(FALSE_ALARM_TR).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          <label className="block text-zinc-400">
+            Müdahale gerekli miydi?
+            <select
+              value={intervention}
+              onChange={(event) => setIntervention(event.target.value as "" | "yes" | "no")}
+              className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-zinc-200"
+            >
+              <option value="">Seçin</option>
+              <option value="yes">Evet, gerekliydi</option>
+              <option value="no">Hayır, gerekli değildi</option>
+            </select>
+          </label>
+          <label className="block text-zinc-400">
+            Operatör notu {falseAlarmReason === "other" ? "(zorunlu)" : "(isteğe bağlı)"}
+            <textarea
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              maxLength={2000}
+              rows={2}
+              className="mt-0.5 w-full resize-none rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-zinc-200"
+              placeholder="Kararı açıklayan kısa not"
+            />
+          </label>
+          <button
+            disabled={busy || !canSubmit}
+            onClick={submit}
+            className="w-full rounded bg-sky-700 px-2 py-1.5 font-medium text-white hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {busy ? "Kaydediliyor…" : "Kararı kalıcı kaydet"}
+          </button>
+          <p className="text-[10px] text-zinc-500">
+            Bu karar geri bildirimdir. Eğitim izni ayrıca verilir.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
 
-export default function TriagePanel({ onSelectFeed, feedNames = {} }: {
+export default function TriagePanel({ onSelectFeed, onOpenTraining, feedNames = {} }: {
   onSelectFeed?: (feed: string) => void;
+  onOpenTraining?: (eventId: string) => void;
   /** akış kimliği → insan-okur ad (canlı ızgaradan; yoksa kimlik gösterilir) */
   feedNames?: Record<string, string>;
 }) {
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [error, setError] = useState("");
+  const [reviewer, setReviewer] = useState(
+    () => localStorage.getItem("dortgoz.reviewer") ?? "operator",
+  );
+
+  useEffect(() => {
+    localStorage.setItem("dortgoz.reviewer", reviewer);
+  }, [reviewer]);
 
   useEffect(() => {
     let alive = true;
@@ -216,21 +406,26 @@ export default function TriagePanel({ onSelectFeed, feedNames = {} }: {
     return () => { alive = false; clearInterval(id); };
   }, []);
 
-  const decide = async (key: string, verdict: string, category?: string) => {
+  const decide = async (decision: TriageDecision): Promise<boolean> => {
+    if (!reviewer.trim()) {
+      setError("İnceleyen adı boş olamaz.");
+      return false;
+    }
     const response = await fetch("/api/triage/decide", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key, verdict, category }),
+      body: JSON.stringify({ ...decision, reviewer: reviewer.trim() }),
     });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      setError(body.detail || "Karar kalıcı kayda yazılamadı.");
-      return;
+      setError(body.detail || body.error?.message || "Karar kalıcı kayda yazılamadı.");
+      return false;
     }
     setError("");
     // Kuyruğu hemen tazele (sonraki poll'u bekletme)
     const r = await fetch("/api/triage");
     setSnap(await r.json());
+    return true;
   };
 
   const ruleAction = async (
@@ -253,7 +448,7 @@ export default function TriagePanel({ onSelectFeed, feedNames = {} }: {
 
   if (!snap) return null;
   return (
-    <div className="w-72 shrink-0 flex flex-col gap-2 min-h-0 text-sm">
+    <div className="w-80 shrink-0 flex flex-col gap-2 min-h-0 text-sm">
       <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-2 flex-1 min-h-0 flex flex-col">
         <div className="font-bold mb-1.5">
           ⚑ Nöbet kuyruğu
@@ -263,6 +458,15 @@ export default function TriagePanel({ onSelectFeed, feedNames = {} }: {
             </span>
           )}
         </div>
+        <label className="mb-1.5 flex items-center gap-2 text-xs text-zinc-500">
+          İnceleyen
+          <input
+            value={reviewer}
+            onChange={(event) => setReviewer(event.target.value)}
+            maxLength={120}
+            className="min-w-0 flex-1 rounded border border-zinc-700 bg-zinc-950 px-1.5 py-1 text-zinc-300"
+          />
+        </label>
         {error && (
           <div className="mb-1.5 rounded border border-red-900 bg-red-950/50 px-2 py-1 text-xs text-red-200">
             {error}
@@ -360,6 +564,21 @@ export default function TriagePanel({ onSelectFeed, feedNames = {} }: {
               </span>
               <div className="text-zinc-300 truncate">{i.title}</div>
               {i.note && <div className="text-zinc-500 truncate">{i.note}</div>}
+              <div className="text-zinc-500">
+                Risk: {RISK_TR[i.operator_risk || i.risk] ?? (i.operator_risk || i.risk)}
+                {i.intervention_required != null
+                  ? ` · Müdahale ${i.intervention_required ? "gerekli" : "gerekli değil"}`
+                  : ""}
+              </div>
+              {onOpenTraining && i.event_id && (
+                <button
+                  onClick={() => onOpenTraining(i.event_id!)}
+                  className="mt-1 rounded border border-indigo-800 px-1.5 py-0.5 text-indigo-300 hover:bg-indigo-950/40"
+                  title="Sonucu yeniden incele ve ayrı geliştirme izni ver"
+                >
+                  Geliştirmeye incele
+                </button>
+              )}
             </div>
           ))}
         </div>

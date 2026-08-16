@@ -25,10 +25,11 @@ function lagBadge(f: LiveFeed): { text: string; cls: string } {
   return { text: `−${Math.round(s / 60)}dk geride`, cls: "bg-red-700" };
 }
 
-export default function LiveGrid({ incidents, onSelectFeed }: {
+export default function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
   /** Akış adı → olay kartları (WS'ten; hücre rozetinde sayı gösterilir) */
   incidents: Record<string, IncidentUpdate[]>;
   onSelectFeed: (feed: string) => void;
+  onOpenTraining: (eventId: string) => void;
 }) {
   const [feeds, setFeeds] = useState<LiveFeed[]>([]);
   const [active, setActive] = useState(false);
@@ -208,6 +209,7 @@ export default function LiveGrid({ incidents, onSelectFeed }: {
           listesine geçer (insan-döngüde karar katmanı) */}
       <TriagePanel
         onSelectFeed={onSelectFeed}
+        onOpenTraining={onOpenTraining}
         feedNames={Object.fromEntries(
           feeds.filter((f) => f.desc).map((f) => [f.name, f.desc]))}
       />

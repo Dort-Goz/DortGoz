@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from .api.contracts import TriageDecisionInput
 from .api.errors import (
     domain_exception_handler,
     http_exception_handler,
@@ -268,13 +269,22 @@ async def triage_revoke_rule(proposal_id: str, body: dict) -> dict:
 
 
 @app.post("/api/triage/decide")
-async def triage_decide(body: dict) -> dict:
-    """Operatör kararı: {key, verdict: anomali|sorun_degil, category?, note?}."""
+async def triage_decide(body: TriageDecisionInput) -> dict:
+    """Yapılandırılmış operatör kararını canonical review olarak kaydet."""
     try:
         item = triage.store.decide(
-            body.get("key", ""), body.get("verdict", ""),
-            category=body.get("category", ""), note=body.get("note", ""),
-            reviewer=body.get("reviewer", "operator-console"))
+            body.key,
+            body.verdict,
+            category=body.category or "",
+            risk_level=body.risk_level,
+            start_time=body.start_time,
+            peak_time=body.peak_time,
+            end_time=body.end_time,
+            false_alarm_reason=body.false_alarm_reason,
+            intervention_required=body.intervention_required,
+            note=body.note,
+            reviewer=body.reviewer,
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:

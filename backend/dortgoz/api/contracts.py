@@ -73,6 +73,68 @@ class HumanReviewInput(BaseModel):
     intervention_required: bool | None = None
 
 
+class TriageDecisionInput(BaseModel):
+    """Nöbet kartındaki açık ve yapılandırılmış operatör kararı."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str = Field(min_length=1, max_length=400)
+    verdict: Literal["anomali", "sorun_degil"]
+    category: Literal[
+        "kavga",
+        "saldiri",
+        "hirsizlik",
+        "silahli_olay",
+        "yangin",
+        "patlama",
+        "arac_kazasi",
+        "vandalizm",
+        "bilinmeyen",
+    ] | None = None
+    risk_level: Literal["dusuk", "orta", "yuksek", "kritik"] | None = None
+    start_time: float | None = Field(default=None, ge=0)
+    peak_time: float | None = Field(default=None, ge=0)
+    end_time: float | None = Field(default=None, ge=0)
+    false_alarm_reason: FalseAlarmReason | None = None
+    intervention_required: bool
+    note: str = Field(default="", max_length=2000)
+    reviewer: str = Field(default="operator-console", min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def decision_fields_match_verdict(self) -> TriageDecisionInput:
+        times = (self.start_time, self.peak_time, self.end_time)
+        if any(value is not None for value in times) and not all(
+            value is not None for value in times
+        ):
+            raise ValueError("olay başlangıç, zirve ve bitiş zamanı birlikte verilmelidir")
+        if all(value is not None for value in times):
+            start, peak, end = times
+            assert start is not None and peak is not None and end is not None
+            if not start <= peak <= end:
+                raise ValueError("beklenen sıra: start_time <= peak_time <= end_time")
+
+        if self.verdict == "anomali":
+            if self.category is None or self.risk_level is None:
+                raise ValueError("anomali kararı kategori ve risk düzeyi gerektirir")
+            if not all(value is not None for value in times):
+                raise ValueError("anomali kararı doğrulanmış olay zamanlarını gerektirir")
+            if self.false_alarm_reason is not None:
+                raise ValueError("anomali kararı yanlış alarm nedeni taşıyamaz")
+        else:
+            if self.false_alarm_reason is None:
+                raise ValueError("sorun değil kararı yanlış alarm nedeni gerektirir")
+            if self.category is not None or self.risk_level is not None:
+                raise ValueError("sorun değil kararı kategori veya risk düzeyi taşıyamaz")
+            if any(value is not None for value in times):
+                raise ValueError("sorun değil kararı olay zamanı düzeltmesi taşıyamaz")
+        if (
+            self.false_alarm_reason == FalseAlarmReason.OTHER
+            and not self.note.strip()
+        ):
+            raise ValueError("diğer yanlış alarm nedeni açıklama gerektirir")
+        return self
+
+
 class DevelopmentApprovalInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

@@ -383,6 +383,7 @@ export default function App() {
           incidents={Object.fromEntries(
             Object.entries(state.feeds).map(([f, s]) => [f, s.incidents]))}
           onSelectFeed={(f) => dispatch({ kind: "select_feed", feed: f })}
+          onOpenTraining={setTrainingEventId}
         />
       )}
 

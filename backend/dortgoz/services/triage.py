@@ -82,6 +82,12 @@ class TriageItem:
     decided_wall: float | None = None
     tekrar: int = 1
     review_ids: list[str] = field(default_factory=list)
+    operator_risk: str = ""
+    false_alarm_reason: str = ""
+    intervention_required: bool | None = None
+    review_start: float | None = None
+    review_peak: float | None = None
+    review_end: float | None = None
     intervention_score: int = 0
     intervention_band: str = "routine"
     intervention_reasons: list[str] = field(default_factory=list)
@@ -186,6 +192,12 @@ class TriageStore:
         key: str,
         verdict: str,
         category: str = "",
+        risk_level: str | None = None,
+        start_time: float | None = None,
+        peak_time: float | None = None,
+        end_time: float | None = None,
+        false_alarm_reason: FalseAlarmReason | None = None,
+        intervention_required: bool | None = None,
         note: str = "",
         reviewer: str = "operator-console",
     ) -> TriageItem:
@@ -196,6 +208,18 @@ class TriageStore:
             raise KeyError(f"bekleyen kayıt yok: {key}")
         if verdict == "anomali" and category not in CATEGORIES:
             raise ValueError(f"geçersiz kategori: {category}")
+        if verdict == "anomali" and false_alarm_reason is not None:
+            raise ValueError("anomali kararı yanlış alarm nedeni taşıyamaz")
+        if verdict == "sorun_degil" and (category or risk_level is not None):
+            raise ValueError("sorun değil kararı kategori veya risk düzeyi taşıyamaz")
+        if verdict == "sorun_degil" and any(
+            value is not None for value in (start_time, peak_time, end_time)
+        ):
+            raise ValueError("sorun değil kararı olay zamanı düzeltmesi taşıyamaz")
+        if false_alarm_reason == FalseAlarmReason.OTHER and not note.strip():
+            raise ValueError("diğer yanlış alarm nedeni açıklama gerektirir")
+        if risk_level is not None and risk_level not in {"dusuk", "orta", "yuksek", "kritik"}:
+            raise ValueError(f"geçersiz risk düzeyi: {risk_level}")
         if not reviewer.strip():
             raise ValueError("reviewer boş olamaz")
 
@@ -205,10 +229,18 @@ class TriageStore:
                 "Olay henüz canonical SQLite kaydına bağlanamadı; karar kaydedilmedi."
             )
         item.event_id = event_id
+        event = self.repository.get_event(event_id)
+        assert event is not None
+        corrected_times = self._review_times(
+            event_id,
+            start_time=start_time,
+            peak_time=peak_time,
+            end_time=end_time,
+            use_event_defaults=verdict == "anomali",
+        )
+        required = intervention_required if intervention_required is not None else verdict == "anomali"
 
         if verdict == "anomali":
-            event = self.repository.get_event(event_id)
-            assert event is not None
             decision = (
                 ReviewDecision.CONFIRM
                 if event.validation is not None
@@ -222,28 +254,39 @@ class TriageStore:
                 reviewer=reviewer.strip(),
                 note=note.strip() or "Operatör nöbet kuyruğunda anomaliyi doğruladı.",
                 event_type=canonical_event_type_from_ws_label(category).value,
-                risk_level=item.risk,
-                intervention_required=True,
+                start_time=corrected_times[0],
+                peak_time=corrected_times[1],
+                end_time=corrected_times[2],
+                risk_level=risk_level or item.risk,
+                intervention_required=required,
             )
             item.operator_category = category
+            item.operator_risk = risk_level or item.risk
             self._cancel_scope(item.feed, item.model_category, reviewer.strip())
         else:
+            reason = false_alarm_reason or FalseAlarmReason.NORMAL_ACTIVITY
             review = self._save_review(
                 event_id,
                 ReviewDecision.REJECT,
                 reviewer=reviewer.strip(),
                 note=note.strip() or "Operatör nöbet kuyruğunda sorun olmadığını belirtti.",
-                false_alarm_reason=FalseAlarmReason.NORMAL_ACTIVITY,
-                intervention_required=False,
+                false_alarm_reason=reason,
+                intervention_required=required,
             )
+            item.false_alarm_reason = reason.value
             self.dismissed_count += 1
-            if not self._scope_is_protected(item.model_category, item.risk):
+            if (
+                reason == FalseAlarmReason.NORMAL_ACTIVITY
+                and not self._scope_is_protected(item.model_category, item.risk)
+            ):
                 self._record_dismissal(item, review.review_id, reviewer.strip())
 
         self._pending.pop(key)
         item.review_ids = [review.review_id]
         item.verdict = verdict
-        item.note = note[:500]
+        item.note = review.note[:500]
+        item.intervention_required = required
+        item.review_start, item.review_peak, item.review_end = corrected_times
         item.decided_wall = time.time()
         self._append_resolved(item)
         return item
@@ -471,6 +514,11 @@ class TriageStore:
 
     def _item_view(self, item: TriageItem) -> dict:
         view = asdict(item)
+        event = (
+            self.repository.get_event(item.event_id)
+            if self.repository is not None and item.event_id is not None
+            else None
+        )
         media = (
             self.repository.get_incident_media_for_event(item.event_id)
             if self.repository is not None and item.event_id is not None
@@ -483,8 +531,46 @@ class TriageStore:
             media_thumbnail_url=(
                 f"/media/{media.thumbnail_ref}" if media is not None else None
             ),
+            event_start=event.start_time if event is not None else None,
+            event_peak=event.peak_time if event is not None else None,
+            event_end=event.end_time if event is not None else None,
         )
         return view
+
+    def _review_times(
+        self,
+        event_id: str,
+        *,
+        start_time: float | None,
+        peak_time: float | None,
+        end_time: float | None,
+        use_event_defaults: bool,
+    ) -> tuple[float | None, float | None, float | None]:
+        assert self.repository is not None
+        event = self.repository.get_event(event_id)
+        assert event is not None
+        supplied = (start_time, peak_time, end_time)
+        if any(value is not None for value in supplied) and not all(
+            value is not None for value in supplied
+        ):
+            raise ValueError("olay başlangıç, zirve ve bitiş zamanı birlikte verilmelidir")
+        times = supplied
+        if all(value is None for value in times) and use_event_defaults:
+            times = (event.start_time, event.peak_time, event.end_time)
+        if all(value is not None for value in times):
+            start, peak, end = times
+            assert start is not None and peak is not None and end is not None
+            if not 0 <= start <= peak <= end:
+                raise ValueError("beklenen sıra: start_time <= peak_time <= end_time")
+            video = self.repository.get_video(event.video_id)
+            if video is None:
+                raise TriagePersistenceError("canonical video kaydı bulunamadı")
+            if (
+                "MOCK_VIRTUAL_SOURCE" not in video.warnings
+                and end > video.duration_seconds
+            ):
+                raise ValueError("olay bitiş zamanı video süresini aşamaz")
+        return times
 
     def _resolve_event_id(self, feed: str, incident_id: str) -> str | None:
         if self.event_id_resolver is None:

@@ -7,10 +7,12 @@ from datetime import UTC, datetime, timedelta
 from uuid import NAMESPACE_URL, uuid5
 
 import pytest
+from pydantic import ValidationError
 
+from dortgoz.api.contracts import TriageDecisionInput
 from dortgoz.domain.candidate import CandidateEvent, CandidateType
 from dortgoz.domain.event import EventStatus, VerifiedEvent
-from dortgoz.domain.feedback import RuleProposalStatus
+from dortgoz.domain.feedback import FalseAlarmReason, RuleProposalStatus
 from dortgoz.domain.media import IncidentMedia
 from dortgoz.domain.provenance import AnalysisProvenance, ReviewDecision
 from dortgoz.domain.taxonomy import VerifiedEventType, canonical_event_type_from_ws_label
@@ -23,9 +25,10 @@ from dortgoz.services import triage
 class CanonicalTriageStore(triage.TriageStore):
     """Her test incident'ını gerçek canonical parent kayıtlarıyla hazırlar."""
 
-    def __init__(self, clock=None) -> None:
+    def __init__(self, clock=None, *, virtual_source: bool = False) -> None:
         self.repo = InMemoryEventRepository()
         self.ids: dict[tuple[str, str], str] = {}
+        self.virtual_source = virtual_source
         super().__init__(
             self.repo,
             event_id_resolver=lambda feed, incident_id: self.ids.get((feed, incident_id)),
@@ -61,6 +64,7 @@ class CanonicalTriageStore(triage.TriageStore):
             duration_seconds=60,
             has_audio=False,
             time_base="1/25",
+            warnings=["MOCK_VIRTUAL_SOURCE"] if self.virtual_source else [],
         )
         self.repo.create_video(video)
         analysis_id = f"analysis:{scope}"
@@ -252,6 +256,71 @@ def test_operator_decision_is_saved_as_canonical_human_review(store):
     assert reviews[0].note == "Kasaya uzanıyor"
 
 
+def test_structured_anomaly_feedback_saves_corrections(store):
+    store.observe(_incident())
+    item = store.decide(
+        "KAM-1:inc-1",
+        "anomali",
+        category="hirsizlik",
+        risk_level="kritik",
+        start_time=40,
+        peak_time=42,
+        end_time=45,
+        intervention_required=False,
+        note="Olay gerçekti fakat müdahale gerektirmedi.",
+        reviewer="operator-1",
+    )
+    review = store.repo.list_reviews(item.event_id)[0]
+    event = store.repo.get_event(item.event_id)
+
+    assert review.event_type == "possible_theft"
+    assert review.risk_level == "kritik"
+    assert (review.start_time, review.peak_time, review.end_time) == (40, 42, 45)
+    assert review.intervention_required is False
+    assert review.reviewer == "operator-1"
+    assert event is not None
+    assert (event.start_time, event.peak_time, event.end_time) == (40, 42, 45)
+    assert item.operator_risk == "kritik"
+    assert item.intervention_required is False
+
+
+def test_structured_feedback_rejects_time_outside_video(store):
+    store.observe(_incident())
+
+    with pytest.raises(ValueError, match="video süresini aşamaz"):
+        store.decide(
+            "KAM-1:inc-1",
+            "anomali",
+            category="vandalizm",
+            risk_level="orta",
+            start_time=40,
+            peak_time=42,
+            end_time=61,
+            intervention_required=True,
+        )
+
+    assert len(store.snapshot()["pending"]) == 1
+
+
+def test_virtual_live_source_accepts_stream_timeline_times() -> None:
+    store = CanonicalTriageStore(virtual_source=True)
+    store.observe(_incident())
+
+    item = store.decide(
+        "KAM-1:inc-1",
+        "anomali",
+        category="vandalizm",
+        risk_level="orta",
+        start_time=40,
+        peak_time=42,
+        end_time=75,
+        intervention_required=True,
+    )
+
+    review = store.repo.list_reviews(item.event_id)[0]
+    assert review.end_time == 75
+
+
 def test_dismissal_is_saved_and_does_not_leave_jsonl_side_channel(store):
     store.observe(_incident())
     item = store.decide("KAM-1:inc-1", "sorun_degil")
@@ -259,6 +328,58 @@ def test_dismissal_is_saved_and_does_not_leave_jsonl_side_channel(store):
     assert review.decision == ReviewDecision.REJECT
     assert review.intervention_required is False
     assert store.snapshot()["dismissed_count"] == 1
+
+
+def test_non_normal_false_alarm_does_not_create_camera_suppression(store):
+    for index in range(triage.RULE_THRESHOLD):
+        incident_id = f"camera-{index}"
+        store.observe(_incident(incident_id=incident_id))
+        item = store.decide(
+            f"KAM-1:{incident_id}",
+            "sorun_degil",
+            false_alarm_reason=FalseAlarmReason.CAMERA_CONDITION,
+            intervention_required=False,
+            note="Işık geçişi modeli yanılttı.",
+        )
+        review = store.repo.list_reviews(item.event_id)[0]
+        assert review.false_alarm_reason == FalseAlarmReason.CAMERA_CONDITION
+
+    assert store.repo.list_rule_proposals() == []
+
+
+def test_triage_decision_contract_requires_structured_feedback() -> None:
+    valid = TriageDecisionInput.model_validate(
+        {
+            "key": "KAM-1:inc-1",
+            "verdict": "anomali",
+            "category": "vandalizm",
+            "risk_level": "orta",
+            "start_time": 40,
+            "peak_time": 42,
+            "end_time": 45,
+            "intervention_required": True,
+            "reviewer": "operator-1",
+        }
+    )
+    assert valid.category == "vandalizm"
+
+    with pytest.raises(ValidationError, match="yanlış alarm nedeni gerektirir"):
+        TriageDecisionInput.model_validate(
+            {
+                "key": "KAM-1:inc-1",
+                "verdict": "sorun_degil",
+                "intervention_required": False,
+            }
+        )
+    with pytest.raises(ValidationError, match="açıklama gerektirir"):
+        TriageDecisionInput.model_validate(
+            {
+                "key": "KAM-1:inc-1",
+                "verdict": "sorun_degil",
+                "false_alarm_reason": "other",
+                "intervention_required": False,
+            }
+        )
 
 
 def test_decided_incident_does_not_requeue(store):
