@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from ..domain.dataset import DatasetLicenseStatus, DatasetSplit, DatasetUse, OfflineDatasetManifest
 from ..domain.training import TrainingFrameReview, TrainingSample, TrainingSampleStatus
 from .dataset_manifest import sha256_file
+from .training_selection import TrainingSelectionReport
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,7 @@ def export_verified_frames_to_coco(
     reviews: list[TrainingFrameReview],
     frame_root: Path,
     output_dir: Path,
+    selection_report: TrainingSelectionReport | None = None,
 ) -> CocoExportResult:
     """Validate provenance and emit COCO JSON without copying any image or video."""
 
@@ -78,6 +80,17 @@ def export_verified_frames_to_coco(
         raise ValueError(f"frame root bulunamadı: {frame_root}")
     if not reviews:
         raise ValueError("COCO aktarımı için doğrulanmış kare bulunamadı")
+    if selection_report is not None:
+        if (
+            selection_report.dataset_id != dataset_manifest.dataset_id
+            or selection_report.dataset_fingerprint
+            != dataset_manifest.dataset_fingerprint
+        ):
+            raise ValueError("seçim raporu dataset manifestiyle eşleşmiyor")
+        review_ids = {review.annotation_id for review in reviews}
+        selected_ids = set(selection_report.selected_sample_ids)
+        if review_ids != selected_ids:
+            raise ValueError("COCO review listesi seçim raporuyla eşleşmiyor")
 
     entries_by_id = {entry.dataset_video_id: entry for entry in dataset_manifest.entries}
     annotation_ids: set[str] = set()
@@ -166,6 +179,12 @@ def export_verified_frames_to_coco(
         },
         "categories": categories,
     }
+    if selection_report is not None:
+        fingerprint_payload["selection"] = {
+            "policy_version": selection_report.policy_version,
+            "policy_fingerprint": selection_report.policy_fingerprint,
+            "selection_fingerprint": selection_report.selection_fingerprint,
+        }
     export_fingerprint = _payload_sha256(fingerprint_payload)
     box_count = sum(len(review.boxes) for review in validated)
     export_manifest = {

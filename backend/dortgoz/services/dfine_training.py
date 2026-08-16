@@ -26,6 +26,13 @@ from ..domain.model_lifecycle import (
 from ..repositories.protocols import EventRepository
 from .coco_export import export_verified_frames_to_coco, training_reviews_from_samples
 from .dataset_manifest import load_dataset_manifest, sha256_file
+from .training_selection import (
+    TrainingSelectionError,
+    TrainingSelectionPolicy,
+    TrainingSelectionReport,
+    select_training_samples,
+    write_training_selection_report,
+)
 
 _REVISION_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _CONFIG_BY_ARCHITECTURE = {
@@ -126,6 +133,7 @@ class DfineTrainingService:
         frame_root: Path,
         runs_root: Path,
         policy: DfineTrainingPolicy,
+        selection_policy: TrainingSelectionPolicy | None = None,
         process_runner: ProcessRunner | None = None,
         active_analysis_probe: Callable[[], bool] | None = None,
         cuda_probe: Callable[[Path, int], None] | None = None,
@@ -137,6 +145,7 @@ class DfineTrainingService:
         self.frame_root = frame_root.resolve()
         self.runs_root = runs_root.resolve()
         self.policy = policy
+        self.selection_policy = selection_policy
         self.process_runner = process_runner or LocalProcessRunner()
         self.active_analysis_probe = active_analysis_probe or (lambda: False)
         self.cuda_probe = cuda_probe or _validate_cuda_runtime
@@ -164,8 +173,20 @@ class DfineTrainingService:
         checkpoint = _validated_file(base_checkpoint, suffix=".pth")
         checkpoint_sha = sha256_file(checkpoint)
         manifest = load_dataset_manifest(dataset_manifest_path)
+        samples = self.repository.list_training_samples()
+        selection = None
+        if self.selection_policy is not None:
+            try:
+                selection = select_training_samples(
+                    samples=samples,
+                    dataset_manifest=manifest,
+                    policy=self.selection_policy,
+                )
+            except TrainingSelectionError as exc:
+                raise DfineTrainingError(exc.code, str(exc)) from exc
+            samples = selection.selected_samples
         reviews = training_reviews_from_samples(
-            self.repository.list_training_samples(), manifest
+            samples, manifest
         )
         train_count = sum(review.split == DatasetSplit.TRAIN for review in reviews)
         validation_count = sum(
@@ -194,13 +215,30 @@ class DfineTrainingService:
             reviews=reviews,
             frame_root=self.frame_root,
             output_dir=output_dir / "dataset",
+            selection_report=selection.report if selection is not None else None,
         )
+        if selection is not None:
+            try:
+                write_training_selection_report(
+                    export.output_dir / "selection_report.json", selection.report
+                )
+            except TrainingSelectionError as exc:
+                raise DfineTrainingError(exc.code, str(exc)) from exc
         job = TrainingJob(
             job_id=job_id,
             dataset_id=manifest.dataset_id,
             dataset_fingerprint=manifest.dataset_fingerprint,
             export_fingerprint=export.export_fingerprint,
             export_ref=self._reference(export.output_dir),
+            selection_policy_version=(
+                selection.report.policy_version if selection is not None else None
+            ),
+            selection_policy_fingerprint=(
+                selection.report.policy_fingerprint if selection is not None else None
+            ),
+            selection_fingerprint=(
+                selection.report.selection_fingerprint if selection is not None else None
+            ),
             architecture=architecture,
             category_names=categories,
             verified_frame_count=export.frame_count,
@@ -589,6 +627,40 @@ def _verify_export(job: TrainingJob, export_dir: Path) -> None:
         raise DfineTrainingError(
             "COCO_EXPORT_CHANGED", "COCO export manifest training job ile eşleşmiyor"
         )
+    if job.selection_fingerprint is not None and (
+        payload.get("selection", {}).get("selection_fingerprint")
+        != job.selection_fingerprint
+        or payload.get("selection", {}).get("policy_version")
+        != job.selection_policy_version
+        or payload.get("selection", {}).get("policy_fingerprint")
+        != job.selection_policy_fingerprint
+    ):
+        raise DfineTrainingError(
+            "COCO_SELECTION_CHANGED", "COCO seçim kaydı training job ile eşleşmiyor"
+        )
+    if job.selection_fingerprint is not None:
+        selection_path = export_dir / "selection_report.json"
+        if selection_path.is_symlink():
+            raise DfineTrainingError(
+                "COCO_SELECTION_INVALID", "COCO seçim raporu symlink olamaz"
+            )
+        try:
+            selection_report = TrainingSelectionReport.model_validate_json(
+                selection_path.read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError) as exc:
+            raise DfineTrainingError(
+                "COCO_SELECTION_INVALID", "COCO seçim raporu okunamadı"
+            ) from exc
+        if (
+            selection_report.selection_fingerprint != job.selection_fingerprint
+            or selection_report.policy_fingerprint
+            != job.selection_policy_fingerprint
+            or selection_report.policy_version != job.selection_policy_version
+        ):
+            raise DfineTrainingError(
+                "COCO_SELECTION_CHANGED", "COCO seçim raporu training job ile eşleşmiyor"
+            )
     for split, filename in (
         ("train", "instances_train.json"),
         ("validation", "instances_validation.json"),

@@ -9,7 +9,6 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -33,6 +32,7 @@ from dortgoz.domain.model_lifecycle import (
 from dortgoz.domain.training import (
     FrameReviewResult,
     TrainingFrameReview,
+    TrainingSample,
     TrainingSampleStatus,
     VerifiedBoundingBox,
 )
@@ -45,6 +45,7 @@ from dortgoz.services.dfine_training import (
     ProcessOutcome,
 )
 from dortgoz.services.model_registry import ModelRegistryError, ModelRegistryService
+from dortgoz.services.training_selection import TrainingSelectionPolicy
 
 
 def _sha(payload: bytes) -> str:
@@ -129,11 +130,36 @@ class _SampleRepository(InMemoryEventRepository):
     def __init__(self, reviews: list[TrainingFrameReview]) -> None:
         super().__init__()
         self._fixture_samples = [
-            SimpleNamespace(
+            TrainingSample(
+                sample_id=review.annotation_id,
+                event_id=f"event-{review.split.value}",
+                event_revision=2,
+                review_id=f"review-{review.split.value}",
+                approval_id=f"approval-{review.split.value}",
+                video_id=f"video-{review.split.value}",
+                source_video_sha256=(
+                    _sha(b"train")
+                    if review.split == DatasetSplit.TRAIN
+                    else _sha(b"validation")
+                ),
                 status=TrainingSampleStatus.VERIFIED,
                 dataset_id=review.dataset_id,
                 dataset_fingerprint=review.dataset_fingerprint,
+                dataset_video_id=review.dataset_video_id,
+                source_video_ref=review.source_video_ref,
+                split=review.split,
+                timestamp_seconds=review.timestamp_seconds,
+                selection_reason="event_peak",
+                frame_ref=review.frame_ref,
+                frame_sha256=review.frame_sha256,
+                frame_size_bytes=review.frame_size_bytes,
+                image_width=review.image_width,
+                image_height=review.image_height,
+                prepared_by="operator",
                 frame_review=review,
+                created_at=review.reviewed_at,
+                updated_at=review.reviewed_at,
+                revision=2,
             )
             for review in reviews
         ]
@@ -234,6 +260,16 @@ def test_training_plan_and_worker_create_only_a_candidate(tmp_path: Path) -> Non
         frame_root=frame_root,
         runs_root=runs_root,
         policy=policy,
+        selection_policy=TrainingSelectionPolicy(
+            minimum_train_samples=1,
+            maximum_train_samples=2,
+            minimum_validation_samples=1,
+            maximum_validation_samples=2,
+            minimum_train_source_videos=1,
+            maximum_samples_per_source_video=2,
+            maximum_samples_per_event=1,
+            maximum_negative_fraction=0.5,
+        ),
         process_runner=runner,
         cuda_probe=lambda _python, _gpu: None,
     )
@@ -256,6 +292,13 @@ def test_training_plan_and_worker_create_only_a_candidate(tmp_path: Path) -> Non
     )
 
     assert job.status == TrainingJobStatus.QUEUED
+    assert job.selection_policy_version == "dfine-selection-v1"
+    assert job.selection_policy_fingerprint is not None
+    assert job.selection_fingerprint is not None
+    selection_report = workspace / job.export_ref / "selection_report.json"
+    assert json.loads(selection_report.read_text(encoding="utf-8"))[
+        "selection_fingerprint"
+    ] == job.selection_fingerprint
     assert finished.status == TrainingJobStatus.SUCCEEDED
     assert finished.elapsed_seconds == 12.5
     assert candidate.stage == ModelStage.CANDIDATE

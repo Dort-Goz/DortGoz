@@ -1,0 +1,11 @@
+{
+  "policy_version": "dfine-selection-v1",
+  "minimum_train_samples": 80,
+  "maximum_train_samples": 500,
+  "minimum_validation_samples": 20,
+  "maximum_validation_samples": 100,
+  "minimum_train_source_videos": 10,
+  "maximum_samples_per_source_video": 9,
+  "maximum_samples_per_event": 3,
+  "maximum_negative_fraction": 0.25
+}

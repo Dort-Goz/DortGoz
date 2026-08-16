@@ -93,6 +93,13 @@ class TrainingJob(BaseModel):
     dataset_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     export_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     export_ref: str = Field(min_length=1)
+    selection_policy_version: str | None = None
+    selection_policy_fingerprint: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    selection_fingerprint: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
     architecture: DfineArchitecture
     category_names: list[str] = Field(min_length=1)
     verified_frame_count: int = Field(gt=0)
@@ -134,6 +141,15 @@ class TrainingJob(BaseModel):
                 raise ValueError(f"{field_name} güvenli göreli POSIX yol olmalıdır")
         if len(self.category_names) != len(set(self.category_names)):
             raise ValueError("category_names tekrar eden değer içeremez")
+        selection_values = (
+            self.selection_policy_version,
+            self.selection_policy_fingerprint,
+            self.selection_fingerprint,
+        )
+        if any(value is None for value in selection_values) and any(
+            value is not None for value in selection_values
+        ):
+            raise ValueError("training job seçim politika ve fingerprint değerlerini birlikte taşır")
         if self.train_frame_count + self.validation_frame_count != self.verified_frame_count:
             raise ValueError("training job split kare sayıları toplam kare sayısıyla eşleşmiyor")
         if self.max_gpu_minutes > self.daily_gpu_minutes:

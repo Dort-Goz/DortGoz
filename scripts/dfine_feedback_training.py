@@ -34,6 +34,9 @@ from dortgoz.services.model_registry import (  # noqa: E402
     ModelRegistryError,
     ModelRegistryService,
 )
+from dortgoz.services.training_selection import (  # noqa: E402
+    load_training_selection_policy,
+)
 
 
 def _path(value: str) -> Path:
@@ -73,6 +76,11 @@ def _parser() -> argparse.ArgumentParser:
     plan.add_argument("--seed", type=int, default=0)
     plan.add_argument("--frame-root", type=_path, default=REPO_ROOT / "media")
     plan.add_argument("--runs-root", type=_path, default=REPO_ROOT / "runs")
+    plan.add_argument(
+        "--selection-policy",
+        type=_path,
+        default=REPO_ROOT / "configs" / "dfine_sample_selection.json",
+    )
 
     run = commands.add_parser("run", help="kuyruktaki işi yerel CUDA worker'da çalıştır")
     _common(run)
@@ -156,6 +164,11 @@ def _training_service(
         frame_root=args.frame_root,
         runs_root=args.runs_root,
         policy=policy,
+        selection_policy=(
+            load_training_selection_policy(args.selection_policy)
+            if getattr(args, "selection_policy", None) is not None
+            else None
+        ),
         active_analysis_probe=lambda: _active_analysis_probe(args.event_store.resolve()),
     )
 
