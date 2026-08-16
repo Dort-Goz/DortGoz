@@ -74,17 +74,21 @@ export async function getInterventionPriority(
   }
 }
 
-export const saveEventReview = (
-  eventId: string,
-  body: {
-    decision: "edit";
-    reviewer: string;
-    note: string;
-    start_time: number;
-    peak_time: number;
-    end_time: number;
-  },
-) => request<HumanReview>(`/api/events/${encodeURIComponent(eventId)}/review`, json(body));
+export interface HumanReviewInput {
+  decision: "confirm" | "reject" | "edit";
+  reviewer: string;
+  note: string;
+  event_type?: string;
+  start_time?: number;
+  peak_time?: number;
+  end_time?: number;
+  risk_level?: string;
+  false_alarm_reason?: string;
+  intervention_required?: boolean;
+}
+
+export const saveEventReview = (eventId: string, body: HumanReviewInput) =>
+  request<HumanReview>(`/api/events/${encodeURIComponent(eventId)}/review`, json(body));
 
 export const getDevelopmentApprovals = (eventId: string) =>
   request<DevelopmentApproval[]>(
@@ -102,6 +106,19 @@ export const approveEventForDFine = (
 ) => request<DevelopmentApproval>(
   `/api/events/${encodeURIComponent(eventId)}/development-approval`,
   json({ ...body, status: "approved", approved_uses: ["d_fine_training"] }),
+);
+
+export const revokeEventDFineApproval = (
+  eventId: string,
+  body: {
+    review_id: string;
+    reviewer: string;
+    note: string;
+    supersedes_approval_id: string;
+  },
+) => request<DevelopmentApproval>(
+  `/api/events/${encodeURIComponent(eventId)}/development-approval`,
+  json({ ...body, status: "revoked", approved_uses: [] }),
 );
 
 export const getTrainingSamples = (eventId: string) =>

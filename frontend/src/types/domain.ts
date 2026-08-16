@@ -23,9 +23,13 @@ export interface HumanReview {
   review_id: string;
   event_id: string;
   decision: "confirm" | "reject" | "edit";
+  event_type: string | null;
   start_time: number | null;
   peak_time: number | null;
   end_time: number | null;
+  risk_level: string | null;
+  false_alarm_reason: string | null;
+  intervention_required: boolean | null;
   note: string;
   reviewer: string;
   revision: number;

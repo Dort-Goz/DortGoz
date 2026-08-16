@@ -14,9 +14,11 @@ import {
   getIncidentMedia,
   getTrainingSamples,
   prepareTrainingSamples,
+  revokeEventDFineApproval,
   saveEventReview,
   verifyTrainingSample,
 } from "../lib/api";
+import { CANONICAL_TYPE_TR, RISK_TR } from "../lib/labels";
 import { boxFromPoints, imagePoint, type ImagePoint } from "../lib/trainingBoxes";
 import type {
   CanonicalEvent,
@@ -26,6 +28,7 @@ import type {
   TrainingSample,
   VerifiedBoundingBox,
 } from "../types/domain";
+import type { CanonicalEventType, Risk } from "../types/events";
 
 const STATUS_TR = {
   pending_review: "İnceleme bekliyor",
@@ -39,6 +42,45 @@ const REASON_TR: Record<string, string> = {
   event_end: "Bitiş",
   operator_selected: "Operatör seçimi",
 };
+
+const EVENT_TYPES: CanonicalEventType[] = [
+  "physical_fight",
+  "assault",
+  "possible_theft",
+  "possible_armed_incident",
+  "fire_smoke",
+  "explosion",
+  "vehicle_collision",
+  "vandalism",
+  "unknown_anomaly",
+];
+
+const FALSE_ALARM_TR: Record<string, string> = {
+  normal_activity: "Olağan hareket",
+  camera_condition: "Kamera veya ışık koşulu",
+  occlusion: "Görüş engeli",
+  reflection_or_shadow: "Yansıma veya gölge",
+  duplicate_event: "Aynı olayın tekrarı",
+  wrong_classification: "Yanlış sınıflandırma",
+  other: "Diğer",
+};
+
+const REVIEW_DECISION_TR = {
+  confirm: "Doğrulandı",
+  edit: "Düzeltildi",
+  reject: "Sorun değil",
+} as const;
+
+const APPROVAL_STATUS_TR = {
+  approved: "Onaylandı",
+  rejected: "Reddedildi",
+  revoked: "Geri alındı",
+} as const;
+
+const dateTime = (value: string) => new Date(value).toLocaleString("tr-TR", {
+  dateStyle: "short",
+  timeStyle: "short",
+});
 
 const clock = (seconds: number) => {
   const minutes = Math.floor(seconds / 60);
@@ -205,6 +247,18 @@ export default function TrainingReviewPanel({
   const [reviewer, setReviewer] = useState(() => localStorage.getItem("dortgoz.reviewer") ?? "operator");
   const [manifest, setManifest] = useState("training_manifest.json");
   const [times, setTimes] = useState({ start: 0, peak: 0, end: 0 });
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewVerdict, setReviewVerdict] = useState<"anomali" | "sorun_degil">("anomali");
+  const [reviewEventType, setReviewEventType] = useState<CanonicalEventType>("unknown_anomaly");
+  const [reviewRisk, setReviewRisk] = useState<Risk>("orta");
+  const [falseAlarmReason, setFalseAlarmReason] = useState("");
+  const [intervention, setIntervention] = useState<"" | "yes" | "no">("");
+  const [reviewNote, setReviewNote] = useState("");
+  const [approvalNote, setApprovalNote] = useState(
+    "İnsan doğrulamalı kareler D-FINE eğitimi için onaylandı.",
+  );
+  const [revokeOpen, setRevokeOpen] = useState(false);
+  const [revocationNote, setRevocationNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -223,6 +277,29 @@ export default function TrainingReviewPanel({
     setApprovals(approvalResult);
     setSamples(sampleResult);
     setIncidentMedia(mediaResult);
+    const latest = reviewResult.at(-1) ?? null;
+    setReviewOpen(latest === null);
+    setReviewVerdict(latest?.decision === "reject" ? "sorun_degil" : "anomali");
+    const eventType = latest?.event_type ?? eventResult.event_type;
+    setReviewEventType(
+      EVENT_TYPES.includes(eventType as CanonicalEventType)
+        ? eventType as CanonicalEventType
+        : "unknown_anomaly",
+    );
+    setReviewRisk(
+      (["dusuk", "orta", "yuksek", "kritik"] as string[]).includes(latest?.risk_level ?? "")
+        ? latest!.risk_level as Risk
+        : "orta",
+    );
+    setFalseAlarmReason(latest?.false_alarm_reason ?? "");
+    setIntervention(
+      latest?.intervention_required === true
+        ? "yes"
+        : latest?.intervention_required === false
+          ? "no"
+          : "",
+    );
+    setReviewNote(latest?.note ?? "");
     setSelectedId((current) => {
       if (sampleResult.some((sample) => sample.sample_id === current)) return current;
       return sampleResult.find((sample) => sample.status === "pending_review")?.sample_id
@@ -261,6 +338,8 @@ export default function TrainingReviewPanel({
     && latestApproval.approved_uses.includes("d_fine_training")
     ? latestApproval
     : null;
+  const approvalNeedsRenewal = latestApproval?.status === "approved"
+    && latestApproval.review_id !== latestReview?.review_id;
 
   const run = async (operation: () => Promise<unknown>, success: string) => {
     setBusy(true);
@@ -279,6 +358,10 @@ export default function TrainingReviewPanel({
 
   const reviewerName = reviewer.trim();
   const validTimes = times.start >= 0 && times.start <= times.peak && times.peak <= times.end;
+  const canSaveReview = Boolean(reviewerName && reviewNote.trim() && intervention)
+    && (reviewVerdict === "anomali"
+      ? validTimes
+      : Boolean(falseAlarmReason));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
@@ -301,7 +384,7 @@ export default function TrainingReviewPanel({
           </div>
         </header>
 
-        <div className="grid min-h-0 flex-1 grid-cols-[19rem_minmax(0,1fr)]">
+        <div className="grid min-h-0 flex-1 grid-cols-[21rem_minmax(0,1fr)]">
           <aside className="overflow-y-auto border-r border-zinc-800 p-3 text-xs">
             <div className="mb-3 space-y-1 rounded border border-zinc-800 bg-zinc-900/60 p-2">
               <div className="font-medium text-zinc-200">1 · Olay incelemesi</div>
@@ -309,71 +392,304 @@ export default function TrainingReviewPanel({
                 {latestReview ? `Hazır · revizyon ${latestReview.revision}` : "İnsan kararı gerekli"}
               </div>
               {canonicalEvent && (
-                <div className="text-zinc-500">{canonicalEvent.event_type} · {canonicalEvent.status}</div>
+                <div className="text-zinc-500">
+                  {CANONICAL_TYPE_TR[canonicalEvent.event_type as CanonicalEventType] ?? canonicalEvent.event_type}
+                  {latestReview?.risk_level ? ` · ${RISK_TR[latestReview.risk_level as Risk] ?? latestReview.risk_level}` : ""}
+                </div>
+              )}
+              {latestReview && !reviewOpen && (
+                <button
+                  type="button"
+                  onClick={() => setReviewOpen(true)}
+                  className="mt-2 w-full rounded border border-amber-800 px-2 py-1.5 text-amber-200 hover:bg-amber-950/40"
+                >
+                  Kararı düzelt
+                </button>
               )}
             </div>
 
-            {!latestReview && canonicalEvent && (
+            {reviewOpen && canonicalEvent && (
               <div className="mb-3 space-y-2 rounded border border-amber-900/60 bg-amber-950/20 p-2">
-                <p className="text-amber-200">Model zamanlarını doğrulayın.</p>
-                {(["start", "peak", "end"] as const).map((field) => (
-                  <label key={field} className="flex items-center justify-between gap-2">
-                    <span className="text-zinc-400">
-                      {field === "start" ? "Başlangıç" : field === "peak" ? "Zirve" : "Bitiş"}
-                    </span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      value={times[field]}
-                      onChange={(event) => setTimes({ ...times, [field]: Number(event.target.value) })}
-                      className="w-24 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-right"
-                    />
+                <div className="flex items-center justify-between">
+                  <p className="text-amber-200">
+                    {latestReview ? "Yeni bir karar revizyonu ekleyin." : "Model sonucunu doğrulayın."}
+                  </p>
+                  {latestReview && (
+                    <button
+                      type="button"
+                      onClick={() => setReviewOpen(false)}
+                      className="text-zinc-500 hover:text-zinc-200"
+                    >
+                      Vazgeç ×
+                    </button>
+                  )}
+                </div>
+                <label className="block text-zinc-400">
+                  Karar
+                  <select
+                    value={reviewVerdict}
+                    onChange={(event) => setReviewVerdict(event.target.value as "anomali" | "sorun_degil")}
+                    className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200"
+                  >
+                    <option value="anomali">Anomali</option>
+                    <option value="sorun_degil">Sorun değil</option>
+                  </select>
+                </label>
+                {reviewVerdict === "anomali" ? (
+                  <>
+                    <label className="block text-zinc-400">
+                      Doğru olay türü
+                      <select
+                        value={reviewEventType}
+                        onChange={(event) => setReviewEventType(event.target.value as CanonicalEventType)}
+                        className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200"
+                      >
+                        {EVENT_TYPES.map((eventType) => (
+                          <option key={eventType} value={eventType}>{CANONICAL_TYPE_TR[eventType]}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block text-zinc-400">
+                      Doğru risk seviyesi
+                      <select
+                        value={reviewRisk}
+                        onChange={(event) => setReviewRisk(event.target.value as Risk)}
+                        className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200"
+                      >
+                        {(Object.entries(RISK_TR) as [Risk, string][]).map(([value, label]) => (
+                          <option key={value} value={value}>{label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <div>
+                      <div className="mb-0.5 text-zinc-400">Olay zamanı (saniye)</div>
+                      <div className="grid grid-cols-3 gap-1">
+                        {(["start", "peak", "end"] as const).map((field) => (
+                          <label key={field} className="text-[10px] text-zinc-500">
+                            {field === "start" ? "Başlangıç" : field === "peak" ? "Zirve" : "Bitiş"}
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.1"
+                              value={times[field]}
+                              onChange={(event) => setTimes({ ...times, [field]: Number(event.target.value) })}
+                              className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-1 py-1 text-right text-zinc-200"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      {!validTimes && <p className="mt-1 text-red-300">Başlangıç ≤ zirve ≤ bitiş olmalı.</p>}
+                    </div>
+                  </>
+                ) : (
+                  <label className="block text-zinc-400">
+                    Yanlış alarm nedeni
+                    <select
+                      value={falseAlarmReason}
+                      onChange={(event) => setFalseAlarmReason(event.target.value)}
+                      className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200"
+                    >
+                      <option value="">Neden seçin</option>
+                      {Object.entries(FALSE_ALARM_TR).map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </select>
                   </label>
-                ))}
+                )}
+                <label className="block text-zinc-400">
+                  Müdahale gerekli miydi?
+                  <select
+                    value={intervention}
+                    onChange={(event) => setIntervention(event.target.value as "" | "yes" | "no")}
+                    className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200"
+                  >
+                    <option value="">Seçin</option>
+                    <option value="yes">Evet, gerekliydi</option>
+                    <option value="no">Hayır, gerekli değildi</option>
+                  </select>
+                </label>
+                <label className="block text-zinc-400">
+                  Karar notu
+                  <textarea
+                    value={reviewNote}
+                    onChange={(event) => setReviewNote(event.target.value)}
+                    rows={2}
+                    maxLength={4000}
+                    className="mt-0.5 w-full resize-none rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200"
+                    placeholder="Düzeltmenin kısa gerekçesi"
+                  />
+                </label>
                 <button
-                  disabled={busy || !reviewerName || !validTimes}
+                  disabled={busy || !canSaveReview}
                   onClick={() => run(
                     () => saveEventReview(eventId, {
-                      decision: "edit",
+                      decision: reviewVerdict === "anomali" ? "edit" : "reject",
                       reviewer: reviewerName,
-                      note: "Olay ve zaman aralığı operatör tarafından doğrulandı.",
-                      start_time: times.start,
-                      peak_time: times.peak,
-                      end_time: times.end,
+                      note: reviewNote.trim(),
+                      ...(reviewVerdict === "anomali" ? {
+                        event_type: reviewEventType,
+                        risk_level: reviewRisk,
+                        start_time: times.start,
+                        peak_time: times.peak,
+                        end_time: times.end,
+                      } : {
+                        false_alarm_reason: falseAlarmReason,
+                      }),
+                      intervention_required: intervention === "yes",
                     }),
-                    "Olay incelemesi kaydedildi.",
+                    latestReview ? "Olay kararı yeni revizyon olarak kaydedildi." : "Olay incelemesi kaydedildi.",
                   )}
                   className="w-full rounded bg-amber-700 px-2 py-1.5 font-medium text-white disabled:opacity-40"
                 >
-                  Zamanları doğrula
+                  {latestReview ? "Düzeltmeyi yeni revizyon olarak kaydet" : "İnsan kararını kaydet"}
                 </button>
+                {latestReview && (
+                  <p className="text-[10px] leading-relaxed text-amber-300/80">
+                    Yeni revizyon eski eğitim karelerini geçersiz kılar. D-FINE izni yeniden verilmelidir.
+                  </p>
+                )}
               </div>
+            )}
+
+            {reviews.length > 0 && (
+              <details className="mb-3 rounded border border-zinc-800 bg-zinc-950/60 p-2">
+                <summary className="cursor-pointer text-zinc-400">Karar geçmişi · {reviews.length}</summary>
+                <div className="mt-2 space-y-2">
+                  {[...reviews].reverse().map((review) => (
+                    <div key={review.review_id} className="rounded border border-zinc-800 bg-zinc-900/50 p-2">
+                      <div className="flex justify-between text-zinc-300">
+                        <span>Revizyon {review.revision} · {REVIEW_DECISION_TR[review.decision]}</span>
+                        <span className="text-zinc-600">{dateTime(review.created_at)}</span>
+                      </div>
+                      <div className="mt-1 text-zinc-500">
+                        {review.decision === "reject"
+                          ? FALSE_ALARM_TR[review.false_alarm_reason ?? ""] ?? review.false_alarm_reason
+                          : CANONICAL_TYPE_TR[review.event_type as CanonicalEventType] ?? review.event_type}
+                        {review.risk_level ? ` · ${RISK_TR[review.risk_level as Risk] ?? review.risk_level}` : ""}
+                        {review.intervention_required !== null
+                          ? ` · Müdahale ${review.intervention_required ? "gerekli" : "gerekli değil"}`
+                          : ""}
+                      </div>
+                      <p className="mt-1 text-zinc-400">{review.note}</p>
+                      <p className="mt-1 text-[10px] text-zinc-600">{review.reviewer}</p>
+                    </div>
+                  ))}
+                </div>
+              </details>
             )}
 
             <div className="mb-3 space-y-1 rounded border border-zinc-800 bg-zinc-900/60 p-2">
               <div className="font-medium text-zinc-200">2 · Geliştirme izni</div>
-              <div className={activeApproval ? "text-emerald-400" : "text-zinc-500"}>
-                {activeApproval ? "D-FINE kullanımı onaylı" : "Henüz izin verilmedi"}
+              <div className={activeApproval ? "text-emerald-400" : latestApproval?.status === "revoked" ? "text-red-400" : approvalNeedsRenewal ? "text-amber-400" : "text-zinc-500"}>
+                {activeApproval
+                  ? "D-FINE kullanımı onaylı"
+                  : latestApproval?.status === "revoked"
+                    ? "D-FINE izni geri alındı"
+                    : approvalNeedsRenewal
+                      ? "Karar değişti · yeniden izin gerekli"
+                      : "Henüz izin verilmedi"}
               </div>
               {latestReview && !activeApproval && (
+                <div className="mt-2 space-y-2">
+                  <textarea
+                    value={approvalNote}
+                    onChange={(event) => setApprovalNote(event.target.value)}
+                    rows={2}
+                    maxLength={4000}
+                    className="w-full resize-none rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-zinc-200"
+                    aria-label="D-FINE onay notu"
+                  />
+                  <button
+                    disabled={busy || !reviewerName || !approvalNote.trim()}
+                    onClick={() => run(
+                      () => approveEventForDFine(eventId, {
+                        review_id: latestReview.review_id,
+                        reviewer: reviewerName,
+                        note: approvalNote.trim(),
+                        ...(latestApproval ? { supersedes_approval_id: latestApproval.approval_id } : {}),
+                      }),
+                      "D-FINE kullanım izni kaydedildi.",
+                    )}
+                    className="w-full rounded bg-indigo-700 px-2 py-1.5 font-medium text-white disabled:opacity-40"
+                  >
+                    D-FINE için onayla
+                  </button>
+                </div>
+              )}
+              {activeApproval && !revokeOpen && (
                 <button
-                  disabled={busy || !reviewerName}
-                  onClick={() => run(
-                    () => approveEventForDFine(eventId, {
-                      review_id: latestReview.review_id,
-                      reviewer: reviewerName,
-                      note: "İnsan doğrulamalı kareler D-FINE eğitimi için onaylandı.",
-                      ...(latestApproval ? { supersedes_approval_id: latestApproval.approval_id } : {}),
-                    }),
-                    "D-FINE kullanım izni kaydedildi.",
-                  )}
-                  className="mt-2 w-full rounded bg-indigo-700 px-2 py-1.5 font-medium text-white disabled:opacity-40"
+                  type="button"
+                  onClick={() => setRevokeOpen(true)}
+                  className="mt-2 w-full rounded border border-red-900 px-2 py-1.5 text-red-300 hover:bg-red-950/40"
                 >
-                  D-FINE için onayla
+                  D-FINE iznini geri al
                 </button>
               )}
+              {activeApproval && revokeOpen && (
+                <div className="mt-2 space-y-2 rounded border border-red-900/70 bg-red-950/20 p-2">
+                  <p className="text-red-200">Bu izne bağlı eğitim kareleri geçersiz olacak.</p>
+                  <textarea
+                    value={revocationNote}
+                    onChange={(event) => setRevocationNote(event.target.value)}
+                    rows={2}
+                    maxLength={4000}
+                    className="w-full resize-none rounded border border-red-900 bg-zinc-950 px-2 py-1 text-zinc-200"
+                    placeholder="Geri alma gerekçesi"
+                    aria-label="D-FINE izin geri alma gerekçesi"
+                  />
+                  <div className="grid grid-cols-2 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRevokeOpen(false);
+                        setRevocationNote("");
+                      }}
+                      className="rounded border border-zinc-700 px-2 py-1.5 text-zinc-300"
+                    >
+                      Vazgeç
+                    </button>
+                    <button
+                      disabled={busy || !reviewerName || !revocationNote.trim()}
+                      onClick={() => run(
+                        async () => {
+                          const result = await revokeEventDFineApproval(eventId, {
+                            review_id: activeApproval.review_id,
+                            reviewer: reviewerName,
+                            note: revocationNote.trim(),
+                            supersedes_approval_id: activeApproval.approval_id,
+                          });
+                          setRevokeOpen(false);
+                          setRevocationNote("");
+                          return result;
+                        },
+                        "D-FINE kullanım izni geri alındı.",
+                      )}
+                      className="rounded bg-red-800 px-2 py-1.5 font-medium text-white disabled:opacity-40"
+                    >
+                      İzni geri al
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
+
+            {approvals.length > 0 && (
+              <details className="mb-3 rounded border border-zinc-800 bg-zinc-950/60 p-2">
+                <summary className="cursor-pointer text-zinc-400">İzin geçmişi · {approvals.length}</summary>
+                <div className="mt-2 space-y-2">
+                  {[...approvals].reverse().map((approval) => (
+                    <div key={approval.approval_id} className="rounded border border-zinc-800 bg-zinc-900/50 p-2">
+                      <div className="flex justify-between text-zinc-300">
+                        <span>{APPROVAL_STATUS_TR[approval.status]}</span>
+                        <span className="text-zinc-600">{dateTime(approval.created_at)}</span>
+                      </div>
+                      <p className="mt-1 text-zinc-400">{approval.note}</p>
+                      <p className="mt-1 text-[10px] text-zinc-600">{approval.reviewer}</p>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
 
             <div className="mb-3 space-y-2 rounded border border-zinc-800 bg-zinc-900/60 p-2">
               <div className="font-medium text-zinc-200">3 · Kareleri hazırla</div>

@@ -163,10 +163,24 @@ def test_review_and_development_approval_are_separate_api_decisions(
         assert approved.status_code == 200
         assert approved.json()["status"] == "approved"
 
+        revoked = client.post(
+            "/api/events/event-feedback-api/development-approval",
+            json={
+                "review_id": review_id,
+                "status": "revoked",
+                "approved_uses": [],
+                "reviewer": "operator",
+                "note": "Geliştirme izni geri alındı.",
+                "supersedes_approval_id": approved.json()["approval_id"],
+            },
+        )
+        assert revoked.status_code == 200
+        assert revoked.json()["status"] == "revoked"
+
         reviews = client.get("/api/events/event-feedback-api/reviews")
         approvals = client.get("/api/events/event-feedback-api/development-approvals")
         assert len(reviews.json()) == 1
-        assert len(approvals.json()) == 1
+        assert [item["status"] for item in approvals.json()] == ["approved", "revoked"]
 
 
 def test_incident_media_route_returns_playable_local_urls(monkeypatch) -> None:
