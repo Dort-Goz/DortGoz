@@ -57,6 +57,8 @@ class ModelRegistryService:
         shadow_passed: bool,
         evaluator: str,
         measured_at: datetime,
+        detector_report_sha256: str,
+        e2e_artifact_sha256s: list[str],
     ) -> ModelVersion:
         version = self._get_version(model_version_id)
         if version.stage != ModelStage.CANDIDATE or version.evaluation is not None:
@@ -79,6 +81,8 @@ class ModelRegistryService:
             "shadow_passed": shadow_passed,
             "evaluator": evaluator,
             "measured_at": measured_at.isoformat(),
+            "detector_report_sha256": detector_report_sha256,
+            "e2e_artifact_sha256s": e2e_artifact_sha256s,
         }
         evaluation = ModelEvaluation(
             evaluation_id=f"dfine-evaluation-{uuid4()}",

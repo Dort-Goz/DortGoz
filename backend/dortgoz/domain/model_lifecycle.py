@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import PurePosixPath, PureWindowsPath
@@ -214,12 +215,21 @@ class ModelEvaluation(BaseModel):
     shadow_passed: bool
     evaluator: str = Field(min_length=1, max_length=120)
     measured_at: datetime
+    detector_report_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    e2e_artifact_sha256s: list[str] = Field(min_length=3)
     metrics_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
     def timestamps_are_aware(self) -> ModelEvaluation:
         if self.measured_at.utcoffset() is None:
             raise ValueError("measured_at saat dilimi içermelidir")
+        if len(self.e2e_artifact_sha256s) != len(set(self.e2e_artifact_sha256s)):
+            raise ValueError("e2e artifact SHA-256 değerleri benzersiz olmalıdır")
+        if any(
+            not re.fullmatch(r"[0-9a-f]{64}", value)
+            for value in self.e2e_artifact_sha256s
+        ):
+            raise ValueError("e2e artifact SHA-256 değeri geçersiz")
         return self
 
 

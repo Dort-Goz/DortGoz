@@ -357,6 +357,8 @@ def _record_good_evaluation(
         shadow_passed=True,
         evaluator="tester",
         measured_at=datetime.now(UTC),
+        detector_report_sha256="2" * 64,
+        e2e_artifact_sha256s=["3" * 64, "4" * 64, "5" * 64],
     )
 
 

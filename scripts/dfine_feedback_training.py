@@ -7,7 +7,6 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -21,9 +20,15 @@ from dortgoz.domain.model_lifecycle import (  # noqa: E402
     PromotionPolicy,
 )
 from dortgoz.repositories.sqlite import SqliteEventRepository  # noqa: E402
+from dortgoz.services.dataset_manifest import load_dataset_manifest  # noqa: E402
 from dortgoz.services.dfine_training import (  # noqa: E402
     DfineTrainingError,
     DfineTrainingService,
+)
+from dortgoz.services.evaluation_report import (  # noqa: E402
+    DfineEvaluationReport,
+    EvaluationReportError,
+    build_dfine_evaluation_report,
 )
 from dortgoz.services.model_registry import (  # noqa: E402
     ModelRegistryError,
@@ -82,6 +87,20 @@ def _parser() -> argparse.ArgumentParser:
     _common(evaluate)
     evaluate.add_argument("model_version_id")
     evaluate.add_argument("--report", type=_path, required=True)
+
+    artifacts = commands.add_parser(
+        "evaluate-artifacts",
+        help="COCO ve üç shadow artifact'tan rapor üretip candidate'a bağla",
+    )
+    _common(artifacts)
+    artifacts.add_argument("model_version_id")
+    artifacts.add_argument("--test-dataset-manifest", type=_path, required=True)
+    artifacts.add_argument("--detector-report", type=_path, required=True)
+    artifacts.add_argument(
+        "--e2e-artifact", type=_path, action="append", required=True
+    )
+    artifacts.add_argument("--evaluator", required=True)
+    artifacts.add_argument("--output", type=_path)
 
     promote = commands.add_parser("promote", help="kapıyı geçen candidate'ı champion yap")
     _common(promote)
@@ -186,14 +205,45 @@ def main() -> None:
                 )
                 _print_json({"job": job.model_dump(mode="json"), "candidate": version.model_dump(mode="json")})
             elif args.command == "evaluate":
-                report = json.loads(args.report.read_text(encoding="utf-8"))
-                report["measured_at"] = datetime.fromisoformat(
-                    report["measured_at"].replace("Z", "+00:00")
+                report = DfineEvaluationReport.model_validate_json(
+                    args.report.read_text(encoding="utf-8")
                 )
                 version = _registry(repository).record_evaluation(
-                    args.model_version_id, **report
+                    args.model_version_id, **report.model_dump()
                 )
                 _print_json(version)
+            elif args.command == "evaluate-artifacts":
+                candidate = repository.get_model_version(args.model_version_id)
+                if candidate is None:
+                    raise ModelRegistryError(
+                        "MODEL_VERSION_NOT_FOUND",
+                        f"model version bulunamadı: {args.model_version_id}",
+                    )
+                output = args.output or (
+                    REPO_ROOT
+                    / "runs"
+                    / "dfine-evaluations"
+                    / f"{args.model_version_id}.json"
+                )
+                report = build_dfine_evaluation_report(
+                    candidate=candidate,
+                    test_dataset_manifest=load_dataset_manifest(
+                        args.test_dataset_manifest
+                    ),
+                    detector_report_path=args.detector_report,
+                    e2e_artifact_paths=args.e2e_artifact,
+                    evaluator=args.evaluator,
+                    output_path=output,
+                )
+                version = _registry(repository).record_evaluation(
+                    args.model_version_id, **report.model_dump()
+                )
+                _print_json(
+                    {
+                        "report": str(output.resolve()),
+                        "model_version": version.model_dump(mode="json"),
+                    }
+                )
             elif args.command == "promote":
                 version = _registry(repository).promote(
                     args.model_version_id,
@@ -231,6 +281,7 @@ def main() -> None:
             repository.close()
     except (
         DfineTrainingError,
+        EvaluationReportError,
         ModelRegistryError,
         ValidationError,
         KeyError,

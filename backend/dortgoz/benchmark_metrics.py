@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections import Counter
 from collections.abc import Collection, Sequence
 from statistics import median
@@ -332,6 +333,12 @@ def e2e_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
         for key, target in (("latency_ms", latencies), ("ram_mb", ram), ("vram_mb", vram)):
             if record.get(key) is not None:
                 target.append(float(record[key]))
+    max_ram = max(ram, default=None)
+    max_vram = max(vram, default=None)
+    peak_memory = max(
+        (value for value in (max_ram, max_vram) if value is not None),
+        default=None,
+    )
     return {
         "record_count": len(records),
         "critical_total": critical_total,
@@ -340,9 +347,20 @@ def e2e_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
         "false_alarms": false_alarms,
         "false_alarms_per_hour": false_alarms / (normal_seconds / 3600) if normal_seconds else 0.0,
         "mean_latency_ms": sum(latencies) / len(latencies) if latencies else None,
-        "max_ram_mb": max(ram, default=None),
-        "max_vram_mb": max(vram, default=None),
+        "p95_latency_ms": _nearest_rank_percentile(latencies, 0.95),
+        "max_ram_mb": max_ram,
+        "max_vram_mb": max_vram,
+        "peak_memory_mb": peak_memory,
+        "normal_seconds": normal_seconds,
     }
+
+
+def _nearest_rank_percentile(values: list[float], percentile: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    rank = max(1, math.ceil(percentile * len(ordered)))
+    return ordered[rank - 1]
 
 
 def _tiou(left: tuple[float, float], right: tuple[float, float]) -> float:

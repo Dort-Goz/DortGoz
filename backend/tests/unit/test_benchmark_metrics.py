@@ -261,4 +261,7 @@ def test_e2e_metrics_reports_critical_recall_false_alarm_and_resources() -> None
     assert result["critical_recall"] == 0.5
     assert result["false_alarms_per_hour"] == 2
     assert result["mean_latency_ms"] == 200
+    assert result["p95_latency_ms"] == 300
+    assert result["peak_memory_mb"] == 300
+    assert result["normal_seconds"] == 1800
     assert (result["max_ram_mb"], result["max_vram_mb"]) == (250, 300)
