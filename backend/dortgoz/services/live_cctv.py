@@ -43,6 +43,7 @@ log = logging.getLogger(__name__)
 
 SEGMENT_GLOB = "seg_*.mp4"
 PrepareRun = Callable[[str, str, Path], Awaitable[VideoMetadata]]
+FinalizeRun = Callable[[str], Awaitable[object]]
 
 
 @dataclass
@@ -98,11 +99,13 @@ def plan_segments(pending: list[Path], max_backlog: int) -> tuple[list[Path], li
 class LiveFeedWorker:
     def __init__(self, name: str, url: str, manager: ConnectionManager,
                  mode: str = "", desc: str = "",
-                 prepare_run: PrepareRun | None = None) -> None:
+                 prepare_run: PrepareRun | None = None,
+                 finalize_run: FinalizeRun | None = None) -> None:
         self.status = FeedStatus(name=name, url=url, desc=desc)
         self.manager = manager
         self.mode = mode
         self.prepare_run = prepare_run
+        self.finalize_run = finalize_run
         self.dir = settings.media_dir / "canli" / name
         self.running = False
         self._done: set[str] = set()
@@ -233,6 +236,8 @@ class LiveFeedWorker:
             await run_video(self.manager, rel, run_id,
                             feed=self.status.name, mode=self.mode, live=True,
                             system_prompt=system_prompt)
+            if self.finalize_run is not None:
+                await self.finalize_run(run_id)
             self.status.segments_done += 1
             self.status.last_error = ""
         except Exception as exc:   # tek segmentin hatası akışı durdurmaz (7/24)
@@ -281,10 +286,14 @@ class LiveCctvService:
     """Tüm canlı akış işçilerinin sahibi — REST uçları buna bağlanır."""
 
     def __init__(
-        self, manager: ConnectionManager, prepare_run: PrepareRun | None = None
+        self,
+        manager: ConnectionManager,
+        prepare_run: PrepareRun | None = None,
+        finalize_run: FinalizeRun | None = None,
     ) -> None:
         self.manager = manager
         self.prepare_run = prepare_run
+        self.finalize_run = finalize_run
         self.workers: dict[str, LiveFeedWorker] = {}
 
     @property
@@ -301,7 +310,8 @@ class LiveCctvService:
         for f in feed_list:
             worker = LiveFeedWorker(f["name"], f["url"], self.manager,
                                     mode=mode, desc=f.get("desc", ""),
-                                    prepare_run=self.prepare_run)
+                                    prepare_run=self.prepare_run,
+                                    finalize_run=self.finalize_run)
             worker.start()
             self.workers[f["name"]] = worker
         log.info("canlı kip başladı: %d akış", len(self.workers))

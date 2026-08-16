@@ -2,6 +2,7 @@ import type {
   CanonicalEvent,
   DevelopmentApproval,
   HumanReview,
+  IncidentMedia,
   TrainingSample,
   VerifiedBoundingBox,
   VideoMetadata,
@@ -47,6 +48,17 @@ export const getCanonicalEvent = (eventId: string) =>
 
 export const getEventReviews = (eventId: string) =>
   request<HumanReview[]>(`/api/events/${encodeURIComponent(eventId)}/reviews`);
+
+export async function getIncidentMedia(eventId: string): Promise<IncidentMedia | null> {
+  try {
+    return await request<IncidentMedia>(
+      `/api/events/${encodeURIComponent(eventId)}/media`,
+    );
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
 
 export const saveEventReview = (
   eventId: string,

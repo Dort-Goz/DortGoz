@@ -306,7 +306,7 @@ class TriageStore:
     def snapshot(self) -> dict:
         self._expire_rules()
         confirmed = [
-            asdict(item)
+            self._item_view(item)
             for item in reversed(self._resolved)
             if item.verdict == "anomali"
         ]
@@ -318,7 +318,9 @@ class TriageStore:
                 if item.status in {RuleProposalStatus.PROPOSED, RuleProposalStatus.APPROVED}
             ]
         return {
-            "pending": [asdict(item) for item in reversed(list(self._pending.values()))],
+            "pending": [
+                self._item_view(item) for item in reversed(list(self._pending.values()))
+            ],
             "confirmed": confirmed,
             "dismissed_count": self.dismissed_count,
             "auto_dismissed": self.auto_dismissed,
@@ -350,6 +352,23 @@ class TriageStore:
             needs_review=payload.needs_review,
             review_reason=payload.review_reason,
         )
+
+    def _item_view(self, item: TriageItem) -> dict:
+        view = asdict(item)
+        media = (
+            self.repository.get_incident_media_for_event(item.event_id)
+            if self.repository is not None and item.event_id is not None
+            else None
+        )
+        view.update(
+            clip_url=f"/media/{media.clip_ref}" if media is not None else None,
+            clip_start=media.clip_start if media is not None else None,
+            clip_end=media.clip_end if media is not None else None,
+            media_thumbnail_url=(
+                f"/media/{media.thumbnail_ref}" if media is not None else None
+            ),
+        )
+        return view
 
     def _resolve_event_id(self, feed: str, incident_id: str) -> str | None:
         if self.event_id_resolver is None:

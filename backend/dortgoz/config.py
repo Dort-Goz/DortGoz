@@ -157,6 +157,9 @@ class Settings(BaseSettings):
     media_dir: Path = Path(__file__).resolve().parents[2] / "media"
     runs_dir: Path = Path(__file__).resolve().parents[2] / "runs"
     training_frame_width: int = 640
+    incident_pre_capture_seconds: float = 8.0
+    incident_post_capture_seconds: float = 8.0
+    incident_clip_timeout_seconds: float = 90.0
     # Ağırlık nöbetçisi sayfa-düşürme hedefleri (":" ayraçlı GGUF yolları).
     # Boş bırakılırsa iyileşme yalnız /unload yapar (bkz. services/weight_guard).
     gguf_paths: str = ""

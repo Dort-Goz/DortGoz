@@ -19,6 +19,7 @@ LOGGER = logging.getLogger(__name__)
 RunVideoCallable = Callable[..., Awaitable[None]]
 EnabledPredicate = Callable[[], bool]
 IdFactory = Callable[[], str]
+FinalizeRunCallable = Callable[[str], Awaitable[object]]
 
 
 class AnalysisJobStatus(StrEnum):
@@ -145,6 +146,7 @@ class CanonicalAnalysisJobService:
         defaults: Callable[[], EffectiveRuntimeConfig] = _default_runtime_config,
         enabled: EnabledPredicate = lambda: True,
         id_factory: IdFactory = lambda: uuid4().hex,
+        finalize_run: FinalizeRunCallable | None = None,
     ) -> None:
         if max_active < 1:
             raise ValueError("max_active en az 1 olmalı")
@@ -155,6 +157,7 @@ class CanonicalAnalysisJobService:
         self._defaults = defaults
         self._enabled = enabled
         self._id_factory = id_factory
+        self._finalize_run = finalize_run
         self._lock = asyncio.Lock()
         self._records: dict[str, _JobRecord] = {}
         self._active_by_feed: dict[str, str] = {}
@@ -333,6 +336,14 @@ class CanonicalAnalysisJobService:
                 resolve_jsonl_status(self.runs_dir, record.analysis_id, active=False)
                 or AnalysisJobStatus.INTERRUPTED
             )
+            if record.status == AnalysisJobStatus.COMPLETED and self._finalize_run is not None:
+                try:
+                    await self._finalize_run(record.analysis_id)
+                except Exception:
+                    LOGGER.exception(
+                        "analysis incident media finalization failed: %s",
+                        record.analysis_id,
+                    )
         finally:
             if record.status in {AnalysisJobStatus.QUEUED, AnalysisJobStatus.RUNNING}:
                 record.status = (

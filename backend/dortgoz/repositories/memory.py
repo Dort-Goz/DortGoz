@@ -20,6 +20,7 @@ from ..domain.feedback import (
     RuleProposal,
     RuleProposalStatus,
 )
+from ..domain.media import IncidentMedia
 from ..domain.memory import AnalysisRecord, AnalysisResult, AnalysisStatus
 from ..domain.model_lifecycle import (
     ModelStage,
@@ -56,6 +57,7 @@ class InMemoryEventRepository:
         self._reviews: dict[str, HumanReview] = {}
         self._development_approvals: dict[str, DevelopmentApproval] = {}
         self._rule_proposals: dict[str, RuleProposal] = {}
+        self._incident_media: dict[str, IncidentMedia] = {}
         self._training_samples: dict[str, TrainingSample] = {}
         self._training_jobs: dict[str, TrainingJob] = {}
         self._model_versions: dict[str, ModelVersion] = {}
@@ -431,6 +433,72 @@ class InMemoryEventRepository:
                 raise RepositoryConflictError("rule proposal uygulama sayısı azaltılamaz")
             self._rule_proposals[proposal.proposal_id] = _copy(proposal)
             return _copy(proposal)
+
+    def save_incident_media(self, media: IncidentMedia) -> IncidentMedia:
+        with self._lock:
+            event = self._events.get(media.event_id)
+            if event is None:
+                raise RepositoryNotFoundError(f"event bulunamadı: {media.event_id}")
+            if (
+                media.analysis_id != event.analysis_id
+                or media.video_id != event.video_id
+                or media.event_revision != event.revision
+            ):
+                raise RepositoryConflictError(
+                    "incident media event parent veya revision ile eşleşmiyor"
+                )
+            by_event = next(
+                (
+                    item
+                    for item in self._incident_media.values()
+                    if item.event_id == media.event_id
+                ),
+                None,
+            )
+            current = self._incident_media.get(media.media_id)
+            if by_event is not None and by_event.media_id != media.media_id:
+                raise RepositoryConflictError("event için farklı incident media zaten var")
+            if current is not None:
+                if current.event_id != media.event_id:
+                    raise RepositoryConflictError("incident media event kimliği değiştirilemez")
+                if media.revision != current.revision + 1:
+                    if media.model_dump() == current.model_dump():
+                        return _copy(current)
+                    raise RepositoryConflictError("incident media revision sıralı ilerlemelidir")
+                if media.event_revision < current.event_revision:
+                    raise RepositoryConflictError("incident media event revision gerileyemez")
+                if media.created_at != current.created_at:
+                    raise RepositoryConflictError("incident media created_at değiştirilemez")
+            elif media.revision != 1:
+                raise RepositoryConflictError("yeni incident media revision 1 olmalıdır")
+            self._incident_media[media.media_id] = _copy(media)
+            return _copy(media)
+
+    def get_incident_media(self, media_id: str) -> IncidentMedia | None:
+        with self._lock:
+            item = self._incident_media.get(media_id)
+            return _copy(item) if item is not None else None
+
+    def get_incident_media_for_event(self, event_id: str) -> IncidentMedia | None:
+        with self._lock:
+            item = next(
+                (
+                    media
+                    for media in self._incident_media.values()
+                    if media.event_id == event_id
+                ),
+                None,
+            )
+            return _copy(item) if item is not None else None
+
+    def list_incident_media(self, analysis_id: str | None = None) -> list[IncidentMedia]:
+        with self._lock:
+            items = [
+                item
+                for item in self._incident_media.values()
+                if analysis_id is None or item.analysis_id == analysis_id
+            ]
+            return _copy(sorted(items, key=lambda item: (item.created_at, item.media_id)))
 
     def create_training_samples(self, samples: list[TrainingSample]) -> list[TrainingSample]:
         with self._lock:

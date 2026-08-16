@@ -7,6 +7,7 @@ from typing import Protocol
 from ..domain.candidate import CandidateEvent
 from ..domain.event import VerifiedEvent
 from ..domain.feedback import DevelopmentApproval, RuleProposal
+from ..domain.media import IncidentMedia
 from ..domain.memory import AnalysisRecord, AnalysisResult
 from ..domain.model_lifecycle import ModelVersion, TrainingJob
 from ..domain.provenance import (
@@ -84,6 +85,14 @@ class EventRepository(Protocol):
     def list_rule_proposals(self) -> list[RuleProposal]: ...
 
     def update_rule_proposal(self, proposal: RuleProposal) -> RuleProposal: ...
+
+    def save_incident_media(self, media: IncidentMedia) -> IncidentMedia: ...
+
+    def get_incident_media(self, media_id: str) -> IncidentMedia | None: ...
+
+    def get_incident_media_for_event(self, event_id: str) -> IncidentMedia | None: ...
+
+    def list_incident_media(self, analysis_id: str | None = None) -> list[IncidentMedia]: ...
 
     def create_training_samples(
         self, samples: list[TrainingSample]

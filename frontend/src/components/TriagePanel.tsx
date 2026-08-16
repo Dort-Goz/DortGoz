@@ -21,6 +21,10 @@ interface TriageItem {
   decided_wall: number | null;
   tekrar: number;
   review_ids: string[];
+  clip_url: string | null;
+  clip_start: number | null;
+  clip_end: number | null;
+  media_thumbnail_url: string | null;
 }
 
 interface RuleProposal {
@@ -117,6 +121,17 @@ function PendingCard({ item, categories, feedLabel, onDecide }: {
         <div className="text-amber-300/90" title={item.review_reason}>
           ? {humanizeReason(item.review_reason)}
         </div>
+      )}
+      {item.clip_url && (
+        <video
+          controls
+          preload="metadata"
+          poster={item.media_thumbnail_url ?? undefined}
+          src={item.clip_url}
+          className="max-h-40 w-full rounded bg-black object-contain"
+        >
+          Tarayıcınız olay klibini oynatamıyor.
+        </video>
       )}
       <div className="flex items-center gap-1">
         <select

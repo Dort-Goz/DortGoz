@@ -20,6 +20,7 @@ from dortgoz.domain.dataset import (
 )
 from dortgoz.domain.event import EventStatus, VerifiedEvent
 from dortgoz.domain.evidence import VerifiedEventType
+from dortgoz.domain.media import IncidentMedia
 from dortgoz.domain.provenance import AnalysisProvenance
 from dortgoz.domain.video import VideoMetadata
 from dortgoz.main import app
@@ -165,6 +166,81 @@ def test_review_and_development_approval_are_separate_api_decisions(
         approvals = client.get("/api/events/event-feedback-api/development-approvals")
         assert len(reviews.json()) == 1
         assert len(approvals.json()) == 1
+
+
+def test_incident_media_route_returns_playable_local_urls(monkeypatch) -> None:
+    runtime = ApiRuntime()
+    monkeypatch.setattr(api_module, "runtime", runtime)
+    video = metadata("00000000-0000-0000-0000-000000000025")
+    analysis_id = "analysis-incident-media-api"
+    candidate = CandidateEvent(
+        candidate_id="candidate-incident-media-api",
+        analysis_id=analysis_id,
+        video_id=video.video_id,
+        start_time=10,
+        peak_time=12,
+        end_time=15,
+        candidate_type=CandidateType.UNKNOWN_ANOMALY,
+        peak_score=0.8,
+        anomaly_score=0.8,
+        trigger_signals=["fixture"],
+        screening_model_id="fixture-screening",
+        threshold_version="test-v1",
+    )
+    event = VerifiedEvent(
+        event_id="event-incident-media-api",
+        analysis_id=analysis_id,
+        video_id=video.video_id,
+        candidate_id=candidate.candidate_id,
+        status=EventStatus.HUMAN_REVIEW,
+        event_type=VerifiedEventType.UNKNOWN_ANOMALY,
+        start_time=10,
+        peak_time=12,
+        end_time=15,
+    )
+    runtime.repository.create_video(video)
+    runtime.repository.create_analysis(
+        video.video_id,
+        AnalysisProvenance(
+            contract_version="1.0.0",
+            config_version="test-v1",
+            code_revision="test-revision",
+        ),
+        analysis_id=analysis_id,
+    )
+    runtime.repository.save_candidate(candidate)
+    runtime.repository.save_event(event)
+    runtime.repository.save_incident_media(
+        IncidentMedia(
+            media_id="incident-media-api",
+            event_id=event.event_id,
+            analysis_id=analysis_id,
+            video_id=video.video_id,
+            event_revision=event.revision,
+            source_refs=[video.media_path],
+            source_file_sha256=video.file_hash_sha256,
+            clip_ref="_incident_media/incident-media-api/incident.mp4",
+            thumbnail_ref="_incident_media/incident-media-api/thumbnail.jpg",
+            clip_start=2,
+            clip_end=23,
+            peak_time=12,
+            pre_capture_seconds=8,
+            post_capture_seconds=8,
+            clip_sha256="c" * 64,
+            thumbnail_sha256="d" * 64,
+            clip_size_bytes=200,
+            thumbnail_size_bytes=50,
+        )
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/events/event-incident-media-api/media")
+
+    assert response.status_code == 200
+    assert response.json()["clip_url"] == (
+        "/media/_incident_media/incident-media-api/incident.mp4"
+    )
+    assert response.json()["thumbnail_url"].endswith("/thumbnail.jpg")
 
 
 def test_training_sample_api_prepares_and_verifies_approved_event(

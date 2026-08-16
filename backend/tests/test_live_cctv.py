@@ -91,6 +91,12 @@ async def test_step_processes_oldest_closed_segment(worker, monkeypatch):
 
     worker.prepare_run = prepare_run
 
+    async def finalize_run(run_id):
+        order.append("finalize")
+        assert run_id == "canli-kavsak1-1000"
+
+    worker.finalize_run = finalize_run
+
     async def fake_run_video(manager, video, run_id, **kw):
         order.append("run")
         calls.append((video, run_id, kw))
@@ -107,7 +113,7 @@ async def test_step_processes_oldest_closed_segment(worker, monkeypatch):
     assert worker.status.segments_done == 1
     assert worker.status.lag_s is not None
     assert worker.status.snapshot.endswith("latest.jpg")
-    assert order == ["prepare", "run"]
+    assert order == ["prepare", "run", "finalize"]
 
 
 @pytest.mark.asyncio

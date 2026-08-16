@@ -11,6 +11,7 @@ import pytest
 from dortgoz.domain.candidate import CandidateEvent, CandidateType
 from dortgoz.domain.event import EventStatus, VerifiedEvent
 from dortgoz.domain.feedback import RuleProposalStatus
+from dortgoz.domain.media import IncidentMedia
 from dortgoz.domain.provenance import AnalysisProvenance, ReviewDecision
 from dortgoz.domain.taxonomy import VerifiedEventType, canonical_event_type_from_ws_label
 from dortgoz.domain.video import VideoMetadata
@@ -149,6 +150,40 @@ def test_incident_update_lands_in_pending(store):
     assert item["feed"] == "KAM-1"
     assert item["model_category"] == "vandalizm"
     assert item["event_id"] == "event:KAM-1:inc-1"
+    assert item["clip_url"] is None
+
+
+def test_pending_card_exposes_persisted_incident_clip(store):
+    store.observe(_incident())
+    event = store.repo.get_event("event:KAM-1:inc-1")
+    assert event is not None
+    store.repo.save_incident_media(
+        IncidentMedia(
+            media_id="triage-incident-media",
+            event_id=event.event_id,
+            analysis_id=event.analysis_id,
+            video_id=event.video_id,
+            event_revision=event.revision,
+            source_refs=[f"{event.video_id}.mp4"],
+            source_file_sha256=store.repo.get_video(event.video_id).file_hash_sha256,
+            clip_ref="_incident_media/triage/incident.mp4",
+            thumbnail_ref="_incident_media/triage/thumbnail.jpg",
+            clip_start=34,
+            clip_end=50,
+            peak_time=42,
+            pre_capture_seconds=8,
+            post_capture_seconds=8,
+            clip_sha256="c" * 64,
+            thumbnail_sha256="d" * 64,
+            clip_size_bytes=200,
+            thumbnail_size_bytes=50,
+        )
+    )
+
+    item = store.snapshot()["pending"][0]
+
+    assert item["clip_url"] == "/media/_incident_media/triage/incident.mp4"
+    assert item["media_thumbnail_url"].endswith("thumbnail.jpg")
 
 
 def test_lifecycle_update_refreshes_not_duplicates(store):

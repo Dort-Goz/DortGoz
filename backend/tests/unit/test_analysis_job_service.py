@@ -258,6 +258,39 @@ async def test_successful_task_keeps_jsonl_done_terminal_semantics(tmp_path: Pat
 
 
 @pytest.mark.asyncio
+async def test_completed_task_finalizes_incident_media(tmp_path: Path) -> None:
+    finalized: list[str] = []
+
+    async def completed_runner(
+        _manager: FakeManager,
+        _video: str,
+        run_id: str,
+        **_kwargs: str,
+    ) -> None:
+        write_status(tmp_path / f"{run_id}.jsonl", run_id, "done")
+
+    async def finalize_run(analysis_id: str) -> None:
+        finalized.append(analysis_id)
+
+    jobs = CanonicalAnalysisJobService(
+        FakeManager(),
+        runs_dir=tmp_path,
+        max_active=1,
+        run_video=completed_runner,
+        defaults=defaults,
+        finalize_run=finalize_run,
+    )
+    snapshot = await jobs.start("camera.mp4")
+
+    await wait_for_status(jobs, snapshot.analysis_id, AnalysisJobStatus.COMPLETED)
+    for _ in range(100):
+        if finalized:
+            break
+        await asyncio.sleep(0)
+    assert finalized == [snapshot.analysis_id]
+
+
+@pytest.mark.asyncio
 async def test_fatal_task_is_interrupted_and_exception_is_retrieved(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,

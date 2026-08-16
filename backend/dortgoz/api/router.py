@@ -7,6 +7,7 @@ servisini kullanır. Legacy event repository uçları ayrı sözleşme olarak ko
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import tempfile
 from pathlib import Path
@@ -41,6 +42,7 @@ from ..services.analysis_job import (
     CanonicalAnalysisJobService,
 )
 from ..services.event_service import EventMemoryService
+from ..services.incident_media import IncidentMediaError, IncidentMediaService
 from ..services.ingest_service import VideoIngestService
 from ..services.mock_vertical import MockVerticalAnalysisService
 from ..services.procedure_service import ProcedureService
@@ -55,6 +57,7 @@ from .contracts import (
     AnalyzeRequest,
     DevelopmentApprovalInput,
     HumanReviewInput,
+    IncidentMediaView,
     QueryRequest,
     QueryResponse,
     ReportResponse,
@@ -64,6 +67,8 @@ from .contracts import (
     TrainingSampleView,
 )
 from .errors import error_response
+
+LOGGER = logging.getLogger(__name__)
 
 
 class ApiRuntime:
@@ -81,6 +86,13 @@ class ApiRuntime:
             max_bytes=settings.video_max_bytes,
         )
         self.ingest = VideoIngestService(self.storage)
+        self.incident_media = IncidentMediaService(
+            self.repository,
+            media_root=settings.media_dir,
+            before_seconds=settings.incident_pre_capture_seconds,
+            after_seconds=settings.incident_post_capture_seconds,
+            timeout_seconds=settings.incident_clip_timeout_seconds,
+        )
         self.training_samples = TrainingSampleService(
             self.repository,
             media_root=settings.media_dir,
@@ -332,6 +344,26 @@ async def get_event_evidence(event_id: str) -> list[EvidenceItem]:
     return [item.model_dump(mode="json") for item in event.evidence]
 
 
+def _incident_media_view(media) -> IncidentMediaView:
+    return IncidentMediaView.model_validate(
+        {
+            **media.model_dump(),
+            "clip_url": f"/media/{media.clip_ref}",
+            "thumbnail_url": f"/media/{media.thumbnail_ref}",
+        }
+    )
+
+
+@router.get("/events/{event_id}/media", response_model=IncidentMediaView)
+async def get_event_media(event_id: str) -> IncidentMediaView:
+    if runtime.repository.get_event(event_id) is None:
+        raise RepositoryNotFoundError(f"event bulunamadı: {event_id}")
+    media = runtime.repository.get_incident_media_for_event(event_id)
+    if media is None:
+        raise RepositoryNotFoundError(f"event medyası bulunamadı: {event_id}")
+    return _incident_media_view(media)
+
+
 @router.post("/events/{event_id}/review", response_model=HumanReview)
 async def review_event(event_id: str, request: HumanReviewInput) -> HumanReview | JSONResponse:
     try:
@@ -354,6 +386,18 @@ async def review_event(event_id: str, request: HumanReviewInput) -> HumanReview 
         false_alarm_reason=request.false_alarm_reason,
         intervention_required=request.intervention_required,
     )
+    if any(
+        value is not None
+        for value in (request.start_time, request.peak_time, request.end_time)
+    ):
+        try:
+            await runtime.incident_media.prepare(event_id)
+        except IncidentMediaError as exc:
+            LOGGER.warning(
+                "review sonrası incident media yenilenemedi: event=%s code=%s",
+                event_id,
+                exc.code,
+            )
     return review.model_dump(mode="json")
 
 

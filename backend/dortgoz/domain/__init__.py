@@ -26,6 +26,7 @@ from .feedback import (
     DevelopmentUse,
     FalseAlarmReason,
 )
+from .media import IncidentMedia
 from .memory import AnalysisProvenance, AnalysisRecord, AnalysisResult, AnalysisStatus
 from .provenance import (
     HumanReview,
@@ -100,6 +101,7 @@ __all__ = [
     "AnalysisResult",
     "AnalysisStatus",
     "HumanReview",
+    "IncidentMedia",
     "KeyframeRef",
     "ModelRunRef",
     "ProcedureSource",

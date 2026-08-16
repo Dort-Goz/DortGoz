@@ -17,6 +17,7 @@ from ..domain.feedback import (
     DevelopmentUse,
     FalseAlarmReason,
 )
+from ..domain.media import IncidentMedia
 from ..domain.memory import AnalysisResult
 from ..domain.provenance import ProcedureSource, TraceRecord
 from ..domain.training import (
@@ -120,6 +121,11 @@ class TrainingSampleView(TrainingSample):
     frame_url: str = Field(pattern=r"^/media/[A-Za-z0-9_./-]+$")
 
 
+class IncidentMediaView(IncidentMedia):
+    clip_url: str = Field(pattern=r"^/media/[A-Za-z0-9_./-]+$")
+    thumbnail_url: str = Field(pattern=r"^/media/[A-Za-z0-9_./-]+$")
+
+
 class QueryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -175,6 +181,7 @@ __all__ = [
     "DevelopmentApprovalInput",
     "EventListResponse",
     "HumanReviewInput",
+    "IncidentMediaView",
     "QueryRequest",
     "QueryResponse",
     "ReportResponse",

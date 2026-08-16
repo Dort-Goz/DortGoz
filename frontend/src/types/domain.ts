@@ -32,6 +32,19 @@ export interface HumanReview {
   created_at: string;
 }
 
+export interface IncidentMedia {
+  media_id: string;
+  event_id: string;
+  event_revision: number;
+  clip_url: string;
+  thumbnail_url: string;
+  clip_start: number;
+  clip_end: number;
+  peak_time: number;
+  clip_sha256: string;
+  revision: number;
+}
+
 export interface DevelopmentApproval {
   approval_id: string;
   event_id: string;

@@ -1,6 +1,6 @@
 """Normalized SQLite-backed, local-only event memory adapter.
 
-Schema v5 stores each entity in its own row. Existing schema-v1 JSON snapshots
+Schema v6 stores each entity in its own row. Existing schema-v1 JSON snapshots
 are imported once and kept untouched as a rollback artifact.
 """
 
@@ -19,6 +19,7 @@ from pydantic import BaseModel, ValidationError
 from ..domain.candidate import CandidateEvent
 from ..domain.event import VerifiedEvent
 from ..domain.feedback import DevelopmentApproval, RuleProposal
+from ..domain.media import IncidentMedia
 from ..domain.memory import AnalysisRecord
 from ..domain.model_lifecycle import ModelVersion, TrainingJob
 from ..domain.provenance import HumanReview, TraceRecord
@@ -28,7 +29,7 @@ from .errors import RepositoryError
 from .memory import InMemoryEventRepository
 
 _T = TypeVar("_T")
-_DATABASE_SCHEMA_VERSION = 5
+_DATABASE_SCHEMA_VERSION = 6
 _LEGACY_SNAPSHOT_VERSION = 1
 
 
@@ -157,6 +158,20 @@ class SqliteEventRepository(InMemoryEventRepository):
                         ON rule_proposals(feed, category)
                         WHERE status IN ('collecting', 'proposed', 'approved');
 
+                    CREATE TABLE IF NOT EXISTS incident_media (
+                        media_id TEXT PRIMARY KEY,
+                        event_id TEXT NOT NULL UNIQUE REFERENCES events(event_id),
+                        analysis_id TEXT NOT NULL REFERENCES analyses(analysis_id),
+                        video_id TEXT NOT NULL REFERENCES videos(video_id),
+                        event_revision INTEGER NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        revision INTEGER NOT NULL,
+                        payload TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_incident_media_analysis
+                        ON incident_media(analysis_id, created_at);
+
                     CREATE TABLE IF NOT EXISTS training_samples (
                         sample_id TEXT PRIMARY KEY,
                         event_id TEXT NOT NULL REFERENCES events(event_id),
@@ -284,7 +299,7 @@ class SqliteEventRepository(InMemoryEventRepository):
                     subject_type="database",
                     subject_id=str(self.database_path),
                     actor=None,
-                    payload={"from_version": 1, "to_version": 5},
+                    payload={"from_version": 1, "to_version": 6},
                 )
         except sqlite3.Error as exc:
             raise RepositoryError(f"legacy event store taşınamadı: {exc}") from exc
@@ -365,6 +380,11 @@ class SqliteEventRepository(InMemoryEventRepository):
             item.proposal_id: item
             for row in self._connection.execute("SELECT payload FROM rule_proposals")
             if (item := self._model_from_payload(RuleProposal, row["payload"]))
+        }
+        self._incident_media = {
+            item.media_id: item
+            for row in self._connection.execute("SELECT payload FROM incident_media")
+            if (item := self._model_from_payload(IncidentMedia, row["payload"]))
         }
         self._training_samples = {
             item.sample_id: item
@@ -521,6 +541,32 @@ class SqliteEventRepository(InMemoryEventRepository):
                 item.revision,
                 item.created_at.isoformat(),
                 item.updated_at.isoformat(),
+                self._json_payload(item),
+            ),
+        )
+
+    def _write_incident_media(self, item: IncidentMedia) -> None:
+        self._connection.execute(
+            """
+            INSERT INTO incident_media(
+                media_id, event_id, analysis_id, video_id, event_revision,
+                created_at, updated_at, revision, payload
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(media_id) DO UPDATE SET
+                event_revision = excluded.event_revision,
+                updated_at = excluded.updated_at,
+                revision = excluded.revision,
+                payload = excluded.payload
+            """,
+            (
+                item.media_id,
+                item.event_id,
+                item.analysis_id,
+                item.video_id,
+                item.event_revision,
+                item.created_at.isoformat(),
+                item.updated_at.isoformat(),
+                item.revision,
                 self._json_payload(item),
             ),
         )
@@ -839,6 +885,29 @@ class SqliteEventRepository(InMemoryEventRepository):
 
         return self._transaction(
             lambda: super(SqliteEventRepository, self).update_rule_proposal(proposal),
+            write,
+        )
+
+    def save_incident_media(self, media: IncidentMedia) -> IncidentMedia:
+        def write(saved: IncidentMedia) -> None:
+            self._write_incident_media(saved)
+            self._write_audit(
+                action="incident_media_saved",
+                subject_type="incident_media",
+                subject_id=saved.media_id,
+                actor="system",
+                occurred_at=saved.updated_at,
+                payload={
+                    "event_id": saved.event_id,
+                    "event_revision": saved.event_revision,
+                    "clip_sha256": saved.clip_sha256,
+                    "thumbnail_sha256": saved.thumbnail_sha256,
+                    "revision": saved.revision,
+                },
+            )
+
+        return self._transaction(
+            lambda: super(SqliteEventRepository, self).save_incident_media(media),
             write,
         )
 

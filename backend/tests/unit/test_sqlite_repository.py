@@ -20,6 +20,7 @@ from dortgoz.domain.feedback import (
     RuleProposal,
     RuleProposalStatus,
 )
+from dortgoz.domain.media import IncidentMedia
 from dortgoz.domain.memory import AnalysisRecord
 from dortgoz.domain.provenance import (
     AnalysisProvenance,
@@ -140,7 +141,7 @@ def test_sqlite_repository_persists_event_review_and_trace_after_restart(tmp_pat
     assert [item.revision for item in restarted.list_event_revisions("event-offline-1")] == [1, 2]
 
 
-def test_sqlite_v5_uses_normalized_tables_and_persists_development_gate(
+def test_sqlite_v6_uses_normalized_tables_and_persists_development_gate(
     tmp_path: Path,
 ) -> None:
     database_path = tmp_path / "feedback.sqlite3"
@@ -201,6 +202,7 @@ def test_sqlite_v5_uses_normalized_tables_and_persists_development_gate(
             "human_reviews",
             "development_approvals",
             "rule_proposals",
+            "incident_media",
             "training_samples",
             "training_jobs",
             "model_versions",
@@ -208,7 +210,7 @@ def test_sqlite_v5_uses_normalized_tables_and_persists_development_gate(
             "audit_log",
         } <= tables
         assert "repository_snapshot" not in tables
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
         assert connection.execute("SELECT COUNT(*) FROM human_reviews").fetchone()[0] == 1
         assert (
             connection.execute("SELECT COUNT(*) FROM development_approvals").fetchone()[0]
@@ -226,6 +228,57 @@ def test_sqlite_v5_uses_normalized_tables_and_persists_development_gate(
         DevelopmentUse.THRESHOLD_CALIBRATION,
         DevelopmentUse.EVALUATION,
     ]
+
+
+def test_sqlite_persists_incident_media_and_audit(tmp_path: Path) -> None:
+    database_path = tmp_path / "incident-media.sqlite3"
+    repository = SqliteEventRepository(database_path)
+    repository.create_video(_metadata())
+    repository.create_analysis(
+        VIDEO_ID,
+        AnalysisProvenance(
+            contract_version="1.0.0",
+            config_version="test-v1",
+            code_revision="test-revision",
+        ),
+        analysis_id=ANALYSIS_ID,
+    )
+    repository.save_candidate(_candidate())
+    event = repository.save_event(_event())
+    saved = repository.save_incident_media(
+        IncidentMedia(
+            media_id="incident-media-1",
+            event_id=event.event_id,
+            analysis_id=event.analysis_id,
+            video_id=event.video_id,
+            event_revision=event.revision,
+            source_refs=[f"{VIDEO_ID}.mp4"],
+            source_file_sha256="b" * 64,
+            clip_ref="_incident_media/incident-media-1/incident.mp4",
+            thumbnail_ref="_incident_media/incident-media-1/thumbnail.jpg",
+            clip_start=2,
+            clip_end=23,
+            peak_time=12,
+            pre_capture_seconds=8,
+            post_capture_seconds=8,
+            clip_sha256="c" * 64,
+            thumbnail_sha256="d" * 64,
+            clip_size_bytes=200,
+            thumbnail_size_bytes=50,
+        )
+    )
+    repository.close()
+
+    restarted = SqliteEventRepository(database_path)
+    restored = restarted.get_incident_media_for_event(event.event_id)
+
+    assert restored == saved
+    assert restarted.list_incident_media(ANALYSIS_ID) == [saved]
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM incident_media").fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'incident_media_saved'"
+        ).fetchone()[0] == 1
 
 
 def test_sqlite_v1_snapshot_is_migrated_without_deleting_rollback_data(
@@ -269,7 +322,7 @@ def test_sqlite_v1_snapshot_is_migrated_without_deleting_rollback_data(
 
     migrated = SqliteEventRepository(database_path)
 
-    assert migrated.schema_version == 5
+    assert migrated.schema_version == 6
     assert migrated.get_video(VIDEO_ID) is not None
     assert migrated.get_event("event-offline-1") is not None
     with sqlite3.connect(database_path) as connection:
@@ -353,7 +406,7 @@ def test_sqlite_v2_database_adds_training_samples_without_losing_events(
 
     migrated = SqliteEventRepository(database_path)
 
-    assert migrated.schema_version == 5
+    assert migrated.schema_version == 6
     assert migrated.get_event("event-offline-1") is not None
     with sqlite3.connect(database_path) as connection:
         tables = {

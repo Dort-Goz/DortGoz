@@ -67,6 +67,7 @@ analysis_jobs = CanonicalAnalysisJobService(
     runs_dir=settings.runs_dir,
     max_active=settings.max_feeds,
     enabled=lambda: not settings.mock,
+    finalize_run=api_runtime.incident_media.finalize_analysis,
 )
 # REST ve WS bu app composition sınırındaki aynı canonical job instance'ını kullanır;
 # router servisi ``app.state`` üzerinden alır ve ``main`` modülünü import etmez.
@@ -204,6 +205,7 @@ runtime_projection = RuntimeAnalysisProjection(
     allow_virtual_sources=settings.mock,
 )
 live_cctv.prepare_run = runtime_projection.register_runtime_source
+live_cctv.finalize_run = api_runtime.incident_media.finalize_analysis
 # Projection önce çalışır. Böylece nöbet kartı aynı yayın turunda kalıcı event_id
 # alır ve operatör kararı JSONL yerine canonical SQLite review'a bağlanır.
 triage.store.configure(

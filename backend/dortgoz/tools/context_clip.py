@@ -32,7 +32,7 @@ class LocalContextClipTool:
         self.runs_root = (self.workspace_root / "runs").resolve()
         self.fps = fps
         self.timeout_seconds = timeout_seconds
-        self.clip_writer = clip_writer or _write_clip
+        self.clip_writer = clip_writer or write_context_clip
 
     async def create(
         self,
@@ -82,7 +82,7 @@ class LocalContextClipTool:
         return target
 
 
-async def _write_clip(
+async def write_context_clip(
     source: Path, target: Path, start: float, end: float, timeout_seconds: float
 ) -> None:
     temporary = target.with_name(f".{target.stem}.tmp{target.suffix}")
@@ -133,4 +133,4 @@ def _file_hash(path: Path) -> str:
     return digest.hexdigest()
 
 
-__all__ = ["LocalContextClipTool"]
+__all__ = ["LocalContextClipTool", "write_context_clip"]

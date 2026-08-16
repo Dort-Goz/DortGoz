@@ -11,6 +11,7 @@ import {
   getCanonicalEvent,
   getDevelopmentApprovals,
   getEventReviews,
+  getIncidentMedia,
   getTrainingSamples,
   prepareTrainingSamples,
   saveEventReview,
@@ -21,6 +22,7 @@ import type {
   CanonicalEvent,
   DevelopmentApproval,
   HumanReview,
+  IncidentMedia,
   TrainingSample,
   VerifiedBoundingBox,
 } from "../types/domain";
@@ -195,6 +197,7 @@ export default function TrainingReviewPanel({
 }) {
   const [canonicalEvent, setCanonicalEvent] = useState<CanonicalEvent | null>(null);
   const [reviews, setReviews] = useState<HumanReview[]>([]);
+  const [incidentMedia, setIncidentMedia] = useState<IncidentMedia | null>(null);
   const [approvals, setApprovals] = useState<DevelopmentApproval[]>([]);
   const [samples, setSamples] = useState<TrainingSample[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -208,16 +211,18 @@ export default function TrainingReviewPanel({
 
   const load = useCallback(async () => {
     setError("");
-    const [eventResult, reviewResult, approvalResult, sampleResult] = await Promise.all([
+    const [eventResult, reviewResult, approvalResult, sampleResult, mediaResult] = await Promise.all([
       getCanonicalEvent(eventId),
       getEventReviews(eventId),
       getDevelopmentApprovals(eventId),
       getTrainingSamples(eventId),
+      getIncidentMedia(eventId),
     ]);
     setCanonicalEvent(eventResult);
     setReviews(reviewResult);
     setApprovals(approvalResult);
     setSamples(sampleResult);
+    setIncidentMedia(mediaResult);
     setSelectedId((current) => {
       if (sampleResult.some((sample) => sample.sample_id === current)) return current;
       return sampleResult.find((sample) => sample.status === "pending_review")?.sample_id
@@ -431,6 +436,25 @@ export default function TrainingReviewPanel({
               <div className="mb-3 rounded border border-emerald-900 bg-emerald-950/40 px-3 py-2 text-sm text-emerald-300">
                 {notice}
               </div>
+            )}
+            {incidentMedia && (
+              <section className="mx-auto mb-4 max-w-4xl rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+                <div className="mb-2 flex items-center text-xs text-zinc-400">
+                  <span>Olay klibi</span>
+                  <span className="ml-auto">
+                    {clock(incidentMedia.clip_start)}–{clock(incidentMedia.clip_end)}
+                  </span>
+                </div>
+                <video
+                  controls
+                  preload="metadata"
+                  poster={incidentMedia.thumbnail_url}
+                  src={incidentMedia.clip_url}
+                  className="max-h-72 w-full rounded bg-black object-contain"
+                >
+                  Tarayıcınız olay klibini oynatamıyor.
+                </video>
+              </section>
             )}
             {!selected && (
               <div className="flex h-full min-h-72 items-center justify-center text-sm text-zinc-600">
