@@ -49,6 +49,7 @@ from .taxonomy import (
     map_dataset_source_label,
     requires_human_review,
 )
+from .training import FrameReviewResult, TrainingFrameReview, VerifiedBoundingBox
 from .video import VideoErrorCode, VideoIngestError, VideoMetadata, VideoProbe
 
 __all__ = [
@@ -101,6 +102,9 @@ __all__ = [
     "RiskAssessment",
     "RiskLevel",
     "TraceRecord",
+    "FrameReviewResult",
+    "TrainingFrameReview",
+    "VerifiedBoundingBox",
     "VerifiedEvent",
     "VideoIngestError",
     "VideoMetadata",

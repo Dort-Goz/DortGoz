@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dortgoz-dfine-frame-review-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "annotation_id",
+    "dataset_id",
+    "dataset_fingerprint",
+    "dataset_video_id",
+    "source_video_ref",
+    "frame_ref",
+    "frame_sha256",
+    "frame_size_bytes",
+    "timestamp_seconds",
+    "image_width",
+    "image_height",
+    "split",
+    "review_result",
+    "boxes",
+    "human_verified",
+    "reviewer",
+    "annotation_tool",
+    "reviewed_at"
+  ],
+  "properties": {
+    "annotation_version": {"const": "1.0.0", "default": "1.0.0"},
+    "annotation_id": {"type": "string", "minLength": 1},
+    "dataset_id": {"type": "string", "minLength": 1},
+    "dataset_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "dataset_video_id": {"type": "string", "minLength": 1},
+    "source_video_ref": {"type": "string", "minLength": 1},
+    "frame_ref": {"type": "string", "minLength": 1},
+    "frame_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "frame_size_bytes": {"type": "integer", "minimum": 1},
+    "timestamp_seconds": {"type": "number", "minimum": 0},
+    "image_width": {"type": "integer", "minimum": 1},
+    "image_height": {"type": "integer", "minimum": 1},
+    "split": {"type": "string", "enum": ["train", "validation"]},
+    "review_result": {
+      "type": "string",
+      "enum": ["verified_boxes", "verified_no_target_objects"]
+    },
+    "boxes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["category_name", "x", "y", "width", "height"],
+        "properties": {
+          "category_name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+          },
+          "x": {"type": "number", "minimum": 0},
+          "y": {"type": "number", "minimum": 0},
+          "width": {"type": "number", "exclusiveMinimum": 0},
+          "height": {"type": "number", "exclusiveMinimum": 0},
+          "is_crowd": {"type": "boolean", "default": false}
+        }
+      }
+    },
+    "human_verified": {"const": true},
+    "reviewer": {"type": "string", "minLength": 1},
+    "annotation_tool": {"type": "string", "minLength": 1},
+    "reviewed_at": {"type": "string", "format": "date-time"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"review_result": {"const": "verified_boxes"}}},
+      "then": {"properties": {"boxes": {"minItems": 1}}}
+    },
+    {
+      "if": {
+        "properties": {"review_result": {"const": "verified_no_target_objects"}}
+      },
+      "then": {"properties": {"boxes": {"maxItems": 0}}}
+    }
+  ]
+}
