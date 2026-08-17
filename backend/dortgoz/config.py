@@ -71,6 +71,23 @@ class Settings(BaseSettings):
     # Ölçüm: bench/results/ab_qwen38_rol_analizi_20260815.md
     second_opinion_model: str = ""   # ör. "qwen3.8-27b-vision-dg"
     second_opinion_motion: float = 0.30
+    # Düşünme kademesi (Qwen3.8 ailesi `reasoning_effort` bekler; Qwen3.6
+    # ikili `enable_thinking` konuşur — çeviri pipeline/thinking.py'de).
+    # "" = aile varsayılanı (üretim davranışı, düşünme kapalı okuma),
+    # "kapali" = açıkça kapalı, ya da low|medium|high|xhigh.
+    # ⚠ Kademe yükseldikçe düşünme token tavanını yeme riski artar; bütçe
+    # (interpret_think_budget) bu yüzden kademeli modda da uygulanır.
+    interpret_effort: str = ""
+    second_opinion_effort: str = ""
+    # Düşünme token bütçesi — 2026-08-07 soak ölçümüyle 2500 (bkz. thinking.py)
+    interpret_think_budget: int = 2500
+    # Düşünen okumada örnekleme sıcaklığı. Yorumlama yolu üretimde AÇGÖZLÜ
+    # (temperature=0) koşar; şema-kısıtlı kısa rapor için doğrudur. Düşünme
+    # açıkken açgözlü kod çözme Qwen akıl yürütme kiplerinde tekrar/döngü
+    # riski taşır (üretici kendi kartında thinking için temp>0 + top_p 0,95
+    # öneriyor). 0 = değiştirme (üretim davranışı); >0 YALNIZ düşünen çağrıda
+    # uygulanır, düşünmeyen okuma açgözlü kalır.
+    interpret_think_temp: float = 0.0
     # Çift okuma (2026-08-11 birleşim analizi): olagan kalan pencere bir kez de
     # 12 motion-ranked kareyle okunur; İKİ okumadan biri olay görürse alarm.
     # k6∪k12 birleşimi 99→112/140 yakalama vaat ediyor (FA 12→~21, maliyet ~2×)

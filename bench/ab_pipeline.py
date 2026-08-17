@@ -138,6 +138,12 @@ def current_config() -> dict:
         "tier_prompt_override": TIER_OVERRIDE,
         "parallel": PARALLEL,
         "escalate_tau": ESCALATE_TAU,
+        # Düşünme kademesi ve ikinci görüş kolu koşunun kimliğinin parçası:
+        # aynı model farklı kademede BAŞKA bir koldur, karışmamalı.
+        "interpret_effort": settings.interpret_effort,
+        "second_opinion_model": settings.second_opinion_model,
+        "second_opinion_effort": settings.second_opinion_effort,
+        "second_opinion_motion": settings.second_opinion_motion,
     }
 
 
@@ -181,6 +187,14 @@ async def collect(clips: list[Path], out: Path) -> None:
             raise SystemExit(
                 f"{out} kaydı parallel={prev['config'].get('parallel', 1)} ile "
                 "başlamış — zaman ölçüm tabanı karışmaz (yeni --out ver)")
+        for alan in ("interpret_effort", "second_opinion_model",
+                     "second_opinion_effort"):
+            onceki = prev["config"].get(alan, "")
+            simdi = getattr(settings, alan)
+            if onceki != simdi:
+                raise SystemExit(
+                    f"{out} kaydı {alan}={onceki!r} ile başlamış, etkin değer "
+                    f"{simdi!r} — aynı dosyaya karıştırılmaz (yeni --out ver)")
         done = {c["clip"] for c in prev["clips"] if "error" not in c}
         if done:
             print(f"devam: {len(done)} klip önceki koşudan tamam, atlanıyor")

@@ -37,6 +37,7 @@ from ..domain.taxonomy import CanonicalEventType, legacy_ws_label_from_canonical
 from ..events import EventEvidenceRef, FrameReference, Risk, WindowReport
 from ..tools.protocols import VlmSchemaError
 from .ingest import grab_frame
+from .thinking import thinking_extra, thinking_on
 
 SYSTEM_TR = (
     "Sen bir güvenlik kamerası görüntü analiz uzmanısın. Sana tek bir kameranın "
@@ -773,6 +774,7 @@ async def interpret_window(
     tier_prompt: str = "",
     context: str = "",
     think: bool = False,
+    effort: str = "",
     stats: dict[str, Any] | None = None,
     timing: dict[str, float | int] | None = None,
     captured_frames: dict[str, tuple[FrameReference, bytes]] | None = None,
@@ -792,6 +794,10 @@ async def interpret_window(
     sınırda kalan pencerenin yeniden sorgusu ve olay-geneli 2. geçiş için.
     """
     start, end = window
+    # Kademe çağrıda verilmezse ayardan gelir; `thinks` gerçekten düşünce
+    # üretilip üretilmeyeceğidir (token tavanı buna bağlı).
+    eff = effort or settings.interpret_effort
+    thinks = thinking_on(think=think, effort=eff)
     frame_refs = build_frame_references(keyframes)
     request_frame_ids = [frame.frame_id for frame in frame_refs]
     # frame_width>512: istemci tarafı yükseltme — dinamik çözünürlük daha çok
@@ -821,9 +827,10 @@ async def interpret_window(
             model=model or settings.main_model,
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": content}],
-            max_tokens=(max(4000, settings.interpret_max_tokens) if think
+            max_tokens=(max(4000, settings.interpret_max_tokens) if thinks
                         else settings.interpret_max_tokens),
-            temperature=0,
+            temperature=(settings.interpret_think_temp
+                         if thinks and settings.interpret_think_temp > 0 else 0),
             # stats isteniyorsa dal token olasılığı da toplanır (yanıt gövdesine
             # birkaç KB ekler, üretimi değiştirmez — grammar maskesi öncesi inanç)
             logprobs=stats is not None,
@@ -843,14 +850,16 @@ async def interpret_window(
                 # 36 → 75 t/s kazandırıyor. Eski "mmproj+MTP çöker" notu b10234'te
                 # ARTIK GEÇERLİ DEĞİL (korumasız görüntü isteği sorunsuz çalıştı).
                 "speculative.n_max": 0,
-                "chat_template_kwargs": {"enable_thinking": think},
-                # Düşünme BÜTÇESİ (yalnız tırmandırma yolu): 24-akış soak ölçümü
+                # Düşünme anahtarları model AİLESİNE göre çevrilir (Qwen3.6
+                # ikili enable_thinking ↔ Qwen3.8 kademeli reasoning_effort) ve
+                # bütçe HER düşünen çağrıda uygulanır: 24-akış soak ölçümü
                 # (2026-08-07) — bütçesiz düşünme 4000-token tavanı yiyip JSON'u
                 # yarıda bırakıyor, tırmandırmaların %45'i şema hatasıyla TÜM
                 # maliyeti çöpe atıyordu. 2500'de zorla kapanır; kalan ~1500 token
                 # şema-geçerli rapora yeter (rapor ~200-400 token). Kırpılmış
-                # düşünce < başarısız çağrı.
-                **({"reasoning_budget_tokens": 2500} if think else {}),
+                # düşünce < başarısız çağrı. Gerekçenin tamamı thinking.py'de.
+                **thinking_extra(think=think, effort=eff,
+                                 budget=settings.interpret_think_budget),
             },
         )
     finally:

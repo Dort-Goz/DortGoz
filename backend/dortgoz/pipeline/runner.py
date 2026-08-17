@@ -744,6 +744,7 @@ async def run_video(
                             path, (start, end), keyframes,
                             meta=percep.meta_text() if percep else "",
                             model=settings.second_opinion_model,
+                            effort=settings.second_opinion_effort,
                             system_prompt=system_prompt,
                             task_prompt=task_prompt, context=hint,
                             timing=so_timing,
