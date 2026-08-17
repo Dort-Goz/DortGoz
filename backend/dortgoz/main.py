@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
@@ -44,6 +45,7 @@ from .services.analysis_job import (
 from .services.deployment_readiness import DeploymentReadinessService
 from .services.execution_coordinator import ExecutionCoordinator
 from .services.run_identity import safe_run_file
+from .services.startup_reconciliation import StartupReconciliationService
 from .ws import ConnectionManager, replay_jsonl
 
 app = FastAPI(title="Dörtgöz", version="0.1.0")
@@ -87,6 +89,29 @@ execution_coordinator = ExecutionCoordinator(
     settings.event_store_path or settings.runs_dir / ".execution-coordination.sqlite3"
 )
 app.state.execution_coordinator = execution_coordinator
+BACKEND_BOOT_ID = uuid4().hex
+startup_reconciliation = StartupReconciliationService(
+    api_runtime.repository,
+    execution_coordinator,
+    boot_id=BACKEND_BOOT_ID,
+)
+app.state.startup_reconciliation = startup_reconciliation
+
+
+def _reconcile_persistent_work_on_startup() -> None:
+    """Çöken eğitim işlerini terminal yap; canlı iş sahibine dokunma."""
+
+    report = startup_reconciliation.reconcile()
+    if report.training_interrupted or report.training_conflicts:
+        LOGGER.warning(
+            "başlangıç uzlaştırması: interrupted=%s conflicts=%s active_skipped=%s",
+            report.training_interrupted,
+            report.training_conflicts,
+            report.training_active_skipped,
+        )
+
+
+app.router.add_event_handler("startup", _reconcile_persistent_work_on_startup)
 
 
 async def ensure_analysis_ready() -> None:

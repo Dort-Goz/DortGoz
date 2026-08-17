@@ -42,6 +42,14 @@ class LivePreemptionTimeout(ExecutionCoordinationError):
     pass
 
 
+@dataclass(frozen=True, slots=True)
+class ExclusiveLeaseOwner:
+    workload: ExclusiveWorkload
+    owner_pid: int
+    owner_ref: str
+    owner_boot_id: str
+
+
 @dataclass(slots=True)
 class LiveExecutionLease:
     coordinator: ExecutionCoordinator
@@ -98,9 +106,17 @@ class ExecutionCoordinator:
             raise ValueError("timeout_seconds pozitif olmalıdır")
         return await asyncio.to_thread(self._acquire_live, timeout_seconds)
 
-    def acquire_exclusive(self, workload: ExclusiveWorkload) -> ExclusiveExecutionLease:
+    def acquire_exclusive(
+        self,
+        workload: ExclusiveWorkload,
+        *,
+        owner_ref: str = "",
+        owner_boot_id: str = "",
+    ) -> ExclusiveExecutionLease:
         """Canlı veya başka münhasır iş yoksa tek münhasır lease'i al."""
 
+        if len(owner_ref) > 240 or len(owner_boot_id) > 64:
+            raise ValueError("lease sahip kimliği izin verilen uzunluğu aşıyor")
         lease_id = f"{workload.value}-{uuid4().hex}"
         with self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -124,13 +140,44 @@ class ExecutionCoordinator:
             connection.execute(
                 """
                 INSERT INTO execution_exclusive_lease(
-                    slot, lease_id, workload, owner_pid, stop_requested, acquired_at
-                ) VALUES (1, ?, ?, ?, 0, ?)
+                    slot, lease_id, workload, owner_pid, owner_ref,
+                    owner_boot_id, stop_requested, acquired_at
+                ) VALUES (1, ?, ?, ?, ?, ?, 0, ?)
                 """,
-                (lease_id, workload.value, os.getpid(), time.time()),
+                (
+                    lease_id,
+                    workload.value,
+                    os.getpid(),
+                    owner_ref,
+                    owner_boot_id,
+                    time.time(),
+                ),
             )
             connection.commit()
         return ExclusiveExecutionLease(self, lease_id, workload)
+
+    def active_exclusive(self) -> ExclusiveLeaseOwner | None:
+        """Canlı PID'ye ait güncel münhasır iş sahibini döndür."""
+
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._discard_dead_processes(connection)
+            row = connection.execute(
+                """
+                SELECT workload, owner_pid, owner_ref, owner_boot_id
+                FROM execution_exclusive_lease
+                WHERE slot = 1
+                """
+            ).fetchone()
+            connection.commit()
+        if row is None:
+            return None
+        return ExclusiveLeaseOwner(
+            workload=ExclusiveWorkload(row["workload"]),
+            owner_pid=int(row["owner_pid"]),
+            owner_ref=str(row["owner_ref"]),
+            owner_boot_id=str(row["owner_boot_id"]),
+        )
 
     def _acquire_live(self, timeout_seconds: float) -> LiveExecutionLease:
         lease_id = f"live-{uuid4().hex}"
@@ -213,11 +260,29 @@ class ExecutionCoordinator:
                     lease_id TEXT NOT NULL UNIQUE,
                     workload TEXT NOT NULL,
                     owner_pid INTEGER NOT NULL,
+                    owner_ref TEXT NOT NULL DEFAULT '',
+                    owner_boot_id TEXT NOT NULL DEFAULT '',
                     stop_requested INTEGER NOT NULL CHECK (stop_requested IN (0, 1)),
                     acquired_at REAL NOT NULL
                 );
                 """
             )
+            columns = {
+                row["name"]
+                for row in connection.execute(
+                    "PRAGMA table_info(execution_exclusive_lease)"
+                ).fetchall()
+            }
+            if "owner_ref" not in columns:
+                connection.execute(
+                    "ALTER TABLE execution_exclusive_lease "
+                    "ADD COLUMN owner_ref TEXT NOT NULL DEFAULT ''"
+                )
+            if "owner_boot_id" not in columns:
+                connection.execute(
+                    "ALTER TABLE execution_exclusive_lease "
+                    "ADD COLUMN owner_boot_id TEXT NOT NULL DEFAULT ''"
+                )
             self._discard_dead_processes(connection)
 
     @contextmanager
@@ -288,6 +353,7 @@ def _process_is_alive(pid: int) -> bool:
 
 __all__ = [
     "ExclusiveExecutionLease",
+    "ExclusiveLeaseOwner",
     "ExclusiveWorkload",
     "ExclusiveWorkloadActive",
     "ExecutionCoordinationError",

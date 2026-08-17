@@ -746,12 +746,18 @@ class InMemoryEventRepository:
                     TrainingJobStatus.FAILED,
                     TrainingJobStatus.CANCELLED,
                     TrainingJobStatus.BUDGET_STOPPED,
+                    TrainingJobStatus.INTERRUPTED,
                 },
             }
             if job.status not in allowed.get(current.status, set()):
                 raise RepositoryConflictError(
                     f"geçersiz training job geçişi: {current.status.value} -> {job.status.value}"
                 )
+            if (
+                current.status == TrainingJobStatus.RUNNING
+                and job.worker_boot_id != current.worker_boot_id
+            ):
+                raise RepositoryConflictError("training job worker boot kimliği değiştirilemez")
             if job.status == TrainingJobStatus.RUNNING and any(
                 item.status == TrainingJobStatus.RUNNING
                 for item in self._training_jobs.values()

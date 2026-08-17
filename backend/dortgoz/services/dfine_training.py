@@ -144,6 +144,7 @@ class DfineTrainingService:
         active_analysis_probe: Callable[[], bool] | None = None,
         cuda_probe: Callable[[Path, int], None] | None = None,
         execution_coordinator: ExecutionCoordinator | None = None,
+        worker_boot_id: str | None = None,
     ) -> None:
         self.repository = repository
         self.workspace_root = workspace_root.resolve()
@@ -157,6 +158,9 @@ class DfineTrainingService:
         self.active_analysis_probe = active_analysis_probe or (lambda: False)
         self.cuda_probe = cuda_probe or _validate_cuda_runtime
         self.execution_coordinator = execution_coordinator
+        self.worker_boot_id = worker_boot_id or uuid4().hex
+        if re.fullmatch(r"[0-9a-f]{32}", self.worker_boot_id) is None:
+            raise ValueError("worker_boot_id 32 karakter küçük harf hex olmalıdır")
         if not self.runs_root.is_relative_to(self.workspace_root):
             raise ValueError("runs_root workspace içinde olmalıdır")
         if not self.frame_root.is_dir():
@@ -288,7 +292,9 @@ class DfineTrainingService:
         if self.execution_coordinator is not None:
             try:
                 exclusive_lease = self.execution_coordinator.acquire_exclusive(
-                    ExclusiveWorkload.TRAINING
+                    ExclusiveWorkload.TRAINING,
+                    owner_ref=job.job_id,
+                    owner_boot_id=self.worker_boot_id,
                 )
             except LiveWorkloadActive as exc:
                 raise DfineTrainingError("LIVE_ANALYSIS_ACTIVE", str(exc)) from exc
@@ -360,6 +366,7 @@ class DfineTrainingService:
             {
                 **job.model_dump(),
                 "status": TrainingJobStatus.RUNNING,
+                "worker_boot_id": self.worker_boot_id,
                 "started_at": now,
                 "updated_at": now,
                 "revision": job.revision + 1,

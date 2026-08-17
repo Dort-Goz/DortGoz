@@ -26,7 +26,7 @@ from ..domain.priority import InterventionPriority
 from ..domain.provenance import HumanReview, TraceRecord
 from ..domain.training import TrainingFrameReview, TrainingSample
 from ..domain.video import VideoMetadata
-from .errors import RepositoryError
+from .errors import RepositoryConflictError, RepositoryError
 from .memory import InMemoryEventRepository
 
 _T = TypeVar("_T")
@@ -688,6 +688,27 @@ class SqliteEventRepository(InMemoryEventRepository):
             ),
         )
 
+    def _write_training_job_cas(self, item: TrainingJob) -> None:
+        cursor = self._connection.execute(
+            """
+            UPDATE training_jobs
+            SET status = ?, updated_at = ?, revision = ?, payload = ?
+            WHERE job_id = ? AND revision = ?
+            """,
+            (
+                item.status.value,
+                item.updated_at.isoformat(),
+                item.revision,
+                self._json_payload(item),
+                item.job_id,
+                item.revision - 1,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise RepositoryConflictError(
+                f"training job başka süreçte değişti: {item.job_id}"
+            )
+
     def _write_model_version(self, item: ModelVersion) -> None:
         self._connection.execute(
             """
@@ -759,6 +780,9 @@ class SqliteEventRepository(InMemoryEventRepository):
                     result = operation()
                     writer(result)
                 return result
+            except RepositoryConflictError:
+                self._load_database()
+                raise
             except sqlite3.Error as exc:
                 self._load_database()
                 raise RepositoryError(f"event store yazılamadı: {exc}") from exc
@@ -1064,7 +1088,7 @@ class SqliteEventRepository(InMemoryEventRepository):
 
     def update_training_job(self, job: TrainingJob) -> TrainingJob:
         def write(saved: TrainingJob) -> None:
-            self._write_training_job(saved)
+            self._write_training_job_cas(saved)
             self._write_audit(
                 action=f"training_job_{saved.status.value}",
                 subject_type="training_job",

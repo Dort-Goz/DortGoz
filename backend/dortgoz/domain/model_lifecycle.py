@@ -25,6 +25,7 @@ class TrainingJobStatus(StrEnum):
     FAILED = "failed"
     CANCELLED = "cancelled"
     BUDGET_STOPPED = "budget_stopped"
+    INTERRUPTED = "interrupted"
 
 
 class ModelStage(StrEnum):
@@ -117,6 +118,7 @@ class TrainingJob(BaseModel):
     status: TrainingJobStatus = TrainingJobStatus.QUEUED
     requested_by: str = Field(min_length=1, max_length=120)
     output_ref: str = Field(min_length=1)
+    worker_boot_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
     checkpoint_ref: str | None = None
     checkpoint_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     started_at: datetime | None = None
@@ -172,6 +174,7 @@ class TrainingJob(BaseModel):
                         self.finished_at,
                         self.checkpoint_ref,
                         self.checkpoint_sha256,
+                        self.worker_boot_id,
                         self.error_code,
                         self.error_message,
                     )
