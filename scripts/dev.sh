@@ -8,6 +8,8 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MODE="${1:-mock}"
+REAL_PROFILE="competition-real"
+REAL_EVENT_STORE="${DORTGOZ_EVENT_STORE_PATH:-runs/event_memory.sqlite3}"
 
 case "$MODE" in
   mock|real) ;;
@@ -35,7 +37,10 @@ echo "→ bağımlılıklar"
 [ -d "$ROOT/frontend/node_modules" ] || (cd "$ROOT/frontend" && bun install --frozen-lockfile)
 
 if [ "$MODE" = "real" ]; then
-  (cd "$ROOT/backend" && uv run python ../scripts/preflight.py --root .. --mode real --check-tools)
+  (cd "$ROOT/backend" && DORTGOZ_MOCK=0 \
+    DORTGOZ_DEPLOYMENT_PROFILE="$REAL_PROFILE" \
+    DORTGOZ_EVENT_STORE_PATH="$REAL_EVENT_STORE" \
+    uv run python ../scripts/preflight.py --root .. --mode real --check-tools)
 fi
 
 if [ "$MODE" = "real" ]; then
@@ -51,7 +56,10 @@ trap 'kill 0' EXIT
 if [ "$MODE" = "mock" ]; then
   (cd "$ROOT/backend" && DORTGOZ_MOCK=1 uv run uvicorn dortgoz.main:app --reload --port 8000) &
 else
-  (cd "$ROOT/backend" && DORTGOZ_MOCK=0 uv run uvicorn dortgoz.main:app --reload --port 8000) &
+  (cd "$ROOT/backend" && DORTGOZ_MOCK=0 \
+    DORTGOZ_DEPLOYMENT_PROFILE="$REAL_PROFILE" \
+    DORTGOZ_EVENT_STORE_PATH="$REAL_EVENT_STORE" \
+    uv run uvicorn dortgoz.main:app --reload --port 8000) &
 fi
 (cd "$ROOT/frontend" && bun run dev) &
 wait

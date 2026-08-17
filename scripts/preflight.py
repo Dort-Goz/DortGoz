@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -104,8 +105,19 @@ def _verify_real_config(root: Path, errors: list[str]) -> None:
         errors.append("gerçek mod için .env yok; .env.example dosyasını kopyalayıp doldurun")
         return
     values = _read_env(env_path)
+    values.update(
+        {
+            key: value
+            for key, value in os.environ.items()
+            if key.startswith("DORTGOZ_")
+        }
+    )
     if values.get("DORTGOZ_MOCK", "").casefold() in {"1", "true", "yes", "on"}:
         errors.append("gerçek modda DORTGOZ_MOCK=0 olmalı")
+    if values.get("DORTGOZ_DEPLOYMENT_PROFILE") != "competition-real":
+        errors.append("gerçek modda DORTGOZ_DEPLOYMENT_PROFILE=competition-real olmalı")
+    if not values.get("DORTGOZ_EVENT_STORE_PATH"):
+        errors.append("competition-real profilinde DORTGOZ_EVENT_STORE_PATH zorunlu")
     base_url = values.get("DORTGOZ_LLAMA_BASE_URL", "")
     if not base_url or "<" in base_url or any(host in base_url.casefold() for host in FORBIDDEN_CLOUD_HOSTS):
         errors.append("DORTGOZ_LLAMA_BASE_URL yerel/özel ağ OpenAI-uyumlu endpoint'i olmalı")

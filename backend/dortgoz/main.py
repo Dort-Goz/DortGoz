@@ -35,9 +35,11 @@ from .repositories.errors import (
 )
 from .services.analysis_job import (
     AnalysisJobExecutionDisabled,
+    AnalysisJobNotReady,
     AnalysisJobStartError,
     CanonicalAnalysisJobService,
 )
+from .services.deployment_readiness import DeploymentReadinessService
 from .ws import ConnectionManager, replay_jsonl
 
 app = FastAPI(title="Dörtgöz", version="0.1.0")
@@ -58,6 +60,20 @@ app.add_exception_handler(Exception, domain_exception_handler)
 
 MOCK_EVENTS = Path(__file__).parent / "mock" / "sample_events.jsonl"
 
+deployment_readiness = DeploymentReadinessService(settings, api_runtime.repository)
+app.state.deployment_readiness = deployment_readiness
+
+
+async def ensure_analysis_ready() -> None:
+    """Yarışma profilinde eksik bileşenle gerçek analiz başlatma."""
+
+    if settings.runtime_profile != "competition-real":
+        return
+    report = await deployment_readiness.inspect()
+    if not report.ready:
+        detail = "; ".join(report.blocking_reasons())
+        raise AnalysisJobNotReady(f"competition-real analiz kapısı kapalı: {detail}")
+
 # Sınır = şartnamedeki 24 kamera senaryosu (+1 pay 5×5 canlı ızgara). Prova
 # ölçümü (2026-08-14, 24 akış × 20 dk gerçekçi kayıt): 24/24 tamamlandı, hız
 # medyanı 0,85× — sistem yavaşlar ama düşmez, RunStatus.speed dürüst ölçümü
@@ -69,6 +85,7 @@ analysis_jobs = CanonicalAnalysisJobService(
     max_active=settings.max_feeds,
     enabled=lambda: not settings.mock,
     finalize_run=api_runtime.incident_media.finalize_analysis,
+    pre_start=ensure_analysis_ready,
 )
 # REST ve WS bu app composition sınırındaki aynı canonical job instance'ını kullanır;
 # router servisi ``app.state`` üzerinden alır ve ``main`` modülünü import etmez.
@@ -77,58 +94,17 @@ app.state.analysis_jobs = analysis_jobs
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "mock": settings.mock}
+    return {"status": "ok", "mock": settings.mock, "profile": settings.runtime_profile}
 
 
 @app.get("/ready")
 async def readiness() -> JSONResponse:
-    """Yerel deployment bağımlılıklarını ayrı ayrı gösteren hazır olma kapısı.
+    """Profilin gerçek bağımlılıklarını ayrı ayrı gösteren hazır olma kapısı."""
 
-    Bu uç model endpoint'ine ağ isteği yapmaz: air-gapped ortamda yanlışlıkla dış
-    egress başlatmak yerine manifest/yapılandırma hazırlığını raporlar. Gerçek
-    profil, ilk candidate çağrısında ayrıca dosya hash'ini denetler.
-    """
-
-    storage_ready = True
-    storage_detail = "ok"
-    try:
-        settings.media_dir.mkdir(parents=True, exist_ok=True)
-        settings.runs_dir.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        storage_ready = False
-        storage_detail = f"{type(exc).__name__}: {exc}"
-
-    event_store_path = settings.event_store_path
-    event_store = {
-        "ready": True,
-        "mode": getattr(api_runtime.repository, "persistence_mode", "memory"),
-        "path": str(event_store_path) if event_store_path is not None else None,
-    }
-    if settings.mock:
-        model = {"ready": True, "mode": "mock", "endpoint_checked": False}
-    elif settings.vlm_manifest_path is None:
-        model = {
-            "ready": False,
-            "mode": "local_vlm",
-            "detail": "DORTGOZ_VLM_MANIFEST_PATH ayarlanmadı",
-            "endpoint_checked": False,
-        }
-    else:
-        model = {
-            "ready": settings.vlm_manifest_path.is_file(),
-            "mode": "local_vlm",
-            "manifest_path": str(settings.vlm_manifest_path),
-            "endpoint_checked": False,
-        }
-    components = {
-        "storage": {"ready": storage_ready, "detail": storage_detail},
-        "event_store": event_store,
-        "model": model,
-    }
-    ready = all(component["ready"] for component in components.values())
+    report = await deployment_readiness.inspect(force=True)
     return JSONResponse(
-        status_code=200 if ready else 503,
-        content={"status": "ready" if ready else "not_ready", "components": components},
+        status_code=200 if report.ready else 503,
+        content=report.as_dict(),
     )
 
 
@@ -301,7 +277,10 @@ async def live_start(body: dict | None = None) -> list[dict]:
     if settings.mock:
         raise HTTPException(status_code=409, detail="mock kipte canlı akış çekilmez")
     try:
+        await ensure_analysis_ready()
         statuses = await live_cctv.start(mode=(body or {}).get("mode", ""))
+    except AnalysisJobNotReady as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
     except (RuntimeError, FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     return [vars(s) for s in statuses]

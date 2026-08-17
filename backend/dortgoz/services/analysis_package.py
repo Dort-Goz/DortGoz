@@ -23,12 +23,12 @@ import shutil
 import zipfile
 from pathlib import Path
 
+from .. import session
 from ..agent.memory import Incident, Ledger
 from ..config import settings
 from ..events import IncidentUpdate, WindowReport
 from ..pipeline.ingest import grab_frame
 from ..pipeline.runner import resolve_media
-from .. import session
 
 FORMAT_VERSION = 1
 _CLOCK = "%02d:%02d"

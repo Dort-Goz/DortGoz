@@ -8,6 +8,7 @@ services:
     image: dortgoz-api:local
     environment:
       DORTGOZ_MOCK: "${DORTGOZ_MOCK:-1}"
+      DORTGOZ_DEPLOYMENT_PROFILE: "${DORTGOZ_DEPLOYMENT_PROFILE:-development}"
       DORTGOZ_EVENT_STORE_PATH: runs/event_memory.sqlite3
       DORTGOZ_LLAMA_BASE_URL: "${DORTGOZ_LLAMA_BASE_URL:-http://host.docker.internal:8080/v1}"
       DORTGOZ_API_KEY: "${DORTGOZ_API_KEY:-local}"

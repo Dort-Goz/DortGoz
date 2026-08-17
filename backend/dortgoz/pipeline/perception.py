@@ -169,17 +169,22 @@ _detectors: dict[str, _Detector] = {}
 _detector_override: Path | None = None
 
 
-def resolve_production_model_path() -> Path:
+def resolve_production_model_path(
+    *,
+    active_manifest: Path | None = None,
+    fallback_onnx: str | Path | None = None,
+    workspace_root: Path | None = None,
+) -> Path:
     """Resolve the promoted ONNX and reject a changed production artifact."""
 
     if _detector_override is not None:
         return _detector_override
-    manifest = Path(settings.dfine_active_manifest).resolve()
+    manifest = Path(active_manifest or settings.dfine_active_manifest).resolve()
     if not manifest.exists():
-        return Path(settings.dfine_onnx).resolve()
+        return Path(fallback_onnx or settings.dfine_onnx).resolve()
     if manifest.is_symlink() or not manifest.is_file() or manifest.stat().st_size > 1024 * 1024:
         raise ValueError(f"D-FINE active manifest geçersiz: {manifest}")
-    workspace = Path(settings.dfine_workspace_root).resolve()
+    workspace = Path(workspace_root or settings.dfine_workspace_root).resolve()
     if not manifest.is_relative_to(workspace):
         raise ValueError("D-FINE active manifest workspace dışında")
     try:

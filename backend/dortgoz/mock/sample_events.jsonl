@@ -1,21 +1,19 @@
 # Şartnamenin örnek senaryosu (forklift kazası) — mock olay akışı.
 # Her satır bir Event zarfı; `delay` alanı bir önceki olaydan sonraki bekleme (sn).
 {"delay": 0.5, "payload": {"type": "run_status", "run_id": "mock-001", "state": "processing", "progress": 0.05, "detail": "Video alındı: saha_kamera_01.mp4 (mock)"}}
-{"delay": 0.8, "payload": {"type": "agent_step", "node": "perceive", "status": "start", "detail": "Algı katmanı: D-FINE + BYTE + RTMPose (mock)"}}
-{"delay": 1.2, "payload": {"type": "agent_step", "node": "perceive", "status": "end", "detail": "3 olay adayı, 7 iz"}}
-{"delay": 0.6, "payload": {"type": "agent_step", "node": "triage", "status": "start", "detail": "Ön eleme (MiniCPM-V 4.6 @ vLLM)"}}
+{"delay": 0.8, "payload": {"type": "agent_step", "node": "perceive", "status": "start", "detail": "Video pencereleme + hareket profili (temsili mock akışı)"}}
+{"delay": 1.2, "payload": {"type": "agent_step", "node": "perceive", "status": "end", "detail": "3 temsili olay adayı oluşturuldu"}}
+{"delay": 0.6, "payload": {"type": "agent_step", "node": "triage", "status": "start", "detail": "Aday aralık seçimi: MotionBaseline / yapılandırılırsa SigLIP"}}
 {"delay": 0.9, "payload": {"type": "agent_step", "node": "triage", "status": "end", "detail": "Pencere 00:00–00:30: dikkat gerektiriyor"}}
-{"delay": 0.5, "payload": {"type": "agent_step", "node": "interpret", "status": "start", "detail": "Yorumlama: 6 anahtar kare + dedektör metaverisi"}}
+{"delay": 0.5, "payload": {"type": "agent_step", "node": "interpret", "status": "start", "detail": "Yerel VLM sözleşmesi: 6 anahtar kare + aday aralığı metaverisi"}}
 {"delay": 1.5, "payload": {"type": "window_report", "window_start": 0, "window_end": 30, "summary": "Depo sahasında forklift yük taşırken dengesini kaybetti ve devrildi. Operatör yerde hareketsiz görünüyor. Çevrede iki personel olay yerine yaklaşıyor.", "events": [{"t": 15, "desc": "Forklift devrilmesi", "severity_hint": "yuksek"}, {"t": 20, "desc": "Yerde hareketsiz kişi", "severity_hint": "kritik"}], "uncertainties": ["Kişinin bilinç durumu görüntüden doğrulanamıyor"]}}
-{"delay": 0.7, "payload": {"type": "incident_update", "incident_id": "INC-001", "t": 15, "phase": "basladi", "title": "Forklift devrilmesi", "risk": "yuksek", "detail": "Yük taşıma sırasında denge kaybı", "boxes": [{"x1": 0.32, "y1": 0.41, "x2": 0.61, "y2": 0.78, "label": "forklift", "track_id": 4, "conf": 0.93}]}}
-{"delay": 0.9, "payload": {"type": "incident_update", "incident_id": "INC-002", "t": 20, "phase": "basladi", "title": "Yerde hareketsiz kişi", "risk": "kritik", "detail": "RTMPose: yatay poz, 10 sn+ hareketsiz (iz #3)", "boxes": [{"x1": 0.45, "y1": 0.62, "x2": 0.58, "y2": 0.74, "label": "person", "track_id": 3, "conf": 0.88}]}}
-{"delay": 0.8, "payload": {"type": "agent_step", "node": "oversight", "status": "start", "detail": "Tutarlılık denetimi: rapor ↔ dedektör ↔ normal-durum kuralları"}}
+{"delay": 0.7, "payload": {"type": "incident_update", "incident_id": "INC-001", "t": 15, "phase": "basladi", "title": "Forklift devrilmesi", "risk": "yuksek", "detail": "Yük taşıma sırasında denge kaybı", "boxes": [{"x1": 0.32, "y1": 0.41, "x2": 0.61, "y2": 0.78, "label": "forklift", "conf": 0.93}]}}
+{"delay": 0.9, "payload": {"type": "incident_update", "incident_id": "INC-002", "t": 20, "phase": "basladi", "title": "Yerde hareketsiz kişi", "risk": "kritik", "detail": "Görsel yorum: kişi yerde yatay görünüyor; bilinç durumu doğrulanamaz", "boxes": [{"x1": 0.45, "y1": 0.62, "x2": 0.58, "y2": 0.74, "label": "person", "conf": 0.88}]}}
+{"delay": 0.8, "payload": {"type": "agent_step", "node": "oversight", "status": "start", "detail": "Tutarlılık denetimi: rapor ↔ kanıt kareleri ↔ risk kuralları"}}
 {"delay": 1.0, "payload": {"type": "agent_step", "node": "oversight", "status": "end", "detail": "Tutarlılık 0.92 — onaylandı (eşik 0.7)"}}
-{"delay": 0.6, "payload": {"type": "tool_call", "tool": "lookup_procedure", "args": {"event": "yerde_hareketsiz_kisi"}, "rationale": "Kritik olay için prosedür tabanı sorgusu", "result": "İSG-7: 30 sn üzeri hareketsiz kişi → sağlık ekibi + alan güvenliği"}}
-{"delay": 0.7, "payload": {"type": "tool_call", "tool": "saglik_ekibi_cagir", "args": {"incident": "INC-002"}, "rationale": "İSG-7 gereği: hareketsiz kişi tespiti", "result": "mock: çağrı iletildi"}}
-{"delay": 0.6, "payload": {"type": "actuator_request", "request_id": "req-7f3a", "actuator": "alan_kapat", "reason": "İSG-7: olay bölgesinin güvenlik çemberine alınması önerilir (forklift devrilme alanı)", "incident_id": "INC-001"}}
+{"delay": 0.6, "payload": {"type": "tool_call", "tool": "lookup_procedure", "args": {"event": "yerde_hareketsiz_kisi"}, "rationale": "Kritik olay için kaynaklı yerel prosedür aranır", "result": "Onaylı yerel prosedür belgesi bulunamadı; operatör incelemesi gerekli"}}
 {"delay": 0.8, "payload": {"type": "incident_update", "incident_id": "INC-003", "t": 35, "phase": "basladi", "title": "Personel toplanması", "risk": "orta", "detail": "Olay çevresinde 4+ kişi — müdahale alanı daralıyor", "needs_review": true, "review_reason": "sınırda pencereden tırmandırmayla kurtarıldı (P(dikkat)=0.32)"}}
 {"delay": 1.0, "payload": {"type": "ui_command", "action": "seek_video", "args": {"t": 15}}}
 {"delay": 0.4, "payload": {"type": "ui_command", "action": "highlight_incident", "args": {"incident_id": "INC-001"}}}
-{"delay": 0.8, "payload": {"type": "chat_message", "role": "agent", "text": "Özet: 00:15'te forklift devrilmesi, 00:20'de yerde hareketsiz kişi tespit edildi. Risk: KRİTİK. Sağlık ekibi çağrıldı (İSG-7). Alan kapatma onayınızı bekliyorum.", "streaming": false}}
+{"delay": 0.8, "payload": {"type": "chat_message", "role": "agent", "text": "Özet: 00:15'te forklift devrilmesi, 00:20'de yerde hareketsiz kişi görüldü. Risk: KRİTİK. Dış sisteme çağrı yapılmadı. Onaylı yerel prosedür yüklenene kadar operatör incelemesi gerekli.", "streaming": false}}
 {"delay": 0.6, "payload": {"type": "run_status", "run_id": "mock-001", "state": "done", "progress": 1.0, "detail": "5 dk video 1 dk 47 sn'de işlendi (mock)"}}

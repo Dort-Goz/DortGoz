@@ -20,6 +20,7 @@ RunVideoCallable = Callable[..., Awaitable[None]]
 EnabledPredicate = Callable[[], bool]
 IdFactory = Callable[[], str]
 FinalizeRunCallable = Callable[[str], Awaitable[object]]
+PreStartCallable = Callable[[], Awaitable[None]]
 
 
 class AnalysisJobStatus(StrEnum):
@@ -45,6 +46,10 @@ class AnalysisJobCapacityError(AnalysisJobStartError):
 
 class AnalysisJobExecutionDisabled(AnalysisJobStartError):
     """Execution is disabled while the WS mock fixture owns the UI stream."""
+
+
+class AnalysisJobNotReady(AnalysisJobStartError):
+    """Required production components failed the deployment readiness gate."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +152,7 @@ class CanonicalAnalysisJobService:
         enabled: EnabledPredicate = lambda: True,
         id_factory: IdFactory = lambda: uuid4().hex,
         finalize_run: FinalizeRunCallable | None = None,
+        pre_start: PreStartCallable | None = None,
     ) -> None:
         if max_active < 1:
             raise ValueError("max_active en az 1 olmalı")
@@ -158,6 +164,7 @@ class CanonicalAnalysisJobService:
         self._enabled = enabled
         self._id_factory = id_factory
         self._finalize_run = finalize_run
+        self._pre_start = pre_start
         self._lock = asyncio.Lock()
         self._records: dict[str, _JobRecord] = {}
         self._active_by_feed: dict[str, str] = {}
@@ -179,6 +186,8 @@ class CanonicalAnalysisJobService:
 
         if not self._enabled():
             raise AnalysisJobExecutionDisabled("mock fixture etkin; gerçek runner başlatılmadı")
+        if self._pre_start is not None:
+            await self._pre_start()
 
         defaults = self._defaults()
         effective = EffectiveRuntimeConfig(
@@ -440,6 +449,7 @@ __all__ = [
     "AnalysisJobCapacityError",
     "AnalysisJobConflict",
     "AnalysisJobExecutionDisabled",
+    "AnalysisJobNotReady",
     "AnalysisJobSnapshot",
     "AnalysisJobStartError",
     "AnalysisJobStatus",

@@ -91,6 +91,11 @@ if (-not (Test-Path -LiteralPath $FrontendDir)) {
 }
 
 if (-not $UseMock) {
+    $env:DORTGOZ_MOCK = "0"
+    $env:DORTGOZ_DEPLOYMENT_PROFILE = "competition-real"
+    if ([string]::IsNullOrWhiteSpace($env:DORTGOZ_EVENT_STORE_PATH)) {
+        $env:DORTGOZ_EVENT_STORE_PATH = "runs/event_memory.sqlite3"
+    }
     $null = Resolve-Executable -Name "ffmpeg"
     $null = Resolve-Executable -Name "ffprobe"
     if (-not (Test-Path -LiteralPath (Join-Path $Root ".env"))) {
@@ -125,8 +130,8 @@ if (-not (Test-Path -LiteralPath (Join-Path $FrontendDir "node_modules"))) {
     }
 }
 
-$backendJob = Start-Job -Name "dortgoz-backend" -ArgumentList $BackendDir, $uvPath, $UseMock -ScriptBlock {
-    param($WorkingDirectory, $UvExecutable, $UseMock)
+$backendJob = Start-Job -Name "dortgoz-backend" -ArgumentList $BackendDir, $uvPath, $UseMock, $env:DORTGOZ_DEPLOYMENT_PROFILE, $env:DORTGOZ_EVENT_STORE_PATH -ScriptBlock {
+    param($WorkingDirectory, $UvExecutable, $UseMock, $DeploymentProfile, $EventStorePath)
 
     $ErrorActionPreference = "Continue"
     Set-Location $WorkingDirectory
@@ -134,6 +139,8 @@ $backendJob = Start-Job -Name "dortgoz-backend" -ArgumentList $BackendDir, $uvPa
         $env:DORTGOZ_MOCK = "1"
     } else {
         $env:DORTGOZ_MOCK = "0"
+        $env:DORTGOZ_DEPLOYMENT_PROFILE = $DeploymentProfile
+        $env:DORTGOZ_EVENT_STORE_PATH = $EventStorePath
     }
     # Windows'ta uvicorn --reload SelectorEventLoop kullanır; asyncio subprocess
     # (ffmpeg/ffprobe) desteklenmediği için video hattı NotImplementedError ile düşer.
@@ -151,6 +158,9 @@ $frontendJob = Start-Job -Name "dortgoz-frontend" -ArgumentList $FrontendDir, $b
 $jobs = @($backendJob, $frontendJob)
 
 Write-Host "Dörtgöz geliştirme sunucuları başlatıldı ($(if ($UseMock) { 'mock' } else { 'gerçek' }) mod)." -ForegroundColor Green
+if (-not $UseMock) {
+    Write-Host "Profil: competition-real | SQLite: $env:DORTGOZ_EVENT_STORE_PATH"
+}
 Write-Host "Backend:  http://localhost:8000/health"
 Write-Host "Frontend: http://localhost:5173"
 Write-Host "Durdurmak için Ctrl+C kullanın."

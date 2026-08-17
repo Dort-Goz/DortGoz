@@ -77,7 +77,17 @@ class WeightGuard:
         if not paths:
             log.warning("weight_guard: DORTGOZ_GGUF_PATHS boş — sayfa düşürme "
                         "atlandı, yeniden yükleme bozuk sayfaları bulabilir")
+        can_drop_pages = hasattr(os, "posix_fadvise") and hasattr(
+            os, "POSIX_FADV_DONTNEED"
+        )
+        if paths and not can_drop_pages:
+            log.warning(
+                "weight_guard: işletim sistemi posix_fadvise desteklemiyor — "
+                "yalnız model unload uygulandı"
+            )
         for p in paths:
+            if not can_drop_pages:
+                continue
             try:
                 fd = os.open(p, os.O_RDONLY)
                 try:

@@ -11,6 +11,7 @@ from dortgoz.events import Event, OperatorMessage, RunStatus
 from dortgoz.services.analysis_job import (
     AnalysisJobCapacityError,
     AnalysisJobConflict,
+    AnalysisJobNotReady,
     AnalysisJobStatus,
     CanonicalAnalysisJobService,
     EffectiveRuntimeConfig,
@@ -99,6 +100,28 @@ async def test_twenty_identical_starts_invoke_run_video_once(tmp_path: Path) -> 
     assert runner.calls[0][1] == snapshots[0].analysis_id
     assert snapshots[0].run_id == snapshots[0].analysis_id
     await jobs.cancel_all()
+
+
+@pytest.mark.asyncio
+async def test_pre_start_gate_fails_before_runner_or_job_creation(tmp_path: Path) -> None:
+    runner = BlockingRunner()
+
+    async def reject() -> None:
+        raise AnalysisJobNotReady("SQLite hazır değil")
+
+    jobs = CanonicalAnalysisJobService(
+        FakeManager(),
+        runs_dir=tmp_path,
+        max_active=1,
+        run_video=runner,
+        defaults=defaults,
+        pre_start=reject,
+    )
+
+    with pytest.raises(AnalysisJobNotReady, match="SQLite"):
+        await jobs.start("camera.mp4")
+
+    assert runner.calls == []
 
 
 @pytest.mark.asyncio

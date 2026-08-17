@@ -1,6 +1,7 @@
 """Merkezî yapılandırma — tüm dış uçlar ve modlar tek yerden."""
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
@@ -18,6 +19,10 @@ class Settings(BaseSettings):
     # Çalışma modu
     mock: bool = False  # DORTGOZ_MOCK=1 → model/GPU olmadan mock olay akışı
     mock_speed: float = 1.0  # mock yeniden oynatma hız çarpanı
+    # development: eksik opsiyonel algı bileşenlerini açıkça raporlar, fakat
+    # yerel geliştirmeyi engellemez. competition-real: hiçbir üretim bileşeni
+    # eksikken analiz başlatmaz.
+    deployment_profile: Literal["development", "competition-real"] = "development"
 
     # İşleme hattı
     base_fps: float = 1.0  # hareket profili tarama hızı
@@ -179,6 +184,12 @@ class Settings(BaseSettings):
     # Varsayılan bellek adapter'ı test/mock sadeliği için süreç içidir. Docker/
     # offline dağıtım bu yolu ayarlayarak restart sonrası SQLite kalıcılığı açar.
     event_store_path: Path | None = None
+
+    @property
+    def runtime_profile(self) -> Literal["mock", "development", "competition-real"]:
+        """Tek etkili profil; mock bayrağı gerçek çalışmayı her zaman bastırır."""
+
+        return "mock" if self.mock else self.deployment_profile
 
     @field_validator("vlm_manifest_path", "event_store_path", mode="before")
     @classmethod

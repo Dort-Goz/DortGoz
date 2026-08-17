@@ -39,6 +39,7 @@ from ..services.analysis_job import (
     AnalysisJobCapacityError,
     AnalysisJobConflict,
     AnalysisJobExecutionDisabled,
+    AnalysisJobNotReady,
     AnalysisJobStartError,
     CanonicalAnalysisJobService,
 )
@@ -214,6 +215,12 @@ async def analyze_video(
     except AnalysisJobExecutionDisabled as exc:
         return error_response(
             "ANALYSIS_EXECUTION_DISABLED",
+            str(exc),
+            status_code=503,
+        )
+    except AnalysisJobNotReady as exc:
+        return error_response(
+            "SYSTEM_NOT_READY",
             str(exc),
             status_code=503,
         )
