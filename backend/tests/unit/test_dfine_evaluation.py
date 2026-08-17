@@ -32,6 +32,7 @@ from dortgoz.services.dfine_evaluation import (
 )
 from dortgoz.services.dfine_training import ProcessOutcome
 from dortgoz.services.evaluation_report import EvaluationReportError
+from dortgoz.services.execution_coordinator import ExecutionCoordinator
 
 CODE_REVISION = "a" * 40
 
@@ -360,3 +361,22 @@ def test_worker_uses_gpu_budget_and_emits_normalized_report(tmp_path: Path) -> N
     assert runner.cuda_visible_devices == "1"
     assert artifact.map_50_95 == 0.7
     assert report_path.is_file()
+
+
+async def test_detector_evaluation_worker_obeys_live_lease(tmp_path: Path) -> None:
+    workspace, _, _, dfine, plan = _fixture(tmp_path)
+    coordinator = ExecutionCoordinator(tmp_path / "event.sqlite3")
+    live = await coordinator.acquire_live()
+
+    with pytest.raises(EvaluationReportError) as raised:
+        execute_dfine_detector_evaluation(
+            plan=plan,
+            workspace_root=workspace,
+            dfine_repository=dfine,
+            python_executable=tmp_path / "python",
+            runs_root=workspace / "runs",
+            execution_coordinator=coordinator,
+        )
+
+    assert raised.value.code == "LIVE_ANALYSIS_ACTIVE"
+    await live.release_async()

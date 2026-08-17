@@ -42,6 +42,7 @@ from .services.analysis_job import (
     CanonicalAnalysisJobService,
 )
 from .services.deployment_readiness import DeploymentReadinessService
+from .services.execution_coordinator import ExecutionCoordinator
 from .services.run_identity import safe_run_file
 from .ws import ConnectionManager, replay_jsonl
 
@@ -82,6 +83,10 @@ def _observe_mock_replay(task: asyncio.Task[None]) -> None:
 
 deployment_readiness = DeploymentReadinessService(settings, api_runtime.repository)
 app.state.deployment_readiness = deployment_readiness
+execution_coordinator = ExecutionCoordinator(
+    settings.event_store_path or settings.runs_dir / ".execution-coordination.sqlite3"
+)
+app.state.execution_coordinator = execution_coordinator
 
 
 async def ensure_analysis_ready() -> None:
@@ -106,6 +111,7 @@ analysis_jobs = CanonicalAnalysisJobService(
     enabled=lambda: not settings.mock,
     finalize_run=api_runtime.incident_media.finalize_analysis,
     pre_start=ensure_analysis_ready,
+    execution_coordinator=execution_coordinator,
 )
 # REST ve WS bu app composition sınırındaki aynı canonical job instance'ını kullanır;
 # router servisi ``app.state`` üzerinden alır ve ``main`` modülünü import etmez.
@@ -194,7 +200,7 @@ async def import_run(request: Request) -> dict:
 # ---- Canlı CCTV kipi (services/live_cctv) ----
 from .services.live_cctv import LiveCctvService, load_feeds  # noqa: E402
 
-live_cctv = LiveCctvService(manager)
+live_cctv = LiveCctvService(manager, execution_coordinator=execution_coordinator)
 app.state.live_cctv = live_cctv
 
 # ---- Anomali nöbet kuyruğu (services/triage): insan-döngüde karar katmanı ----

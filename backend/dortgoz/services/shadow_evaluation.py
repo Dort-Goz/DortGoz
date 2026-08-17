@@ -21,11 +21,17 @@ from ..config import settings
 from ..domain.dataset import DatasetSplit, DatasetUse, OfflineDatasetManifest
 from ..domain.model_lifecycle import ModelStage, ModelVersion
 from ..pipeline import ingest, perception
-from ..pipeline.runner import run_video
+from ..pipeline.runner import PipelineStopRequested, run_video
 from .dataset_manifest import sha256_file
 from .dfine_deployment import verify_dfine_deployment
 from .dfine_evaluation import inspect_project_revision
 from .evaluation_report import EvaluationReportError, ShadowEvaluationRecord
+from .execution_coordinator import (
+    ExclusiveWorkload,
+    ExclusiveWorkloadActive,
+    ExecutionCoordinator,
+    LiveWorkloadActive,
+)
 
 
 class ShadowCase(BaseModel):
@@ -239,6 +245,7 @@ async def execute_shadow_evaluation(
     runs_root: Path,
     max_minutes: int = 180,
     active_analysis_probe: Callable[[], bool] = lambda: False,
+    execution_coordinator: ExecutionCoordinator | None = None,
     run_video_callable: Callable[..., Awaitable[None]] = run_video,
     duration_probe: Callable[[Path], Awaitable[float]] = ingest.probe_duration,
     peak_ram_probe: Callable[[], float] = lambda: _process_peak_ram_mb(),
@@ -270,7 +277,25 @@ async def execute_shadow_evaluation(
             raise EvaluationReportError(
                 "SHADOW_VIDEO_CHANGED", f"shadow video değişti: {case.video_ref}"
             )
-    if active_analysis_probe():
+    exclusive_lease = None
+    if execution_coordinator is not None:
+        try:
+            exclusive_lease = execution_coordinator.acquire_exclusive(
+                ExclusiveWorkload.SHADOW
+            )
+        except LiveWorkloadActive as exc:
+            raise EvaluationReportError("LIVE_ANALYSIS_ACTIVE", str(exc)) from exc
+        except ExclusiveWorkloadActive as exc:
+            raise EvaluationReportError("EXCLUSIVE_WORKLOAD_ACTIVE", str(exc)) from exc
+
+    def stop_requested() -> bool:
+        return active_analysis_probe() or bool(
+            exclusive_lease is not None and exclusive_lease.stop_requested()
+        )
+
+    if stop_requested():
+        if exclusive_lease is not None:
+            exclusive_lease.release()
         raise EvaluationReportError(
             "LIVE_ANALYSIS_ACTIVE", "canlı analiz varken shadow değerlendirme başlatılamaz"
         )
@@ -292,7 +317,7 @@ async def execute_shadow_evaluation(
         for evaluation_run_id in plan.evaluation_run_ids:
             records: list[ShadowEvaluationRecord] = []
             for case in plan.cases:
-                if active_analysis_probe():
+                if stop_requested():
                     raise EvaluationReportError(
                         "LIVE_ANALYSIS_ACTIVE", "canlı analiz shadow worker'ı durdurdu"
                     )
@@ -307,7 +332,7 @@ async def execute_shadow_evaluation(
                     run_video_callable,
                     video_ref=case.video_ref,
                     run_id=canonical_run_id,
-                    active_analysis_probe=active_analysis_probe,
+                    stop_probe=stop_requested,
                     deadline=deadline,
                 )
                 canonical_artifact = runs / f"{canonical_run_id}.jsonl"
@@ -345,6 +370,9 @@ async def execute_shadow_evaluation(
             previous
         )
         perception.set_detector_override(None)
+        perception.reset_detector_cache()
+        if exclusive_lease is not None:
+            exclusive_lease.release()
     return outputs
 
 
@@ -411,32 +439,47 @@ async def _run_with_guards(
     *,
     video_ref: str,
     run_id: str,
-    active_analysis_probe: Callable[[], bool],
+    stop_probe: Callable[[], bool],
     deadline: float,
 ) -> None:
-    task = asyncio.create_task(runner(_NullManager(), video_ref, run_id))
+    def guarded_stop_probe() -> bool:
+        return stop_probe() or time.monotonic() >= deadline
+
+    task = asyncio.create_task(
+        runner(_NullManager(), video_ref, run_id, stop_probe=guarded_stop_probe)
+    )
+    stop_reason: str | None = None
     try:
         while not task.done():
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                task.cancel()
-                raise EvaluationReportError(
-                    "SHADOW_TIME_BUDGET_EXCEEDED", "shadow süre bütçesi doldu"
-                )
-            await asyncio.wait({task}, timeout=min(1.0, remaining))
-            if active_analysis_probe() and not task.done():
-                task.cancel()
-                raise EvaluationReportError(
-                    "LIVE_ANALYSIS_PREEMPTED", "canlı analiz shadow worker'ı durdurdu"
-                )
-        await task
+            if time.monotonic() >= deadline:
+                stop_reason = "SHADOW_TIME_BUDGET_EXCEEDED"
+            elif stop_probe():
+                stop_reason = "LIVE_ANALYSIS_PREEMPTED"
+            await asyncio.wait({task}, timeout=0.25)
+        try:
+            await task
+        except PipelineStopRequested:
+            stop_reason = stop_reason or (
+                "SHADOW_TIME_BUDGET_EXCEEDED"
+                if time.monotonic() >= deadline
+                else "LIVE_ANALYSIS_PREEMPTED"
+            )
+        if stop_reason == "SHADOW_TIME_BUDGET_EXCEEDED":
+            raise EvaluationReportError(
+                stop_reason, "shadow süre bütçesi doldu"
+            )
+        if stop_reason == "LIVE_ANALYSIS_PREEMPTED":
+            raise EvaluationReportError(
+                stop_reason, "canlı analiz shadow worker'ını güvenli biçimde durdurdu"
+            )
+    except asyncio.CancelledError:
+        # Sert asyncio iptali shield/to_thread işini öldürmez. Global ayarlar ancak
+        # canonical runner bütün alt işlerini boşalttıktan sonra geri yüklenebilir.
+        await asyncio.shield(task)
+        raise
     finally:
         if not task.done():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+            await asyncio.shield(task)
 
 
 class _NullManager:

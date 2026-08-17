@@ -17,6 +17,11 @@ from dortgoz.services.analysis_job import (
     EffectiveRuntimeConfig,
     resolve_jsonl_status,
 )
+from dortgoz.services.execution_coordinator import (
+    ExclusiveWorkload,
+    ExecutionCoordinator,
+    LiveWorkloadActive,
+)
 
 
 class FakeManager:
@@ -122,6 +127,28 @@ async def test_pre_start_gate_fails_before_runner_or_job_creation(tmp_path: Path
         await jobs.start("camera.mp4")
 
     assert runner.calls == []
+
+
+async def test_canonical_job_holds_live_lease_until_runner_teardown(tmp_path: Path) -> None:
+    runner = BlockingRunner()
+    coordinator = ExecutionCoordinator(tmp_path / "event.sqlite3")
+    jobs = CanonicalAnalysisJobService(
+        FakeManager(),
+        runs_dir=tmp_path,
+        max_active=1,
+        run_video=runner,
+        defaults=defaults,
+        execution_coordinator=coordinator,
+    )
+
+    snapshot = await jobs.start("camera.mp4")
+    await wait_for_calls(runner, 1)
+    with pytest.raises(LiveWorkloadActive):
+        coordinator.acquire_exclusive(ExclusiveWorkload.SHADOW)
+
+    await jobs.cancel(snapshot.analysis_id)
+    shadow = coordinator.acquire_exclusive(ExclusiveWorkload.SHADOW)
+    shadow.release()
 
 
 @pytest.mark.asyncio

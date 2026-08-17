@@ -41,6 +41,7 @@ from dortgoz.services.evaluation_report import (
     EvaluationReportError,
     build_dfine_evaluation_report,
 )
+from dortgoz.services.execution_coordinator import ExecutionCoordinator
 from dortgoz.services.model_registry import (
     ModelRegistryError,
     ModelRegistryService,
@@ -274,6 +275,7 @@ def _training_service(
         active_analysis_probe=lambda: _active_analysis_probe(
             args.event_store.resolve()
         ),
+        execution_coordinator=ExecutionCoordinator(args.event_store.resolve()),
     )
 
 
@@ -322,6 +324,7 @@ def main() -> None:
                 active_analysis_probe=lambda: _active_analysis_probe(
                     args.event_store.resolve()
                 ),
+                execution_coordinator=ExecutionCoordinator(args.event_store.resolve()),
             )
             _print_json(
                 {
@@ -349,6 +352,9 @@ def main() -> None:
                         runs_root=args.runs_root,
                         max_minutes=args.max_minutes,
                         active_analysis_probe=lambda: _active_analysis_probe(
+                            args.event_store.resolve()
+                        ),
+                        execution_coordinator=ExecutionCoordinator(
                             args.event_store.resolve()
                         ),
                     )

@@ -26,6 +26,12 @@ from .dfine_training import (
     inspect_dfine_repository,
 )
 from .evaluation_report import DetectorEvaluationArtifact, EvaluationReportError
+from .execution_coordinator import (
+    ExclusiveWorkload,
+    ExclusiveWorkloadActive,
+    ExecutionCoordinator,
+    LiveWorkloadActive,
+)
 
 _MAX_COCO_BYTES = 64 * 1024 * 1024
 _MAX_LOG_BYTES = 64 * 1024 * 1024
@@ -539,14 +545,66 @@ def execute_dfine_detector_evaluation(
     max_gpu_minutes: int = 60,
     active_analysis_probe: Callable[[], bool] = lambda: False,
     process_runner: ProcessRunner | None = None,
+    execution_coordinator: ExecutionCoordinator | None = None,
 ) -> tuple[DetectorEvaluationArtifact, ProcessOutcome, Path]:
-    """Run one bounded local detector evaluation and normalize its output."""
+    """Run one bounded evaluation under a live-preemptible exclusive lease."""
+
+    exclusive_lease = None
+    if execution_coordinator is not None:
+        try:
+            exclusive_lease = execution_coordinator.acquire_exclusive(
+                ExclusiveWorkload.DETECTOR_EVALUATION
+            )
+        except LiveWorkloadActive as exc:
+            raise EvaluationReportError("LIVE_ANALYSIS_ACTIVE", str(exc)) from exc
+        except ExclusiveWorkloadActive as exc:
+            raise EvaluationReportError("EXCLUSIVE_WORKLOAD_ACTIVE", str(exc)) from exc
+
+    def stop_probe() -> bool:
+        return active_analysis_probe() or bool(
+            exclusive_lease is not None and exclusive_lease.stop_requested()
+        )
+
+    try:
+        return _execute_dfine_detector_evaluation_under_lease(
+            plan=plan,
+            workspace_root=workspace_root,
+            dfine_repository=dfine_repository,
+            python_executable=python_executable,
+            runs_root=runs_root,
+            gpu_index=gpu_index,
+            batch_size=batch_size,
+            workers=workers,
+            max_gpu_minutes=max_gpu_minutes,
+            stop_probe=stop_probe,
+            process_runner=process_runner,
+        )
+    finally:
+        if exclusive_lease is not None:
+            exclusive_lease.release()
+
+
+def _execute_dfine_detector_evaluation_under_lease(
+    *,
+    plan: DfineDetectorEvaluationPlan,
+    workspace_root: Path,
+    dfine_repository: Path,
+    python_executable: Path,
+    runs_root: Path,
+    gpu_index: int,
+    batch_size: int,
+    workers: int,
+    max_gpu_minutes: int,
+    stop_probe: Callable[[], bool],
+    process_runner: ProcessRunner | None,
+) -> tuple[DetectorEvaluationArtifact, ProcessOutcome, Path]:
+    """Validate and execute after the caller owns the exclusive lease."""
 
     if not 0 <= gpu_index <= 31 or not 1 <= max_gpu_minutes <= 1440:
         raise EvaluationReportError(
             "EVALUATION_RESOURCE_INVALID", "GPU index veya dakika bütçesi geçersiz"
         )
-    if active_analysis_probe():
+    if stop_probe():
         raise EvaluationReportError(
             "LIVE_ANALYSIS_ACTIVE",
             "canlı analiz varken candidate değerlendirmesi başlatılamaz",
@@ -580,7 +638,7 @@ def execute_dfine_detector_evaluation(
         env=env,
         log_path=log_path,
         timeout_seconds=max_gpu_minutes * 60,
-        stop_probe=active_analysis_probe,
+        stop_probe=stop_probe,
     )
     if outcome.stop_code is not None:
         raise EvaluationReportError(

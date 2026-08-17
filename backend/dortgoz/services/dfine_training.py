@@ -26,6 +26,12 @@ from ..domain.model_lifecycle import (
 from ..repositories.protocols import EventRepository
 from .coco_export import export_verified_frames_to_coco, training_reviews_from_samples
 from .dataset_manifest import load_dataset_manifest, sha256_file
+from .execution_coordinator import (
+    ExclusiveWorkload,
+    ExclusiveWorkloadActive,
+    ExecutionCoordinator,
+    LiveWorkloadActive,
+)
 from .training_selection import (
     TrainingSelectionError,
     TrainingSelectionPolicy,
@@ -137,6 +143,7 @@ class DfineTrainingService:
         process_runner: ProcessRunner | None = None,
         active_analysis_probe: Callable[[], bool] | None = None,
         cuda_probe: Callable[[Path, int], None] | None = None,
+        execution_coordinator: ExecutionCoordinator | None = None,
     ) -> None:
         self.repository = repository
         self.workspace_root = workspace_root.resolve()
@@ -149,6 +156,7 @@ class DfineTrainingService:
         self.process_runner = process_runner or LocalProcessRunner()
         self.active_analysis_probe = active_analysis_probe or (lambda: False)
         self.cuda_probe = cuda_probe or _validate_cuda_runtime
+        self.execution_coordinator = execution_coordinator
         if not self.runs_root.is_relative_to(self.workspace_root):
             raise ValueError("runs_root workspace içinde olmalıdır")
         if not self.frame_root.is_dir():
@@ -276,7 +284,44 @@ class DfineTrainingService:
                 "TRAINING_JOB_NOT_QUEUED",
                 f"iş kuyruğa alınmış durumda değil: {job.status.value}",
             )
-        if self.active_analysis_probe():
+        exclusive_lease = None
+        if self.execution_coordinator is not None:
+            try:
+                exclusive_lease = self.execution_coordinator.acquire_exclusive(
+                    ExclusiveWorkload.TRAINING
+                )
+            except LiveWorkloadActive as exc:
+                raise DfineTrainingError("LIVE_ANALYSIS_ACTIVE", str(exc)) from exc
+            except ExclusiveWorkloadActive as exc:
+                raise DfineTrainingError("EXCLUSIVE_WORKLOAD_ACTIVE", str(exc)) from exc
+
+        def stop_probe() -> bool:
+            return self.active_analysis_probe() or bool(
+                exclusive_lease is not None and exclusive_lease.stop_requested()
+            )
+
+        try:
+            return self._execute_under_lease(
+                job,
+                dfine_repository=dfine_repository,
+                base_checkpoint=base_checkpoint,
+                python_executable=python_executable,
+                stop_probe=stop_probe,
+            )
+        finally:
+            if exclusive_lease is not None:
+                exclusive_lease.release()
+
+    def _execute_under_lease(
+        self,
+        job: TrainingJob,
+        *,
+        dfine_repository: Path,
+        base_checkpoint: Path,
+        python_executable: Path,
+        stop_probe: Callable[[], bool],
+    ) -> tuple[TrainingJob, ModelVersion]:
+        if stop_probe():
             raise DfineTrainingError(
                 "LIVE_ANALYSIS_ACTIVE",
                 "canlı analiz çalışırken D-FINE eğitimi başlatılamaz",
@@ -298,6 +343,11 @@ class DfineTrainingService:
         export_dir = self._resolve_reference(job.export_ref)
         output_dir = self._resolve_reference(job.output_ref)
         _verify_export(job, export_dir)
+        if stop_probe():
+            raise DfineTrainingError(
+                "LIVE_ANALYSIS_ACTIVE",
+                "canlı analiz önceliği eğitim doğrulamasını durdurdu",
+            )
         remaining_minutes = self._remaining_daily_gpu_minutes(job)
         if remaining_minutes <= 0:
             raise DfineTrainingError(
@@ -341,7 +391,7 @@ class DfineTrainingService:
                 env=env,
                 log_path=output_dir / "training.log",
                 timeout_seconds=budget_seconds,
-                stop_probe=self.active_analysis_probe,
+                stop_probe=stop_probe,
             )
             if outcome.stop_code is not None:
                 stopped = self._terminal_job(
@@ -396,7 +446,7 @@ class DfineTrainingService:
             )
             return succeeded, version
         except DfineTrainingError as exc:
-            current = self.repository.get_training_job(job_id)
+            current = self.repository.get_training_job(job.job_id)
             if current is not None and current.status == TrainingJobStatus.RUNNING:
                 self._terminal_job(
                     current,
@@ -416,7 +466,7 @@ class DfineTrainingService:
             )
             raise DfineTrainingError("TRAINING_CANCELLED", "eğitim durduruldu") from exc
         except Exception as exc:
-            current = self.repository.get_training_job(job_id)
+            current = self.repository.get_training_job(job.job_id)
             if current is not None and current.status == TrainingJobStatus.RUNNING:
                 self._terminal_job(
                     current,

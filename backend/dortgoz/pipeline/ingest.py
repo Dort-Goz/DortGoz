@@ -215,6 +215,23 @@ def prefetch_frames(video: Path, ts: list[float], width: int = 512) -> None:
         _frame_task(video, t, width)
 
 
+async def drain_frame_tasks(video: Path) -> None:
+    """Bu videonun paylaşılan ffmpeg görevleri gerçekten bitene kadar bekle.
+
+    Shadow teardown sırasında görevleri iptal etmek yeterli değildir. ``shield``
+    ile paylaşılan kare görevi iptalden sonra çalışmayı sürdürebilir.
+    """
+
+    loop = asyncio.get_running_loop()
+    tasks = [
+        task
+        for (video_path, _timestamp, _width), task in _frame_tasks.items()
+        if video_path == str(video) and task.get_loop() is loop and not task.done()
+    ]
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
 async def grab_frame(video: Path, t: float, width: int = 512) -> bytes:
     """`t` anındaki tek kareyi JPEG olarak döndürür (VLM istemine gömülür)."""
     # shield: paylaşılan görevi tek bir bekleyenin iptali öldürmemeli

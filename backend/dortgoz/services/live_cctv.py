@@ -38,6 +38,7 @@ from pathlib import Path
 from ..config import settings
 from ..domain.video import VideoMetadata
 from ..ws import ConnectionManager
+from .execution_coordinator import ExecutionCoordinator, LivePreemptionTimeout
 from .run_identity import require_safe_run_id
 
 log = logging.getLogger(__name__)
@@ -105,12 +106,14 @@ class LiveFeedWorker:
     def __init__(self, name: str, url: str, manager: ConnectionManager,
                  mode: str = "", desc: str = "",
                  prepare_run: PrepareRun | None = None,
-                 finalize_run: FinalizeRun | None = None) -> None:
+                 finalize_run: FinalizeRun | None = None,
+                 execution_coordinator: ExecutionCoordinator | None = None) -> None:
         self.status = FeedStatus(name=name, url=url, desc=desc)
         self.manager = manager
         self.mode = mode
         self.prepare_run = prepare_run
         self.finalize_run = finalize_run
+        self.execution_coordinator = execution_coordinator
         self.dir = settings.media_dir / "canli" / name
         self.running = False
         self._done: set[str] = set()
@@ -225,6 +228,16 @@ class LiveFeedWorker:
         rel = seg.relative_to(settings.media_dir).as_posix()
         run_id = f"canli-{self.status.name}-{seg.stem.removeprefix('seg_')}"
         self.status.state = "isleniyor"
+        live_lease = None
+        if self.execution_coordinator is not None:
+            try:
+                live_lease = await self.execution_coordinator.acquire_live()
+            except LivePreemptionTimeout as exc:
+                # Münhasır iş temiz kapanamadıysa segmenti işlendi sayma. Sonraki
+                # döngü aynı segmenti tekrar dener; canlı kanıt sessizce kaybolmaz.
+                self.status.state = "hata"
+                self.status.last_error = str(exc)
+                return False
         try:
             from ..pipeline.runner import run_video  # geç import (mock kipte ağır hat yüklenmesin)
             from .triage import store as triage_store
@@ -248,6 +261,9 @@ class LiveFeedWorker:
         except Exception as exc:   # tek segmentin hatası akışı durdurmaz (7/24)
             self.status.last_error = f"{type(exc).__name__}: {exc}"[:200]
             log.exception("canlı %s: segment işlenemedi: %s", self.status.name, seg.name)
+        finally:
+            if live_lease is not None:
+                await live_lease.release_async()
         self._done.add(seg.name)
         self._last_seg_mtime = seg_mtime
         self._refresh_lag()
@@ -295,10 +311,12 @@ class LiveCctvService:
         manager: ConnectionManager,
         prepare_run: PrepareRun | None = None,
         finalize_run: FinalizeRun | None = None,
+        execution_coordinator: ExecutionCoordinator | None = None,
     ) -> None:
         self.manager = manager
         self.prepare_run = prepare_run
         self.finalize_run = finalize_run
+        self.execution_coordinator = execution_coordinator
         self.workers: dict[str, LiveFeedWorker] = {}
 
     @property
@@ -316,7 +334,8 @@ class LiveCctvService:
             worker = LiveFeedWorker(f["name"], f["url"], self.manager,
                                     mode=mode, desc=f.get("desc", ""),
                                     prepare_run=self.prepare_run,
-                                    finalize_run=self.finalize_run)
+                                    finalize_run=self.finalize_run,
+                                    execution_coordinator=self.execution_coordinator)
             worker.start()
             self.workers[f["name"]] = worker
         log.info("canlı kip başladı: %d akış", len(self.workers))

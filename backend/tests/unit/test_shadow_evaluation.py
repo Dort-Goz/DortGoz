@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
+from dortgoz.config import settings
 from dortgoz.domain.dataset import (
     DatasetLicenseStatus,
     DatasetSplit,
@@ -20,7 +25,11 @@ from dortgoz.domain.model_lifecycle import (
     DfineDeploymentArtifact,
     ModelVersion,
 )
+from dortgoz.pipeline import perception
+from dortgoz.pipeline.runner import PipelineStopRequested
 from dortgoz.services.dataset_manifest import sha256_file
+from dortgoz.services.evaluation_report import EvaluationReportError
+from dortgoz.services.execution_coordinator import ExecutionCoordinator
 from dortgoz.services.shadow_evaluation import (
     ShadowCase,
     ShadowCaseManifest,
@@ -168,7 +177,7 @@ async def test_shadow_worker_writes_three_distinct_complete_artifacts(
 ) -> None:
     workspace, candidate, plan = _fixture(tmp_path)
 
-    async def fake_runner(_manager, video_ref: str, run_id: str) -> None:
+    async def fake_runner(_manager, video_ref: str, run_id: str, **_kwargs) -> None:
         payloads = []
         if video_ref == "critical.mp4":
             payloads.append(
@@ -229,3 +238,70 @@ async def test_shadow_worker_writes_three_distinct_complete_artifacts(
         assert critical["ram_mb"] == 256.0 and critical["vram_mb"] == 0
         run_ids.add(critical["evaluation_run_id"])
     assert len(run_ids) == 3
+
+
+async def test_live_waits_for_cooperative_shadow_teardown_and_cache_reset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace, candidate, plan = _fixture(tmp_path)
+    coordinator = ExecutionCoordinator(workspace / "event.sqlite3", poll_seconds=0.005)
+    started = asyncio.Event()
+    original_settings = (
+        settings.media_dir,
+        settings.runs_dir,
+        settings.dfine_onnx,
+        settings.detector_enabled,
+    )
+    reset_calls = 0
+    original_reset = perception.reset_detector_cache
+
+    def reset_spy() -> None:
+        nonlocal reset_calls
+        reset_calls += 1
+        original_reset()
+
+    monkeypatch.setattr(perception, "reset_detector_cache", reset_spy)
+
+    async def cooperative_runner(
+        _manager, _video_ref: str, _run_id: str, *, stop_probe
+    ) -> None:
+        started.set()
+
+        def wait_for_stop() -> None:
+            while not stop_probe():
+                time.sleep(0.005)
+
+        await asyncio.to_thread(wait_for_stop)
+        raise PipelineStopRequested("fixture preemption")
+
+    async def duration_probe(_path: Path) -> float:
+        return 60.0
+
+    shadow_task = asyncio.create_task(
+        execute_shadow_evaluation(
+            plan=plan,
+            candidate=candidate,
+            workspace_root=workspace,
+            runs_root=workspace / "runs",
+            execution_coordinator=coordinator,
+            run_video_callable=cooperative_runner,
+            duration_probe=duration_probe,
+            revision_probe=lambda _root: CODE_REVISION,
+        )
+    )
+    await asyncio.wait_for(started.wait(), timeout=1.0)
+
+    live = await asyncio.wait_for(coordinator.acquire_live(timeout_seconds=1.0), timeout=2.0)
+    with pytest.raises(EvaluationReportError) as raised:
+        await shadow_task
+
+    assert raised.value.code == "LIVE_ANALYSIS_PREEMPTED"
+    assert (
+        settings.media_dir,
+        settings.runs_dir,
+        settings.dfine_onnx,
+        settings.detector_enabled,
+    ) == original_settings
+    assert perception._detector_override is None
+    assert reset_calls >= 3
+    await live.release_async()

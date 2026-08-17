@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 
 import pytest
 
 from dortgoz.config import settings
+from dortgoz.services.execution_coordinator import ExclusiveWorkload, ExecutionCoordinator
 from dortgoz.services.live_cctv import (
     LiveFeedWorker,
     load_feeds,
@@ -117,6 +120,36 @@ async def test_step_processes_oldest_closed_segment(worker, monkeypatch):
     assert worker.status.lag_s is not None
     assert worker.status.snapshot.endswith("latest.jpg")
     assert order == ["prepare", "run", "finalize"]
+
+
+@pytest.mark.asyncio
+async def test_live_segment_preempts_exclusive_work_and_waits_for_release(
+    worker, monkeypatch, tmp_path
+):
+    calls = []
+
+    async def fake_run_video(*args, **kwargs):
+        calls.append((args, kwargs))
+
+    monkeypatch.setattr("dortgoz.pipeline.runner.run_video", fake_run_video)
+    coordinator = ExecutionCoordinator(tmp_path / "event.sqlite3", poll_seconds=0.005)
+    worker.execution_coordinator = coordinator
+    exclusive = coordinator.acquire_exclusive(ExclusiveWorkload.TRAINING)
+    _seg(worker, 1000)
+    _seg(worker, 1030)
+
+    step_task = asyncio.create_task(worker._step())
+
+    def wait_for_stop() -> None:
+        while not exclusive.stop_requested():
+            time.sleep(0.005)
+
+    await asyncio.to_thread(wait_for_stop)
+    assert calls == []
+    exclusive.release()
+
+    assert await step_task is True
+    assert len(calls) == 1
 
 
 @pytest.mark.asyncio

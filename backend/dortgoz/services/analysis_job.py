@@ -12,6 +12,11 @@ from pathlib import Path
 from uuid import uuid4
 
 from ..ws import ConnectionManager
+from .execution_coordinator import (
+    ExecutionCoordinator,
+    LiveExecutionLease,
+    LivePreemptionTimeout,
+)
 from .weight_guard import guard as weight_guard
 
 LOGGER = logging.getLogger(__name__)
@@ -83,6 +88,7 @@ class _JobRecord:
     status: AnalysisJobStatus = AnalysisJobStatus.QUEUED
     task: asyncio.Task[None] | None = None
     cancel_requested: bool = False
+    live_lease: LiveExecutionLease | None = None
 
     def snapshot(self) -> AnalysisJobSnapshot:
         return AnalysisJobSnapshot(
@@ -153,6 +159,7 @@ class CanonicalAnalysisJobService:
         id_factory: IdFactory = lambda: uuid4().hex,
         finalize_run: FinalizeRunCallable | None = None,
         pre_start: PreStartCallable | None = None,
+        execution_coordinator: ExecutionCoordinator | None = None,
     ) -> None:
         if max_active < 1:
             raise ValueError("max_active en az 1 olmalı")
@@ -165,6 +172,7 @@ class CanonicalAnalysisJobService:
         self._id_factory = id_factory
         self._finalize_run = finalize_run
         self._pre_start = pre_start
+        self._execution_coordinator = execution_coordinator
         self._lock = asyncio.Lock()
         self._records: dict[str, _JobRecord] = {}
         self._active_by_feed: dict[str, str] = {}
@@ -214,6 +222,15 @@ class CanonicalAnalysisJobService:
                     f"akış sınırı: aynı anda en çok {self.max_active} koşu"
                 )
 
+            try:
+                live_lease = (
+                    await self._execution_coordinator.acquire_live()
+                    if self._execution_coordinator is not None
+                    else None
+                )
+            except LivePreemptionTimeout as exc:
+                raise AnalysisJobNotReady(str(exc)) from exc
+
             analysis_id = self._new_analysis_id_locked()
             record = _JobRecord(
                 analysis_id=analysis_id,
@@ -221,19 +238,28 @@ class CanonicalAnalysisJobService:
                 video_identity=identity,
                 feed=feed,
                 effective_config=effective,
+                live_lease=live_lease,
             )
-            self._records[analysis_id] = record
-            self._active_by_feed[feed] = analysis_id
-            task = asyncio.create_task(
-                self._execute(
-                    record,
-                    model=model,
-                    system_prompt=system_prompt,
-                    task_prompt=task_prompt,
-                    mode=mode,
-                ),
-                name=f"dortgoz-analysis-{analysis_id}",
-            )
+            try:
+                self._records[analysis_id] = record
+                self._active_by_feed[feed] = analysis_id
+                task = asyncio.create_task(
+                    self._execute(
+                        record,
+                        model=model,
+                        system_prompt=system_prompt,
+                        task_prompt=task_prompt,
+                        mode=mode,
+                    ),
+                    name=f"dortgoz-analysis-{analysis_id}",
+                )
+            except BaseException:
+                self._records.pop(analysis_id, None)
+                if self._active_by_feed.get(feed) == analysis_id:
+                    self._active_by_feed.pop(feed, None)
+                if live_lease is not None:
+                    await live_lease.release_async()
+                raise
             record.task = task
             task.add_done_callback(_retrieve_task_exception)
             return record.snapshot()
@@ -241,6 +267,7 @@ class CanonicalAnalysisJobService:
     async def cancel(self, analysis_id: str) -> AnalysisJobStatus | None:
         """Cancel one active job; repeated cancellation is a no-op."""
 
+        lease_to_release = None
         async with self._lock:
             record = self._records.get(analysis_id)
             if record is None:
@@ -274,7 +301,10 @@ class CanonicalAnalysisJobService:
                     self._active_by_feed.pop(record.feed, None)
                 self._records.pop(record.analysis_id, None)
                 self._terminal_status[record.analysis_id] = record.status
-            return record.status
+                lease_to_release = record.live_lease
+        if lease_to_release is not None:
+            await lease_to_release.release_async()
+        return record.status
 
     async def cancel_all(self) -> None:
         """Cancel every active feed, preserving the existing WS stop-all behavior."""
@@ -374,6 +404,8 @@ class CanonicalAnalysisJobService:
                     await weight_guard.heal()
                 except Exception:
                     LOGGER.exception("weight_guard iyileşmesi başarısız")
+            if record.live_lease is not None:
+                await record.live_lease.release_async()
 
     def _active_count_locked(self) -> int:
         return sum(

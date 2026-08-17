@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import time
+from collections.abc import Callable
 from contextlib import nullcontext
 from pathlib import Path
 
@@ -40,6 +41,16 @@ from .interpret import SYSTEM_TR, TASK_TR, interpret_window
 
 THUMB_DIR = "_thumbs"       # media/ altında; /media mount'u üzerinden servis edilir
 LOGGER = logging.getLogger(__name__)
+StopProbe = Callable[[], bool]
+
+
+class PipelineStopRequested(RuntimeError):
+    """Münhasır prova işi canlı analiz lehine kooperatif olarak durdu."""
+
+
+def _raise_if_stop_requested(stop_probe: StopProbe) -> None:
+    if stop_probe():
+        raise PipelineStopRequested("canlı analiz önceliği shadow çalışmasını durdurdu")
 
 
 async def save_thumbnail(video: Path, t: float, run_id: str, name: str) -> str | None:
@@ -309,6 +320,7 @@ async def run_video(
     feed: str = "",
     mode: str = "",
     live: bool = False,
+    stop_probe: StopProbe = lambda: False,
 ) -> None:
     """Bir videoyu işler; iptal edilirse (stop_run) durumu temiz bırakır.
 
@@ -339,6 +351,7 @@ async def run_video(
         "customized": bool(model or system_prompt or task_prompt or mode),
     }, ensure_ascii=False, indent=1), encoding="utf-8")
     try:
+        _raise_if_stop_requested(stop_probe)
         path = resolve_media(video)
 
         custom = " · özel istem" if (system_prompt or task_prompt) else ""
@@ -349,6 +362,7 @@ async def run_video(
         duration = await ingest.probe_duration(path)
         ctx.duration = duration
         profile = await ingest.motion_profile(path, settings.base_fps)
+        _raise_if_stop_requested(stop_probe)
         gate = (ingest.adaptive_gate(profile, minimum=settings.motion_gate)
                 if settings.motion_gate_adaptive else settings.motion_gate)
         await rec.emit(AgentStep(
@@ -406,6 +420,7 @@ async def run_video(
                                f"{str(exc)[:80]}"))
                     scorer = MotionBaselineModel()
                     screen_samples = scorer.score(profile)
+                _raise_if_stop_requested(stop_probe)
             else:
                 screen_samples = scorer.score(profile)
             if settings.candidate_adaptive_threshold:
@@ -439,6 +454,7 @@ async def run_video(
                        f"pencereler dedektör kurtarması hariç atlanacak"))
 
         n_ctx = await context_size(effective_model)   # bağlam doluluğu için (bir kez)
+        _raise_if_stop_requested(stop_probe)
         det_enabled = settings.detector_enabled       # ağırlık yoksa koşuda kapanır
         prev_end = 0.0
         # ALGI ÖN-GETİRME (2026-08-14, GPU boşluk optimizasyonu): D-FINE
@@ -455,6 +471,7 @@ async def run_video(
                     path, ws_, we_, settings.detector_samples)
 
         for idx, (start, end) in enumerate(wins):
+            _raise_if_stop_requested(stop_probe)
             metrics.windows_seen += 1
             # Her canonical pencere motion/candidate pre-VLM kararından geçer.
             # Gerçek tasarruf yalnız `windows_skipped_before_vlm` alanıdır.
@@ -498,6 +515,7 @@ async def run_video(
                     await rec.emit(AgentStep(
                         node="perceive", status="error",
                         detail=f"{start:.0f}-{end:.0f} sn algı hatası: {str(exc)[:100]}"))
+                _raise_if_stop_requested(stop_probe)
             if det_enabled and idx + 1 < len(wins) and (idx + 1) not in percep_prefetch:
                 percep_prefetch[idx + 1] = asyncio.create_task(_scan_window(idx + 1))
 
@@ -601,6 +619,7 @@ async def run_video(
                     continue
                 finally:
                     metrics.record_qwen_timing(qwen_timing)
+                _raise_if_stop_requested(stop_probe)
 
                 # Sınırda kalan pencere: karar `olagan` ama modelin ham inancı
                 # dikkat dalında kayda değer kütle bırakmış → BİR düşünmeli
@@ -652,6 +671,7 @@ async def run_video(
                         ))
                     finally:
                         metrics.record_qwen_timing(escalation_timing)
+                    _raise_if_stop_requested(stop_probe)
 
                 # Çift okuma (max-recall kipi): pencere hâlâ olağansa bir kez de
                 # 12 motion-ranked kareyle bak; iki okumadan biri olay görürse
@@ -728,6 +748,7 @@ async def run_video(
                         ))
                     finally:
                         metrics.record_qwen_timing(dual_timing)
+                    _raise_if_stop_requested(stop_probe)
 
                 validation = postprocess_finalized_report(
                     report=report,
@@ -830,6 +851,7 @@ async def run_video(
                 progress=(idx + 1) / len(wins),
                 speed=end / max(time.time() - t_wall, 1e-6),
             ))
+            _raise_if_stop_requested(stop_probe)
 
         # Son tarama: pencere pencere hiçbir olay açılmadıysa videoya BİR kez
         # bütün olarak bak (16 tekdüze kare). Uzun yayılımlı ince olaylar
@@ -837,6 +859,7 @@ async def run_video(
         # zaman ekseninde görünür oluyor — ölçüm 2026-08-12: 28 kaçırmanın 4'ü
         # açıldı, 129 temiz normalde 0 yeni FA. Bulgu her zaman insan
         # incelemesine işaretlenir (zayıf-sinyal yakalama).
+        _raise_if_stop_requested(stop_probe)
         if sweep_on and not ledger.incidents and duration >= 10.0:
             sweep_end = max(1.0, duration - 0.4)
             sweep_kf = [sweep_end / 16 * (i + 0.5) for i in range(16)]
@@ -878,7 +901,9 @@ async def run_video(
             except Exception as exc:  # tarama hatası koşuyu düşürmez
                 await rec.emit(AgentStep(node="interpret", status="end",
                                          detail=f"son tarama başarısız: {str(exc)[:100]}"))
+            _raise_if_stop_requested(stop_probe)
 
+        _raise_if_stop_requested(stop_probe)
         for update in ledger.finalize():       # video biterken açık kalan olayı kapat
             await rec.emit(update)
             await review_if_closed(
@@ -898,6 +923,10 @@ async def run_video(
         await rec.emit(RunStatus(run_id=run_id, state="done", progress=1.0,
                                  video=video, detail=ctx.verdict(),
                                  speed=duration / max(time.time() - t_wall, 1e-6)))
+    except PipelineStopRequested:
+        await rec.emit(RunStatus(run_id=run_id, state="idle", video=video,
+                                 detail="canlı analiz önceliği için güvenli durdu"))
+        raise
     except asyncio.CancelledError:
         await rec.emit(RunStatus(run_id=run_id, state="idle", video=video,
                                  detail="operatör durdurdu"))
@@ -908,8 +937,14 @@ async def run_video(
         await rec.emit(AgentStep(node="interpret", status="error", detail=detail))
         await rec.emit(RunStatus(run_id=run_id, state="error", video=video, detail=detail))
     finally:
-        for _t in list(locals().get("percep_prefetch", {}).values()):
-            _t.cancel()
+        # Kooperatif shadow duruşunda to_thread ve shield'li kare görevleri sert
+        # cancel ile bitmez. Global detector override geri alınmadan önce gerçek
+        # görev bitişlerini bekle.
+        pending_perception = list(locals().get("percep_prefetch", {}).values())
+        if pending_perception:
+            await asyncio.gather(*pending_perception, return_exceptions=True)
+        if "path" in locals():
+            await ingest.drain_frame_tasks(path)
         try:
             rec.record_metrics()
         except Exception:
@@ -926,4 +961,11 @@ def load_run(run_id: str) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-__all__ = ["RunRecorder", "WindowReport", "load_run", "resolve_media", "run_video"]
+__all__ = [
+    "PipelineStopRequested",
+    "RunRecorder",
+    "WindowReport",
+    "load_run",
+    "resolve_media",
+    "run_video",
+]
