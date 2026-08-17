@@ -68,6 +68,7 @@ function cap<T>(arr: T[], n: number): T[] {
 
 export type Action =
   | { kind: "event"; event: Event }
+  | { kind: "sync_reset" }
   | { kind: "run_started"; video: string; feed: string }
   | { kind: "select_incident"; incident: IncidentUpdate }
   | { kind: "select_feed"; feed: string };
@@ -83,6 +84,9 @@ function withFeed(state: ConsoleState, feed: string,
 }
 
 export function consoleReducer(state: ConsoleState, action: Action): ConsoleState {
+  if (action.kind === "sync_reset") {
+    return initialState;
+  }
   if (action.kind === "select_feed") {
     return { ...state, active: action.feed };
   }
@@ -154,7 +158,7 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
         // Koşuyu BAŞLATMAYAN istemci (sayfa yenileme, 2. operatör) videoyu ve
         // yeni koşuyu buradan öğrenir (2026-08-05 QA bulgusu).
         const newRun = p.run_id !== "-" && p.run_id !== f.runStatus?.run_id;
-        if (newRun && !f.video) {
+        if (newRun) {
           return { ...emptyFeed, video: p.video || null, runStatus: p };
         }
         return { ...f, runStatus: p, video: f.video ?? (p.video || null) };

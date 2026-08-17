@@ -40,7 +40,10 @@ export default function App() {
   const [trainingEventId, setTrainingEventId] = useState("");
 
   useEffect(() => {
-    const socket = new DortgozSocket((e: Event) => dispatch({ kind: "event", event: e }));
+    const socket = new DortgozSocket(
+      (e: Event) => dispatch({ kind: "event", event: e }),
+      () => dispatch({ kind: "sync_reset" }),
+    );
     socketRef.current = socket;
     return () => socket.close();
   }, []);

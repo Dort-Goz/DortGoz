@@ -46,4 +46,52 @@ describe("7/24 dayanıklılık: state sınırları", () => {
     expect(state.chat.length).toBe(CAPS.chat);
     expect(state.chat[state.chat.length - 1].text).toBe(`m${CAPS.chat + 19}`);
   });
+
+  test("yeni run_id aynı feed içindeki eski olayları koşulsuz temizler", () => {
+    let state = consoleReducer(initialState, { kind: "event", event: reportEvent(1) });
+    state = consoleReducer(state, {
+      kind: "event",
+      event: {
+        seq: 2,
+        ts: 2,
+        feed: "KAM-1",
+        payload: {
+          type: "run_status",
+          run_id: "run-1",
+          state: "done",
+          progress: 1,
+          detail: "bitti",
+          video: "old.mp4",
+        },
+      } as Event,
+    });
+    state = consoleReducer(state, { kind: "event", event: reportEvent(3) });
+    state = consoleReducer(state, {
+      kind: "event",
+      event: {
+        seq: 4,
+        ts: 4,
+        feed: "KAM-1",
+        payload: {
+          type: "run_status",
+          run_id: "run-2",
+          state: "processing",
+          progress: 0,
+          detail: "başladı",
+          video: "new.mp4",
+        },
+      } as Event,
+    });
+
+    expect(state.feeds["KAM-1"].video).toBe("new.mp4");
+    expect(state.feeds["KAM-1"].reports).toEqual([]);
+  });
+
+  test("sync reset tüm karışmış istemci state'ini temizler", () => {
+    const state = consoleReducer(
+      consoleReducer(initialState, { kind: "event", event: reportEvent(1) }),
+      { kind: "sync_reset" },
+    );
+    expect(state).toEqual(initialState);
+  });
 });

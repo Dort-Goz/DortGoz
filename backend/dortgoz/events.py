@@ -212,10 +212,11 @@ class Event(BaseModel):
 class OperatorMessage(BaseModel):
     """WS üzerinden istemciden gelen komutlar."""
 
-    kind: Literal["chat", "actuator_response", "start_run", "stop_run"]
+    kind: Literal["chat", "actuator_response", "start_run", "stop_run", "sync"]
     text: str = ""                    # chat için
     request_id: str = ""              # actuator_response için
     approved: bool = False
+    from_seq: int = Field(default=0, ge=0)  # sync: istemcinin işlediği son olay
     video: str = ""                   # start_run için /media altı yol
     # start_run deney seçenekleri (boş = varsayılan): model model sunucusu profil adı,
     # istemler interpret.py şablonlarının yerine geçer ({start}/{end} korunur)

@@ -14,6 +14,7 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconn
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .api.contracts import TriageDecisionInput
@@ -60,6 +61,7 @@ for _error_type in (
 app.add_exception_handler(Exception, domain_exception_handler)
 
 MOCK_EVENTS = Path(__file__).parent / "mock" / "sample_events.jsonl"
+_mock_replay_task: asyncio.Task[None] | None = None
 
 deployment_readiness = DeploymentReadinessService(settings, api_runtime.repository)
 app.state.deployment_readiness = deployment_readiness
@@ -364,29 +366,37 @@ async def list_videos() -> list[str]:
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket) -> None:
+    global _mock_replay_task
     await manager.connect(ws)
-    replay_task: asyncio.Task | None = None
-    if settings.mock:
-        replay_task = asyncio.create_task(replay_jsonl(manager, MOCK_EVENTS, settings.mock_speed))
+    if settings.mock and _mock_replay_task is None:
+        _mock_replay_task = asyncio.create_task(
+            replay_jsonl(manager, MOCK_EVENTS, settings.mock_speed),
+            name="dortgoz-mock-replay",
+        )
     try:
         while True:
             raw = await ws.receive_text()
-            msg = OperatorMessage.model_validate_json(raw)
-            await handle_operator_message(msg)
+            try:
+                msg = OperatorMessage.model_validate_json(raw)
+            except ValidationError:
+                continue
+            await handle_operator_message(msg, ws=ws)
     except WebSocketDisconnect:
-        manager.disconnect(ws)
+        pass
     finally:
-        if replay_task and not replay_task.done():
-            replay_task.cancel()
+        manager.disconnect(ws)
 
 
-async def handle_operator_message(msg: OperatorMessage) -> None:
+async def handle_operator_message(msg: OperatorMessage, *, ws: WebSocket | None = None) -> None:
     """Operatör mesajlarını yönlendir.
 
     Gerçek modda `chat` ajan grafiğine gider (agent.graph.run_chat);
     mock modda basit yankı ile arayüz sözleşmesi doğrulanır.
     """
-    if msg.kind == "chat":
+    if msg.kind == "sync":
+        if ws is not None:
+            await manager.replay_since(ws, msg.from_seq)
+    elif msg.kind == "chat":
         await manager.broadcast(Event.wrap(ChatMessage(role="operator", text=msg.text)))
         if settings.mock:
             await manager.broadcast(

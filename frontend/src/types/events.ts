@@ -137,10 +137,11 @@ export interface Event {
 
 /** frontend → backend */
 export interface OperatorMessage {
-  kind: "chat" | "actuator_response" | "start_run" | "stop_run";
+  kind: "chat" | "actuator_response" | "start_run" | "stop_run" | "sync";
   text?: string;
   request_id?: string;
   approved?: boolean;
+  from_seq?: number;
   feed?: string;
   video?: string;
   /** start_run deney seçenekleri — boş/undefined = varsayılan (bkz. events.py) */

@@ -65,6 +65,8 @@ def test_websocket_chat_roundtrip(monkeypatch):
     monkeypatch.setattr(settings, "mock_speed", 1000.0)  # replay'i hızlandır
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as ws:
+            ws.send_text(json.dumps({"kind": "sync", "from_seq": 0}))
+            ws.send_text("{}")  # bozuk operatör frame'i bağlantıyı düşürmemeli
             ws.send_text(json.dumps({"kind": "chat", "text": "test sorusu"}))
             got_operator_echo = got_agent_reply = False
             for _ in range(60):
