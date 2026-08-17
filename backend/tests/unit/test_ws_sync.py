@@ -56,3 +56,17 @@ async def test_history_gap_requests_client_state_reset() -> None:
     control = json.loads(socket.sent[0])
     assert control == {"kind": "sync_reset", "oldest_seq": 3, "latest_seq": 4}
     assert [json.loads(item)["seq"] for item in socket.sent[1:]] == [3, 4]
+
+
+@pytest.mark.asyncio
+async def test_backend_restart_resets_ahead_client_cursor() -> None:
+    manager = ConnectionManager()
+    socket = FakeSocket()
+    await manager.connect(socket)  # type: ignore[arg-type]
+
+    await manager.replay_since(socket, 500)  # type: ignore[arg-type]
+    await manager.broadcast(Event.wrap(ChatMessage(role="agent", text="yeni süreç")))
+
+    control = json.loads(socket.sent[0])
+    assert control == {"kind": "sync_reset", "oldest_seq": 1, "latest_seq": 0}
+    assert json.loads(socket.sent[1])["seq"] == 1

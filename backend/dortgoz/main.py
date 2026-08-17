@@ -8,6 +8,7 @@ yeniden oynatılır — GPU/model olmadan uçtan uca arayüz geliştirme.
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -62,6 +63,22 @@ app.add_exception_handler(Exception, domain_exception_handler)
 
 MOCK_EVENTS = Path(__file__).parent / "mock" / "sample_events.jsonl"
 _mock_replay_task: asyncio.Task[None] | None = None
+LOGGER = logging.getLogger(__name__)
+
+
+def _observe_mock_replay(task: asyncio.Task[None]) -> None:
+    """Arka plan replay hatasını tüket, kaydet ve sonraki bağlantıda tekrar dene."""
+
+    global _mock_replay_task
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        if _mock_replay_task is task:
+            _mock_replay_task = None
+    except Exception:
+        LOGGER.exception("mock replay görevi başarısız oldu")
+        if _mock_replay_task is task:
+            _mock_replay_task = None
 
 deployment_readiness = DeploymentReadinessService(settings, api_runtime.repository)
 app.state.deployment_readiness = deployment_readiness
@@ -373,6 +390,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             replay_jsonl(manager, MOCK_EVENTS, settings.mock_speed),
             name="dortgoz-mock-replay",
         )
+        _mock_replay_task.add_done_callback(_observe_mock_replay)
     try:
         while True:
             raw = await ws.receive_text()

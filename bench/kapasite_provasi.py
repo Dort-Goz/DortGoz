@@ -43,6 +43,7 @@ async def run(base: str, feeds: int, timeout: float, out: Path) -> int:
     t0 = time.monotonic()
 
     async with websockets.connect(ws_url, max_size=8 * 1024 * 1024) as ws:
+        await ws.send(json.dumps({"kind": "sync", "from_seq": 0}))
         for i in range(feeds):
             feed = f"KAM-{i + 1}"
             video = pool[i % len(pool)]

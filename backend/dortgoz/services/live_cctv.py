@@ -38,6 +38,7 @@ from pathlib import Path
 from ..config import settings
 from ..domain.video import VideoMetadata
 from ..ws import ConnectionManager
+from .run_identity import require_safe_run_id
 
 log = logging.getLogger(__name__)
 
@@ -79,9 +80,13 @@ def load_feeds(path: Path | None = None) -> list[dict]:
     for f in feeds:
         if not isinstance(f, dict) or not f.get("name") or not f.get("url"):
             raise ValueError(f"geçersiz akış girdisi: {f!r}")
-        if "/" in f["name"] or f["name"] in seen:
+        try:
+            name = require_safe_run_id(f["name"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"akış adı geçersiz: {f['name']!r}") from exc
+        if name in seen:
             raise ValueError(f"akış adı geçersiz/yinelenmiş: {f['name']}")
-        seen.add(f["name"])
+        seen.add(name)
     return feeds
 
 

@@ -31,6 +31,9 @@ def test_load_feeds_falls_back_to_example(tmp_path):
     [],                                            # boş
     [{"name": "x"}],                               # url yok
     [{"name": "a/b", "url": "u"}],                 # yol ayracı (spool güvenliği)
+    [{"name": r"a\b", "url": "u"}],                # Windows yol ayracı
+    [{"name": "kamera bir", "url": "u"}],           # run_id içinde boşluk
+    [{"name": "CON", "url": "u"}],                  # Windows aygıt adı
     [{"name": "a", "url": "u"}, {"name": "a", "url": "v"}],  # yinelenen ad
 ])
 def test_load_feeds_rejects_invalid(tmp_path, bad):

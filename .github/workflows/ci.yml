@@ -28,7 +28,7 @@ jobs:
       - name: uv ve Python kur
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          python-version: "3.13"
+          python-version: "3.12"
           enable-cache: true
           cache-dependency-glob: backend/uv.lock
 
@@ -42,8 +42,6 @@ jobs:
 
       - name: Backend testlerini çalıştır
         working-directory: backend
-        env:
-          DORTGOZ_MOCK: "1"
         run: uv run pytest -q
 
   frontend:

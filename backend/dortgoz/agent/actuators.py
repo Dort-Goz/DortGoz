@@ -29,9 +29,14 @@ class ActuatorRecord:
 class ActuatorApprovalRegistry:
     """Bir aktüatörü yalnız kayıtlı operatör kararından sonra mock olarak uygula."""
 
-    def __init__(self) -> None:
+    DEFAULT_MAX_RECORDS = 10_000
+
+    def __init__(self, *, max_records: int = DEFAULT_MAX_RECORDS) -> None:
+        if max_records < 1:
+            raise ValueError("aktüatör kayıt sınırı pozitif olmalı")
         self._records: dict[str, ActuatorRecord] = {}
         self._lock = RLock()
+        self._max_records = max_records
 
     def request(
         self,
@@ -40,6 +45,7 @@ class ActuatorApprovalRegistry:
         incident_id: str | None,
     ) -> ActuatorRequest:
         with self._lock:
+            self._make_room()
             request_id = self._new_id()
             request = ActuatorRequest(
                 request_id=request_id,
@@ -110,6 +116,18 @@ class ActuatorApprovalRegistry:
                     f"{record.state.value} · {record.request.reason}"
                 )
             return "\n".join(lines)
+
+    def _make_room(self) -> None:
+        """Eski sonuçları buda; bekleyen bir operatör kararını hiçbir zaman silme."""
+
+        if len(self._records) < self._max_records:
+            return
+        for request_id, record in list(self._records.items()):
+            if record.state != ActuatorRequestState.PENDING:
+                del self._records[request_id]
+                if len(self._records) < self._max_records:
+                    return
+        raise RuntimeError("aktüatör kayıt sınırı dolu; bekleyen istekler çözülmeli")
 
     def clear(self) -> None:
         with self._lock:

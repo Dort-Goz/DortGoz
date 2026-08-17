@@ -51,6 +51,19 @@ class ConnectionManager:
         async with lock:
             while ws in self._connections:
                 history = list(self._history)
+                if cursor > self._seq and not reset_sent:
+                    oldest_seq = history[0].seq if history else 1
+                    await ws.send_text(
+                        json.dumps(
+                            {
+                                "kind": "sync_reset",
+                                "oldest_seq": oldest_seq,
+                                "latest_seq": self._seq,
+                            }
+                        )
+                    )
+                    cursor = oldest_seq - 1
+                    reset_sent = True
                 if history and cursor and cursor < history[0].seq - 1 and not reset_sent:
                     await ws.send_text(
                         json.dumps(
