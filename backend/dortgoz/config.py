@@ -79,6 +79,19 @@ class Settings(BaseSettings):
     # (interpret_think_budget) bu yüzden kademeli modda da uygulanır.
     interpret_effort: str = ""
     second_opinion_effort: str = ""
+    # Ajan/diyalog katmanı ayrı model kullanabilir. "" = main_model (A7 kuralı:
+    # tek yüklü örnek — ayrı profil model sunucusu YENİDEN YÜKLEMESİ demektir ve
+    # canlı koşuda görü modelini tahliye eder; yalnız çevrimdışı/demo dışı
+    # kullanım için doldurulmalı).
+    agent_model: str = ""
+    # Ajan düşünme kademesi. Düşünme burada TARİHSEL olarak kapalıydı: bütçesiz
+    # düşünme 700 token tavanının tamamını reasoning_content'e harcayıp content'i
+    # BOŞ bırakıyordu (operatör boş yanıt görüyordu). Sebep kademe değil BÜTÇESİZLİK
+    # — aynı arıza ev tarafında MMLU-Pro @xhigh koşusunda da ölçüldü. Bütçe +
+    # yükseltilmiş tavanla düşünme güvenle açılabilir. "" = kapalı (üretim).
+    agent_effort: str = ""
+    # Ajanın düşünme bütçesi — yanıt için token BIRAKMALI (tavan 2200).
+    agent_think_budget: int = 1200
     # Düşünme token bütçesi — 2026-08-07 soak ölçümüyle 2500 (bkz. thinking.py)
     interpret_think_budget: int = 2500
     # Düşünen okumada örnekleme sıcaklığı. Yorumlama yolu üretimde AÇGÖZLÜ

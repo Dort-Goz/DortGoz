@@ -26,6 +26,7 @@ from ..events import AgentStep, ChatMessage, Event
 from ..ws import ConnectionManager
 from . import tools
 from .llm import create_chat, main_client
+from ..pipeline.thinking import thinking_extra, thinking_on
 
 SYSTEM_TR = (
     "Sen Dörtgöz saha güvenliği operatör asistanısın. Video analiz hattının "
@@ -110,14 +111,18 @@ def _build_graph(manager: ConnectionManager):
         kwargs: dict[str, Any] = {}
         if rounds < MAX_TOOL_ROUNDS:
             kwargs = {"tools": tools.TOOLS, "parallel_tool_calls": False}
+        # Düşünme burada bütçesiz açıldığında 700 token'ın tamamı
+        # reasoning_content'e gidiyordu ve operatör BOŞ yanıt görüyordu. Arıza
+        # kademede değil bütçesizlikteydi: bütçe `</think>`i zorlar, kalan
+        # token içeriğe yeter. Tavan da düşünen turda yükseltilir.
+        dusunur = thinking_on(think=False, effort=settings.agent_effort)
         resp = await create_chat(client,
-            model=settings.main_model,
+            model=settings.agent_model or settings.main_model,
             messages=state["messages"],
-            max_tokens=700,
+            max_tokens=2200 if dusunur else 700,
             temperature=0.3,
-            # Düşünme modu açıkken bütçenin tamamı reasoning_content'e gidip
-            # content boş kalabiliyordu → operatör boş yanıt görüyordu.
-            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+            extra_body=thinking_extra(think=False, effort=settings.agent_effort,
+                                      budget=settings.agent_think_budget),
             **kwargs,
         )
         msg = resp.choices[0].message
