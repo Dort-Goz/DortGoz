@@ -26,7 +26,7 @@ from .api.router import router as api_router
 from .api.router import runtime as api_runtime
 from .config import settings
 from .domain.video import VideoIngestError
-from .events import ActuatorResult, ChatMessage, Event, OperatorMessage, RunStatus
+from .events import ChatMessage, Event, OperatorMessage, RunStatus
 from .repositories.errors import (
     RepositoryConflictError,
     RepositoryDuplicateError,
@@ -397,16 +397,16 @@ async def handle_operator_message(msg: OperatorMessage) -> None:
 
             await run_chat(msg.text, manager)
     elif msg.kind == "actuator_response":
-        await manager.broadcast(
-            Event.wrap(
-                ActuatorResult(
-                    request_id=msg.request_id,
-                    actuator="?",
-                    approved=msg.approved,
-                    detail="Operatör kararı",
-                )
+        from .agent.actuators import registry as actuator_registry
+
+        try:
+            result = actuator_registry.resolve(msg.request_id, msg.approved)
+        except (KeyError, ValueError) as exc:
+            await manager.broadcast(
+                Event.wrap(ChatMessage(role="agent", text=f"Aktüatör kararı reddedildi: {exc}"))
             )
-        )
+        else:
+            await manager.broadcast(Event.wrap(result))
     elif msg.kind == "start_run":
         await start_run(msg)
     elif msg.kind == "stop_run":

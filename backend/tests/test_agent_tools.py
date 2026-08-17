@@ -6,6 +6,7 @@ import pytest
 
 from dortgoz import session
 from dortgoz.agent import tools
+from dortgoz.agent.actuators import registry as actuator_registry
 from dortgoz.agent.memory import Incident
 from dortgoz.events import WindowEvent, WindowReport
 
@@ -25,6 +26,7 @@ class FakeManager:
 
 @pytest.fixture()
 def ctx():
+    actuator_registry.clear()
     c = session.start("test-run", "clip.mp4")
     c.duration = 120.0
     c.reports.append(WindowReport(
@@ -38,6 +40,7 @@ def ctx():
     c.ledger.incidents[inc.incident_id] = inc
     yield c
     session.clear()
+    actuator_registry.clear()
 
 
 # ---- şema kuralları (2026-08-03 araç çağırma ölçümleri) ----
@@ -91,7 +94,7 @@ def test_olayi_vurgula_unknown_id_lists_known(ctx):
     assert not m.payloads("ui_command")   # hatalı kimlikte arayüz komutu gitmez
 
 
-def test_critical_actuator_requires_approval(ctx):
+def test_every_actuator_requires_approval_and_resolution_is_recorded(ctx):
     m = FakeManager()
     out = asyncio.run(tools.execute("aktuator_calistir", {
         "actuator": "alarm_ver", "incident_id": "abc123",
@@ -100,10 +103,41 @@ def test_critical_actuator_requires_approval(ctx):
     assert len(reqs) == 1 and reqs[0].actuator == "alarm_ver"
     assert reqs[0].incident_id == "abc123"
     assert "onay" in out
-    # kritik OLMAYAN aktüatör doğrudan çalışır (mock), onay istemez
     out2 = asyncio.run(tools.execute("aktuator_calistir", {
         "actuator": "kayit_baslat", "incident_id": "", "gerekce": "kayıt"}, m))
-    assert "mock" in out2 and len(m.payloads("actuator_request")) == 1
+    reqs = m.payloads("actuator_request")
+    assert "onay" in out2 and len(reqs) == 2
+    assert reqs[1].actuator == "kayit_baslat"
+
+    result = actuator_registry.resolve(reqs[1].request_id, approved=True)
+    assert result.actuator == "kayit_baslat"
+    assert result.approved is True
+    assert "uygulandı" in result.detail
+    assert actuator_registry.resolve(reqs[1].request_id, approved=True) == result
+    with pytest.raises(ValueError, match="çelişkili"):
+        actuator_registry.resolve(reqs[1].request_id, approved=False)
+
+
+def test_actuator_status_tool_exposes_operator_decision(ctx):
+    m = FakeManager()
+    asyncio.run(tools.execute("aktuator_calistir", {
+        "actuator": "saglik_ekibi_cagir",
+        "incident_id": "abc123",
+        "gerekce": "insan incelemesi",
+    }, m))
+    request_id = m.payloads("actuator_request")[0].request_id
+    pending = asyncio.run(tools.execute("aktuator_durumu_sorgula", {
+        "request_id": request_id,
+        "gerekce": "sonucu doğrula",
+    }, m))
+    assert "bekliyor" in pending and "çalıştırılmadı" in pending
+
+    actuator_registry.resolve(request_id, approved=False)
+    rejected = asyncio.run(tools.execute("aktuator_durumu_sorgula", {
+        "request_id": request_id,
+        "gerekce": "sonucu doğrula",
+    }, m))
+    assert "reddetti" in rejected and "çalıştırılmadı" in rejected
 
 
 def test_tool_errors_return_text_not_raise(ctx):
