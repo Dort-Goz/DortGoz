@@ -314,6 +314,62 @@ def test_active_manifest_selects_only_hash_verified_onnx(
         resolve_production_model_path()
 
 
+def test_active_onnx_hash_is_reused_until_file_signature_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = tmp_path / "workspace"
+    model = workspace / "models" / "dfine" / "candidates" / "v1" / "model.onnx"
+    model.parent.mkdir(parents=True)
+    model.write_bytes(b"verified-onnx")
+    fingerprint = "e" * 64
+    expected_sha = sha256_file(model)
+    (model.parent / "config.json").write_text(
+        json.dumps(
+            {
+                "id2label": {"0": "person"},
+                "interest_labels": ["person"],
+                "onnx_sha256": expected_sha,
+                "deployment_fingerprint": fingerprint,
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest = workspace / "models" / "dfine" / "local" / "active_manifest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps(
+            {
+                "manifest_version": "1.0.0",
+                "onnx_ref": model.relative_to(workspace).as_posix(),
+                "onnx_sha256": expected_sha,
+                "deployment_fingerprint": fingerprint,
+                "category_names": ["person"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "dfine_workspace_root", workspace)
+    monkeypatch.setattr(settings, "dfine_active_manifest", manifest)
+    set_detector_override(None)
+
+    from dortgoz.pipeline import perception
+
+    real_hash = perception._sha256_file
+    calls = 0
+
+    def counted_hash(path: Path) -> str:
+        nonlocal calls
+        calls += 1
+        return real_hash(path)
+
+    monkeypatch.setattr(perception, "_sha256_file", counted_hash)
+
+    assert resolve_production_model_path() == model.resolve()
+    assert resolve_production_model_path() == model.resolve()
+    assert resolve_production_model_path() == model.resolve()
+    assert calls == 1
+
+
 def test_export_adapter_injects_custom_class_contract(tmp_path: Path) -> None:
     official = tmp_path / "export_onnx.py"
     official.write_text(

@@ -167,6 +167,7 @@ class _Detector:
 
 _detectors: dict[str, _Detector] = {}
 _detector_override: Path | None = None
+_verified_onnx_hashes: set[tuple[Path, str, int, int]] = set()
 
 
 def resolve_production_model_path(
@@ -204,8 +205,19 @@ def resolve_production_model_path(
     model = workspace.joinpath(*reference.split("/")).resolve()
     if not model.is_relative_to(workspace) or model.is_symlink() or not model.is_file():
         raise ValueError("aktif D-FINE ONNX bulunamadı veya güvenli değil")
-    if _sha256_file(model) != expected_sha:
-        raise ValueError("aktif D-FINE ONNX SHA-256 değeri değişti")
+    model_stat = model.stat()
+    verification_key = (
+        model,
+        expected_sha,
+        model_stat.st_size,
+        model_stat.st_mtime_ns,
+    )
+    if verification_key not in _verified_onnx_hashes:
+        if _sha256_file(model) != expected_sha:
+            raise ValueError("aktif D-FINE ONNX SHA-256 değeri değişti")
+        if len(_verified_onnx_hashes) >= 8:
+            _verified_onnx_hashes.clear()
+        _verified_onnx_hashes.add(verification_key)
     config = model.parent / "config.json"
     if config.is_symlink() or not config.is_file():
         raise ValueError("aktif D-FINE config.json bulunamadı")
@@ -236,6 +248,7 @@ def reset_detector_cache() -> None:
     """Drop process-local ONNX sessions before/after an isolated shadow run."""
 
     _detectors.clear()
+    _verified_onnx_hashes.clear()
 
 
 def set_detector_override(model_path: Path | None) -> None:

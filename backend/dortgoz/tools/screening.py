@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from ..config import settings
@@ -72,7 +73,11 @@ class LocalCandidateScreeningTool:
             samples = cached.samples if cached is not None else None
         if samples is None:
             profile = await motion_profile(path, base_fps=self.base_fps)
-            samples = self.model.score(profile)
+            score_video = getattr(self.model, "score_video", None)
+            if callable(score_video):
+                samples = await asyncio.to_thread(score_video, profile, path)
+            else:
+                samples = self.model.score(profile)
             if self.cache is not None and key is not None:
                 self.cache.save(key, samples)
         return build_candidate_intervals(
