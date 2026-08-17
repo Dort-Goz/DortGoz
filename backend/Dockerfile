@@ -7,6 +7,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_NO_MANAGED_PYTHON=1
 
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --shell /usr/sbin/nologin app
+
 WORKDIR /app/backend
 
 COPY backend/pyproject.toml backend/uv.lock ./
@@ -19,7 +24,10 @@ RUN uv sync --frozen --no-dev
 COPY configs /app/configs
 COPY data/procedures /app/data/procedures
 COPY models /app/models
-RUN mkdir -p /app/media /app/runs /app/cache/candidate
+RUN mkdir -p /app/media /app/runs /app/cache/candidate \
+    && chown -R app:app /app/media /app/runs /app/cache
+
+USER app
 
 EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \

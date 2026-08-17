@@ -258,8 +258,8 @@ __all__ = [
     "VerifiedEventType",
     "canonical_event_type_from_domain",
     "canonical_event_type_from_ws_label",
-    "legacy_ws_label_from_canonical",
     "is_production_supported",
+    "legacy_ws_label_from_canonical",
     "map_dataset_source_label",
     "requires_human_review",
 ]

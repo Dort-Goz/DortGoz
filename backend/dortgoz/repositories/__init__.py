@@ -13,9 +13,9 @@ from .sqlite import SqliteEventRepository
 __all__ = [
     "EventRepository",
     "InMemoryEventRepository",
-    "SqliteEventRepository",
     "RepositoryConflictError",
     "RepositoryDuplicateError",
     "RepositoryError",
     "RepositoryNotFoundError",
+    "SqliteEventRepository",
 ]

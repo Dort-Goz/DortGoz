@@ -577,9 +577,9 @@ def _file_hash(path: Path) -> str:
 
 
 __all__ = [
+    "RuntimeEventValidation",
     "RuntimeEvidenceDigest",
     "RuntimeEvidenceScope",
-    "RuntimeEventValidation",
     "RuntimeValidationStatus",
     "RuntimeWindowValidation",
     "postprocess_finalized_report",

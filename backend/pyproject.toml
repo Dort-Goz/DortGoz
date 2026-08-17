@@ -28,7 +28,34 @@ target-version = "py312"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F", "I", "UP"]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "ASYNC", "RUF"]
+ignore = [
+    # Türkçe metindeki doğru tipografiyi ASCII'ye çevirmeyin.
+    "RUF001",
+    "RUF002",
+    "RUF003",
+    # FastAPI parametre bildirimleri fonksiyon varsayılanı kullanır.
+    "B008",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Bu istisnalar mevcut borcu görünür tutar. Yeni dosyalar geniş kural setine uyar.
+"dortgoz/api/router.py" = ["ASYNC230", "ASYNC240"]
+"dortgoz/main.py" = ["ASYNC240", "B904"]
+"dortgoz/pipeline/candidate_intervals.py" = ["B905", "RUF007"]
+"dortgoz/pipeline/ingest.py" = ["B905"]
+"dortgoz/pipeline/interpret.py" = ["B905", "RUF059"]
+"dortgoz/pipeline/runner.py" = ["RUF005"]
+"dortgoz/pipeline/temporal_cnn.py" = ["B905"]
+"dortgoz/pipeline/windowing.py" = ["B905"]
+"dortgoz/services/analysis_projection.py" = ["ASYNC240"]
+"dortgoz/services/incident_media.py" = ["ASYNC240"]
+"dortgoz/services/runtime_postprocess.py" = ["B904"]
+"dortgoz/services/shadow_evaluation.py" = ["ASYNC240"]
+"dortgoz/services/training_sample.py" = ["B905"]
+"dortgoz/tools/keyframes.py" = ["B905"]
+"dortgoz/ws.py" = ["ASYNC240", "B905"]
+"tests/**/*.py" = ["ASYNC221", "ASYNC240", "B017", "B905", "RUF007", "RUF043"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

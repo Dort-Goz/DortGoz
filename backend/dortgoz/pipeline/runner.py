@@ -926,4 +926,4 @@ def load_run(run_id: str) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-__all__ = ["run_video", "resolve_media", "load_run", "RunRecorder", "WindowReport"]
+__all__ = ["RunRecorder", "WindowReport", "load_run", "resolve_media", "run_video"]

@@ -150,8 +150,8 @@ class InterventionPriorityService:
 
 
 __all__ = [
+    "RULESET_VERSION",
     "InterventionPriorityService",
     "PriorityScore",
-    "RULESET_VERSION",
     "calculate_priority_score",
 ]

@@ -2,10 +2,11 @@
 # The frozen Bun lockfile is installed while preparing the pre-air-gap image.
 FROM oven/bun:1.3.14
 
-WORKDIR /app
-COPY frontend/package.json frontend/bun.lock ./
+WORKDIR /home/bun/app
+COPY --chown=bun:bun frontend/package.json frontend/bun.lock ./
+USER bun
 RUN bun install --frozen-lockfile
-COPY frontend ./
+COPY --chown=bun:bun frontend ./
 RUN bun run build
 
 EXPOSE 5173
