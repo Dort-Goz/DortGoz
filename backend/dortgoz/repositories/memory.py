@@ -6,9 +6,11 @@ silinir; API/SQLite/PostgreSQL adapter'ları aynı protocol'e sonradan bağlanı
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from copy import deepcopy
 from datetime import UTC, datetime
 from threading import RLock
+from typing import TypeVar
 from uuid import uuid4
 
 from ..domain.candidate import CandidateEvent
@@ -36,15 +38,73 @@ from ..domain.training import (
     TrainingSampleStatus,
 )
 from ..domain.video import VideoMetadata
+from .bundles import FeedbackWriteBundle, FeedbackWriteResult
 from .errors import (
     RepositoryConflictError,
     RepositoryDuplicateError,
     RepositoryNotFoundError,
 )
 
+_T = TypeVar("_T")
+
 
 def _copy(value):
     return deepcopy(value)
+
+
+def _validate_feedback_bundle_links(bundle: FeedbackWriteBundle) -> None:
+    for values, label in (
+        ([item.review_id for item in bundle.reviews], "review"),
+        (
+            [item.approval_id for item in bundle.development_approvals],
+            "development approval",
+        ),
+        ([item.proposal_id for item in bundle.rule_proposals], "rule proposal"),
+    ):
+        if len(values) != len(set(values)):
+            raise RepositoryConflictError(f"bundle {label} kimliği tekrar ediyor")
+    review_event_ids = [item.event_id for item in bundle.reviews]
+    if len(review_event_ids) != len(set(review_event_ids)):
+        raise RepositoryConflictError("bundle aynı olay için birden çok review içeremez")
+
+    approvals = {
+        item.approval_id: item for item in bundle.development_approvals
+    }
+    linked_camera_approvals: set[str] = set()
+    for proposal in bundle.rule_proposals:
+        if proposal.status != RuleProposalStatus.APPROVED:
+            continue
+        for event_id, review_id, approval_id in zip(
+            proposal.source_event_ids,
+            proposal.source_review_ids,
+            proposal.development_approval_ids,
+            strict=True,
+        ):
+            approval = approvals.get(approval_id)
+            if approval is None:
+                raise RepositoryConflictError(
+                    "approved rule proposal hazırlanan development approval ile eşleşmiyor"
+                )
+            if (
+                approval.event_id != event_id
+                or approval.review_id != review_id
+                or approval.status != DevelopmentApprovalStatus.APPROVED
+                or DevelopmentUse.CAMERA_RULE not in approval.approved_uses
+            ):
+                raise RepositoryConflictError(
+                    "rule proposal kaynakları development approval ile eşleşmiyor"
+                )
+            linked_camera_approvals.add(approval_id)
+
+    prepared_camera_approvals = {
+        item.approval_id
+        for item in bundle.development_approvals
+        if DevelopmentUse.CAMERA_RULE in item.approved_uses
+    }
+    if linked_camera_approvals != prepared_camera_approvals:
+        raise RepositoryConflictError(
+            "hazırlanan kamera izinleri approved rule proposal ile birebir eşleşmiyor"
+        )
 
 
 class InMemoryEventRepository:
@@ -64,6 +124,26 @@ class InMemoryEventRepository:
         self._training_jobs: dict[str, TrainingJob] = {}
         self._model_versions: dict[str, ModelVersion] = {}
         self._traces: dict[tuple[str, str], list[TraceRecord]] = {}
+
+    def _atomic_memory_write(
+        self,
+        operation: Callable[[], _T],
+        *,
+        state_fields: tuple[str, ...],
+    ) -> _T:
+        """İşlemi yalıtılmış RAM kopyasında çalıştır ve tek adımda yayımla."""
+
+        with self._lock:
+            original = {name: getattr(self, name) for name in state_fields}
+            working = {name: deepcopy(value) for name, value in original.items()}
+            for name, value in working.items():
+                setattr(self, name, value)
+            try:
+                return operation()
+            except Exception:
+                for name, value in original.items():
+                    setattr(self, name, value)
+                raise
 
     def create_video(self, metadata: VideoMetadata) -> VideoMetadata:
         with self._lock:
@@ -342,6 +422,78 @@ class InMemoryEventRepository:
                             }
                         )
             return _copy(approval)
+
+    def save_feedback_bundle(self, bundle: FeedbackWriteBundle) -> FeedbackWriteResult:
+        """Feedback modellerini aynı RAM yayın sınırında kaydet."""
+
+        def operation() -> FeedbackWriteResult:
+            _validate_feedback_bundle_links(bundle)
+            reviews: list[HumanReview] = []
+            approvals: list[DevelopmentApproval] = []
+            proposals: list[RuleProposal] = []
+            written_reviews: set[str] = set()
+            written_approvals: set[str] = set()
+            written_proposals: set[str] = set()
+
+            # Revision çatışmasını ilişkili yeni kayıtları hazırlamadan önce yakala.
+            for proposal in bundle.rule_proposals:
+                existing = self._rule_proposals.get(proposal.proposal_id)
+                if existing is None:
+                    saved = InMemoryEventRepository.create_rule_proposal(self, proposal)
+                    written_proposals.add(saved.proposal_id)
+                elif existing.model_dump() == proposal.model_dump():
+                    saved = _copy(existing)
+                else:
+                    saved = InMemoryEventRepository.update_rule_proposal(self, proposal)
+                    written_proposals.add(saved.proposal_id)
+                proposals.append(saved)
+
+            for review in bundle.reviews:
+                existing = self._reviews.get(review.review_id)
+                if existing is not None:
+                    if existing.model_dump() != review.model_dump():
+                        raise RepositoryDuplicateError(
+                            f"review_id farklı içerikle kayıtlı: {review.review_id}"
+                        )
+                    reviews.append(_copy(existing))
+                    continue
+                saved = InMemoryEventRepository.save_review(self, review)
+                reviews.append(saved)
+                written_reviews.add(saved.review_id)
+
+            for approval in bundle.development_approvals:
+                existing = self._development_approvals.get(approval.approval_id)
+                if existing is not None:
+                    if existing.model_dump() != approval.model_dump():
+                        raise RepositoryDuplicateError(
+                            f"approval_id farklı içerikle kayıtlı: {approval.approval_id}"
+                        )
+                    approvals.append(_copy(existing))
+                    continue
+                saved = InMemoryEventRepository.save_development_approval(self, approval)
+                approvals.append(saved)
+                written_approvals.add(saved.approval_id)
+
+            return FeedbackWriteResult(
+                reviews=tuple(reviews),
+                development_approvals=tuple(approvals),
+                rule_proposals=tuple(proposals),
+                written_review_ids=frozenset(written_reviews),
+                written_approval_ids=frozenset(written_approvals),
+                written_proposal_ids=frozenset(written_proposals),
+            )
+
+        return self._atomic_memory_write(
+            operation,
+            state_fields=(
+                "_events",
+                "_event_history",
+                "_reviews",
+                "_development_approvals",
+                "_rule_proposals",
+                "_training_samples",
+            ),
+        )
 
     def list_development_approvals(self, event_id: str) -> list[DevelopmentApproval]:
         with self._lock:
@@ -990,23 +1142,13 @@ class InMemoryEventRepository:
     ) -> VerifiedEvent:
         """Candidate + trace + event'i tek lock altında atomik kaydeder."""
 
-        with self._lock:
-            snapshot = (
-                deepcopy(self._candidates),
-                deepcopy(self._events),
-                deepcopy(self._event_history),
-                deepcopy(self._traces),
-            )
-            try:
-                self.save_candidate(candidate)
-                for item in trace_items:
-                    self.save_trace_item(event.analysis_id, candidate.candidate_id, item)
-                return self.save_event(event)
-            except Exception:
-                (
-                    self._candidates,
-                    self._events,
-                    self._event_history,
-                    self._traces,
-                ) = snapshot
-                raise
+        def operation() -> VerifiedEvent:
+            self.save_candidate(candidate)
+            for item in trace_items:
+                self.save_trace_item(event.analysis_id, candidate.candidate_id, item)
+            return self.save_event(event)
+
+        return self._atomic_memory_write(
+            operation,
+            state_fields=("_candidates", "_events", "_event_history", "_traces"),
+        )

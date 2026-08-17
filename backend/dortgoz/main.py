@@ -264,6 +264,11 @@ async def triage_approve_rule(proposal_id: str, body: dict) -> dict:
             proposal_id,
             body.get("reviewer", "operator-console"),
             int(body.get("duration_hours", triage.DEFAULT_RULE_HOURS)),
+            expected_revision=(
+                int(body["revision"])
+                if body.get("revision") is not None
+                else None
+            ),
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

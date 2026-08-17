@@ -64,6 +64,7 @@ interface RuleProposal {
   reason: string;
   expires_at: string | null;
   auto_applied_count: number;
+  revision: number;
 }
 
 interface Snapshot {
@@ -429,13 +430,17 @@ export default function TriagePanel({ onSelectFeed, onOpenTraining, feedNames = 
   };
 
   const ruleAction = async (
-    proposalId: string,
+    proposal: RuleProposal,
     action: "approve" | "reject" | "revoke",
   ) => {
-    const response = await fetch(`/api/triage/rules/${proposalId}/${action}`, {
+    const response = await fetch(`/api/triage/rules/${proposal.proposal_id}/${action}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(action === "approve" ? { duration_hours: 24 } : {}),
+      body: JSON.stringify(
+        action === "approve"
+          ? { duration_hours: 24, revision: proposal.revision }
+          : {},
+      ),
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -505,14 +510,14 @@ export default function TriagePanel({ onSelectFeed, onOpenTraining, feedNames = 
                 {proposal.status === "proposed" ? (
                   <div className="flex gap-1">
                     <button
-                      onClick={() => ruleAction(proposal.proposal_id, "approve")}
+                      onClick={() => ruleAction(proposal, "approve")}
                       className="rounded bg-amber-800 px-1.5 py-0.5 text-amber-100 hover:bg-amber-700"
                       title="Kuralı yalnız 24 saat için etkinleştir"
                     >
                       24 saat onayla
                     </button>
                     <button
-                      onClick={() => ruleAction(proposal.proposal_id, "reject")}
+                      onClick={() => ruleAction(proposal, "reject")}
                       className="rounded bg-zinc-800 px-1.5 py-0.5 hover:bg-zinc-700"
                     >
                       Reddet
@@ -526,7 +531,7 @@ export default function TriagePanel({ onSelectFeed, onOpenTraining, feedNames = 
                         : "süre yok"}
                     </span>
                     <button
-                      onClick={() => ruleAction(proposal.proposal_id, "revoke")}
+                      onClick={() => ruleAction(proposal, "revoke")}
                       className="ml-auto text-zinc-500 hover:text-red-400"
                       title="Kuralı hemen geri al"
                     >

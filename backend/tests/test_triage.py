@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import sqlite3
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
 import pytest
@@ -12,21 +14,30 @@ from pydantic import ValidationError
 from dortgoz.api.contracts import TriageDecisionInput
 from dortgoz.domain.candidate import CandidateEvent, CandidateType
 from dortgoz.domain.event import EventStatus, VerifiedEvent
-from dortgoz.domain.feedback import FalseAlarmReason, RuleProposalStatus
+from dortgoz.domain.feedback import FalseAlarmReason, RuleProposal, RuleProposalStatus
 from dortgoz.domain.media import IncidentMedia
 from dortgoz.domain.provenance import AnalysisProvenance, ReviewDecision
 from dortgoz.domain.taxonomy import VerifiedEventType, canonical_event_type_from_ws_label
 from dortgoz.domain.video import VideoMetadata
 from dortgoz.events import Event, IncidentUpdate, RunStatus
+from dortgoz.repositories.bundles import FeedbackWriteBundle
+from dortgoz.repositories.errors import RepositoryConflictError
 from dortgoz.repositories.memory import InMemoryEventRepository
+from dortgoz.repositories.sqlite import SqliteEventRepository
 from dortgoz.services import triage
 
 
 class CanonicalTriageStore(triage.TriageStore):
     """Her test incident'ını gerçek canonical parent kayıtlarıyla hazırlar."""
 
-    def __init__(self, clock=None, *, virtual_source: bool = False) -> None:
-        self.repo = InMemoryEventRepository()
+    def __init__(
+        self,
+        clock=None,
+        *,
+        virtual_source: bool = False,
+        repository: InMemoryEventRepository | None = None,
+    ) -> None:
+        self.repo = repository or InMemoryEventRepository()
         self.ids: dict[tuple[str, str], str] = {}
         self.virtual_source = virtual_source
         super().__init__(
@@ -421,7 +432,14 @@ def test_three_dismissals_only_create_proposal(store):
 def test_separate_approval_enables_temporary_rule(store):
     proposal = _propose(store)
     approved = store.approve_rule(proposal.proposal_id, "operator-1", 24)
+    retried = store.approve_rule(
+        proposal.proposal_id,
+        "operator-1",
+        24,
+        expected_revision=proposal.revision,
+    )
     assert approved.status == RuleProposalStatus.APPROVED
+    assert retried == approved
     assert len(approved.development_approval_ids) == triage.RULE_THRESHOLD
     for event_id in approved.source_event_ids:
         approval = store.repo.list_development_approvals(event_id)[0]
@@ -432,6 +450,203 @@ def test_separate_approval_enables_temporary_rule(store):
     assert store.snapshot()["auto_dismissed"] == 1
     event_id = store.ids[("KAM-1", "sonraki")]
     assert store.repo.list_reviews(event_id)[0].reviewer.startswith("approved-rule:")
+
+
+def test_rule_approval_bundle_resyncs_ram_after_sqlite_write_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = tmp_path / "feedback.sqlite3"
+    repository = SqliteEventRepository(database)
+    store = CanonicalTriageStore(repository=repository)
+    proposal = _propose(store)
+    before = proposal.model_dump()
+    original_writer = repository._write_saved_rule_proposal
+
+    def fail_approved_proposal(saved: RuleProposal) -> None:
+        if saved.status == RuleProposalStatus.APPROVED:
+            raise RuntimeError("fixture writer failure")
+        original_writer(saved)
+
+    monkeypatch.setattr(
+        repository,
+        "_write_saved_rule_proposal",
+        fail_approved_proposal,
+    )
+
+    with pytest.raises(RuntimeError, match="fixture writer failure"):
+        store.approve_rule(
+            proposal.proposal_id,
+            "operator-1",
+            expected_revision=proposal.revision,
+        )
+
+    in_process = repository.get_rule_proposal(proposal.proposal_id)
+    assert in_process is not None and in_process.model_dump() == before
+    assert all(
+        repository.list_development_approvals(event_id) == []
+        for event_id in proposal.source_event_ids
+    )
+
+    restarted = SqliteEventRepository(database)
+    from_disk = restarted.get_rule_proposal(proposal.proposal_id)
+    assert from_disk is not None and from_disk.model_dump() == before
+    assert all(
+        restarted.list_development_approvals(event_id) == []
+        for event_id in proposal.source_event_ids
+    )
+
+
+def test_feedback_bundle_retry_does_not_duplicate_audit(tmp_path: Path) -> None:
+    database = tmp_path / "feedback.sqlite3"
+    repository = SqliteEventRepository(database)
+    store = CanonicalTriageStore(repository=repository)
+    proposal = _propose(store)
+    now = datetime.now(UTC)
+    bundle = store._prepare_rule_approval_bundle(
+        proposal,
+        reviewer="operator-1",
+        expires_at=now + timedelta(hours=24),
+        created_at=now,
+    )
+
+    first = repository.save_feedback_bundle(bundle)
+    second = repository.save_feedback_bundle(bundle)
+
+    assert len(first.written_approval_ids) == triage.RULE_THRESHOLD
+    assert first.written_proposal_ids == {proposal.proposal_id}
+    assert second.written_approval_ids == set()
+    assert second.written_proposal_ids == set()
+    with sqlite3.connect(database) as connection:
+        approval_audits = connection.execute(
+            "SELECT COUNT(*) FROM audit_log "
+            "WHERE action = 'development_approval_saved'"
+        ).fetchone()[0]
+        proposal_audits = connection.execute(
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'rule_proposal_approved'"
+        ).fetchone()[0]
+    assert approval_audits == triage.RULE_THRESHOLD
+    assert proposal_audits == 1
+
+
+def test_feedback_bundle_memory_and_sqlite_contract_match(tmp_path: Path) -> None:
+    repository_pairs = [
+        (InMemoryEventRepository(), InMemoryEventRepository()),
+        (
+            SqliteEventRepository(tmp_path / "success.sqlite3"),
+            SqliteEventRepository(tmp_path / "failure.sqlite3"),
+        ),
+    ]
+    successful: list[tuple] = []
+    failed: list[tuple] = []
+
+    for success_repository, failure_repository in repository_pairs:
+        store = CanonicalTriageStore(repository=success_repository)
+        proposal = _propose(store)
+        approved = store.approve_rule(
+            proposal.proposal_id,
+            "operator-1",
+            expected_revision=proposal.revision,
+        )
+        successful.append(
+            (
+                approved.status,
+                approved.revision,
+                len(approved.development_approval_ids),
+                tuple(
+                    len(success_repository.list_development_approvals(event_id))
+                    for event_id in approved.source_event_ids
+                ),
+            )
+        )
+
+        second_store = CanonicalTriageStore(repository=failure_repository)
+        second_proposal = _propose(second_store)
+        now = datetime.now(UTC)
+        valid = second_store._prepare_rule_approval_bundle(
+            second_proposal,
+            reviewer="operator-2",
+            expires_at=now + timedelta(hours=24),
+            created_at=now,
+        )
+        approvals = list(valid.development_approvals)
+        approvals[0] = approvals[0].model_copy(
+            update={"event_id": second_proposal.source_event_ids[1]}
+        )
+        invalid = FeedbackWriteBundle(
+            development_approvals=tuple(approvals),
+            rule_proposals=valid.rule_proposals,
+        )
+        with pytest.raises(RepositoryConflictError) as raised:
+            failure_repository.save_feedback_bundle(invalid)
+        stored = failure_repository.get_rule_proposal(second_proposal.proposal_id)
+        failed.append(
+            (
+                str(raised.value),
+                stored.status if stored is not None else None,
+                tuple(
+                    len(failure_repository.list_development_approvals(event_id))
+                    for event_id in second_proposal.source_event_ids
+                ),
+            )
+        )
+
+    assert successful[0] == successful[1]
+    assert failed[0] == failed[1]
+
+
+def test_stale_rule_revision_is_rejected_before_bundle_write(store) -> None:
+    proposal = _propose(store)
+
+    with pytest.raises(ValueError, match="ekrandan sonra değişti"):
+        store.approve_rule(
+            proposal.proposal_id,
+            "operator-1",
+            expected_revision=proposal.revision - 1,
+        )
+
+    saved = store.repo.get_rule_proposal(proposal.proposal_id)
+    assert saved is not None and saved.status == RuleProposalStatus.PROPOSED
+    assert all(
+        store.repo.list_development_approvals(event_id) == []
+        for event_id in proposal.source_event_ids
+    )
+
+
+@pytest.mark.parametrize("persistent", [False, True])
+def test_bundle_revision_guard_precedes_related_writes(
+    tmp_path: Path, persistent: bool
+) -> None:
+    repository = (
+        SqliteEventRepository(tmp_path / "revision.sqlite3")
+        if persistent
+        else InMemoryEventRepository()
+    )
+    store = CanonicalTriageStore(repository=repository)
+    proposal = _propose(store)
+    now = datetime.now(UTC)
+    valid = store._prepare_rule_approval_bundle(
+        proposal,
+        reviewer="operator-1",
+        expires_at=now + timedelta(hours=24),
+        created_at=now,
+    )
+    approved = valid.rule_proposals[0]
+    stale = RuleProposal.model_validate(
+        {**approved.model_dump(), "revision": approved.revision + 1}
+    )
+
+    with pytest.raises(RepositoryConflictError, match="revision"):
+        repository.save_feedback_bundle(
+            FeedbackWriteBundle(
+                development_approvals=valid.development_approvals,
+                rule_proposals=(stale,),
+            )
+        )
+
+    assert all(
+        repository.list_development_approvals(event_id) == []
+        for event_id in proposal.source_event_ids
+    )
 
 
 @pytest.mark.parametrize(

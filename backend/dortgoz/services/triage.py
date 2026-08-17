@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from ..domain.feedback import (
+    DevelopmentApproval,
     DevelopmentApprovalStatus,
     DevelopmentUse,
     FalseAlarmReason,
@@ -26,6 +27,7 @@ from ..domain.priority import intervention_band_for_score
 from ..domain.provenance import HumanReview, ReviewDecision
 from ..domain.taxonomy import canonical_event_type_from_ws_label
 from ..events import Event, IncidentUpdate
+from ..repositories.bundles import FeedbackWriteBundle
 from ..repositories.protocols import EventRepository
 from .event_service import EventMemoryService
 from .intervention_priority import (
@@ -296,26 +298,37 @@ class TriageStore:
         proposal_id: str,
         reviewer: str,
         duration_hours: int = DEFAULT_RULE_HOURS,
+        expected_revision: int | None = None,
     ) -> RuleProposal:
         proposal = self._proposal(proposal_id)
+        normalized_reviewer = reviewer.strip()
+        if (
+            proposal.status == RuleProposalStatus.APPROVED
+            and proposal.decided_by == normalized_reviewer
+        ):
+            return proposal
         if proposal.status != RuleProposalStatus.PROPOSED:
             raise ValueError("yalnız proposed kural onaylanabilir")
         if proposal.category in PROTECTED_CATEGORIES:
             raise ValueError("kritik olay sınıfı için bastırma kuralı onaylanamaz")
-        if not reviewer.strip():
+        if not normalized_reviewer:
             raise ValueError("reviewer boş olamaz")
         if not 1 <= duration_hours <= MAX_RULE_HOURS:
             raise ValueError(f"kural süresi 1-{MAX_RULE_HOURS} saat olmalıdır")
+        if expected_revision is not None and proposal.revision != expected_revision:
+            raise ValueError(
+                "kural önerisi ekrandan sonra değişti; güncel kaydı yeniden inceleyin"
+            )
         now = self._clock()
-        approval_ids = self._approve_development_use(proposal, reviewer.strip())
-        return self._update_proposal(
+        bundle = self._prepare_rule_approval_bundle(
             proposal,
-            status=RuleProposalStatus.APPROVED,
-            decided_by=reviewer.strip(),
+            reviewer=normalized_reviewer,
             expires_at=now + timedelta(hours=duration_hours),
-            development_approval_ids=approval_ids,
-            updated_at=now,
+            created_at=now,
         )
+        assert self.repository is not None
+        saved = self.repository.save_feedback_bundle(bundle)
+        return saved.rule_proposals[0]
 
     def reject_rule(self, proposal_id: str, reviewer: str) -> RuleProposal:
         proposal = self._proposal(proposal_id)
@@ -695,11 +708,16 @@ class TriageStore:
             updated_at=now,
         )
 
-    def _approve_development_use(
-        self, proposal: RuleProposal, reviewer: str
-    ) -> list[str]:
-        if self.repository is None or self.event_service is None:
-            raise TriagePersistenceError("canonical development approval servisi yok")
+    def _prepare_rule_approval_bundle(
+        self,
+        proposal: RuleProposal,
+        *,
+        reviewer: str,
+        expires_at: datetime,
+        created_at: datetime,
+    ) -> FeedbackWriteBundle:
+        if self.repository is None:
+            raise TriagePersistenceError("canonical feedback repository yapılandırılmadı")
         for event_id, review_id in zip(
             proposal.source_event_ids, proposal.source_review_ids, strict=True
         ):
@@ -710,22 +728,40 @@ class TriageStore:
                 raise ValueError(
                     "Kaynak olay için daha yeni geliştirme kararı var; kural onaylanmadı."
                 )
-        approvals = [
-            self.event_service.record_development_decision(
-                event_id,
-                review_id,
-                DevelopmentApprovalStatus.APPROVED,
+        approvals = tuple(
+            DevelopmentApproval(
+                approval_id=str(uuid4()),
+                event_id=event_id,
+                review_id=review_id,
+                status=DevelopmentApprovalStatus.APPROVED,
                 approved_uses=[DevelopmentUse.CAMERA_RULE],
                 reviewer=reviewer,
                 note=(
                     "Operatör bu geri bildirimi süreli kamera kuralı için onayladı."
                 ),
+                created_at=created_at,
             )
             for event_id, review_id in zip(
                 proposal.source_event_ids, proposal.source_review_ids, strict=True
             )
-        ]
-        return [item.approval_id for item in approvals]
+        )
+        approved = RuleProposal.model_validate(
+            {
+                **proposal.model_dump(),
+                "status": RuleProposalStatus.APPROVED,
+                "decided_by": reviewer,
+                "expires_at": expires_at,
+                "development_approval_ids": [
+                    item.approval_id for item in approvals
+                ],
+                "updated_at": created_at,
+                "revision": proposal.revision + 1,
+            }
+        )
+        return FeedbackWriteBundle(
+            development_approvals=approvals,
+            rule_proposals=(approved,),
+        )
 
     def _revoke_development_use(self, proposal: RuleProposal, reviewer: str) -> None:
         if self.repository is None or self.event_service is None:

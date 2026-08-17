@@ -26,6 +26,7 @@ from ..domain.priority import InterventionPriority
 from ..domain.provenance import HumanReview, TraceRecord
 from ..domain.training import TrainingFrameReview, TrainingSample
 from ..domain.video import VideoMetadata
+from .bundles import FeedbackWriteBundle, FeedbackWriteResult
 from .errors import RepositoryConflictError, RepositoryError
 from .memory import InMemoryEventRepository
 
@@ -773,6 +774,109 @@ class SqliteEventRepository(InMemoryEventRepository):
             ),
         )
 
+    def _write_saved_review(self, saved: HumanReview) -> None:
+        previous = self._event_history[saved.event_id][-1]
+        current = self._events[saved.event_id]
+        self._write_event_revision(previous)
+        self._write_event(current)
+        self._write_review(saved)
+        invalidated_samples = [
+            sample
+            for sample in self._training_samples.values()
+            if sample.invalidated_by_review_id == saved.review_id
+        ]
+        for sample in invalidated_samples:
+            self._write_training_sample(sample)
+        self._write_audit(
+            action="human_review_saved",
+            subject_type="event",
+            subject_id=saved.event_id,
+            actor=saved.reviewer,
+            occurred_at=saved.created_at,
+            payload={"review_id": saved.review_id, "decision": saved.decision.value},
+        )
+        for sample in invalidated_samples:
+            self._write_audit(
+                action="training_sample_invalidated_by_review",
+                subject_type="training_sample",
+                subject_id=sample.sample_id,
+                actor=saved.reviewer,
+                occurred_at=saved.created_at,
+                payload={"review_id": saved.review_id},
+            )
+
+    def _write_saved_development_approval(self, saved: DevelopmentApproval) -> None:
+        self._write_development_approval(saved)
+        revoked_samples = [
+            sample
+            for sample in self._training_samples.values()
+            if sample.revoked_by_approval_id == saved.approval_id
+        ]
+        for sample in revoked_samples:
+            self._write_training_sample(sample)
+        self._write_audit(
+            action="development_approval_saved",
+            subject_type="event",
+            subject_id=saved.event_id,
+            actor=saved.reviewer,
+            occurred_at=saved.created_at,
+            payload={
+                "approval_id": saved.approval_id,
+                "status": saved.status.value,
+                "approved_uses": [item.value for item in saved.approved_uses],
+            },
+        )
+        for sample in revoked_samples:
+            self._write_audit(
+                action="training_sample_revoked",
+                subject_type="training_sample",
+                subject_id=sample.sample_id,
+                actor=saved.reviewer,
+                occurred_at=saved.created_at,
+                payload={"revoked_by_approval_id": saved.approval_id},
+            )
+
+    def _write_saved_rule_proposal(self, saved: RuleProposal) -> None:
+        self._write_rule_proposal(saved)
+        created = saved.revision == 1
+        payload = (
+            {
+                "feed": saved.feed,
+                "category": saved.category,
+                "status": saved.status.value,
+                "dismissal_count": saved.dismissal_count,
+            }
+            if created
+            else {
+                "feed": saved.feed,
+                "category": saved.category,
+                "dismissal_count": saved.dismissal_count,
+                "auto_applied_count": saved.auto_applied_count,
+                "expires_at": (
+                    saved.expires_at.isoformat()
+                    if saved.expires_at is not None
+                    else None
+                ),
+                "revision": saved.revision,
+            }
+        )
+        self._write_audit(
+            action=(
+                "rule_proposal_created"
+                if created
+                else f"rule_proposal_{saved.status.value}"
+            ),
+            subject_type="rule_proposal",
+            subject_id=saved.proposal_id,
+            actor=(
+                saved.proposed_by
+                if created
+                else saved.decided_by or saved.proposed_by
+            ),
+            occurred_at=saved.created_at if created else saved.updated_at,
+            payload=payload,
+        )
+
     def _transaction(self, operation: Callable[[], _T], writer: Callable[[_T], None]) -> _T:
         with self._lock:
             try:
@@ -780,12 +884,12 @@ class SqliteEventRepository(InMemoryEventRepository):
                     result = operation()
                     writer(result)
                 return result
-            except RepositoryConflictError:
-                self._load_database()
-                raise
             except sqlite3.Error as exc:
                 self._load_database()
                 raise RepositoryError(f"event store yazılamadı: {exc}") from exc
+            except Exception:
+                self._load_database()
+                raise
 
     def create_video(self, metadata: VideoMetadata) -> VideoMetadata:
         if self._batch_mutation:
@@ -849,35 +953,7 @@ class SqliteEventRepository(InMemoryEventRepository):
             return super().save_review(review)
 
         def write(saved: HumanReview) -> None:
-            previous = self._event_history[saved.event_id][-1]
-            current = self._events[saved.event_id]
-            self._write_event_revision(previous)
-            self._write_event(current)
-            self._write_review(saved)
-            invalidated_samples = [
-                sample
-                for sample in self._training_samples.values()
-                if sample.invalidated_by_review_id == saved.review_id
-            ]
-            for sample in invalidated_samples:
-                self._write_training_sample(sample)
-            self._write_audit(
-                action="human_review_saved",
-                subject_type="event",
-                subject_id=saved.event_id,
-                actor=saved.reviewer,
-                occurred_at=saved.created_at,
-                payload={"review_id": saved.review_id, "decision": saved.decision.value},
-            )
-            for sample in invalidated_samples:
-                self._write_audit(
-                    action="training_sample_invalidated_by_review",
-                    subject_type="training_sample",
-                    subject_id=sample.sample_id,
-                    actor=saved.reviewer,
-                    occurred_at=saved.created_at,
-                    payload={"review_id": saved.review_id},
-                )
+            self._write_saved_review(saved)
 
         return self._transaction(
             lambda: super(SqliteEventRepository, self).save_review(review), write
@@ -885,57 +961,33 @@ class SqliteEventRepository(InMemoryEventRepository):
 
     def save_development_approval(self, approval: DevelopmentApproval) -> DevelopmentApproval:
         def write(saved: DevelopmentApproval) -> None:
-            self._write_development_approval(saved)
-            revoked_samples = [
-                sample
-                for sample in self._training_samples.values()
-                if sample.revoked_by_approval_id == saved.approval_id
-            ]
-            for sample in revoked_samples:
-                self._write_training_sample(sample)
-            self._write_audit(
-                action="development_approval_saved",
-                subject_type="event",
-                subject_id=saved.event_id,
-                actor=saved.reviewer,
-                occurred_at=saved.created_at,
-                payload={
-                    "approval_id": saved.approval_id,
-                    "status": saved.status.value,
-                    "approved_uses": [item.value for item in saved.approved_uses],
-                },
-            )
-            for sample in revoked_samples:
-                self._write_audit(
-                    action="training_sample_revoked",
-                    subject_type="training_sample",
-                    subject_id=sample.sample_id,
-                    actor=saved.reviewer,
-                    occurred_at=saved.created_at,
-                    payload={"revoked_by_approval_id": saved.approval_id},
-                )
+            self._write_saved_development_approval(saved)
 
         return self._transaction(
             lambda: super(SqliteEventRepository, self).save_development_approval(approval),
             write,
         )
 
+    def save_feedback_bundle(self, bundle: FeedbackWriteBundle) -> FeedbackWriteResult:
+        def operation() -> FeedbackWriteResult:
+            return super(SqliteEventRepository, self).save_feedback_bundle(bundle)
+
+        def write(saved: FeedbackWriteResult) -> None:
+            for review in saved.reviews:
+                if review.review_id in saved.written_review_ids:
+                    self._write_saved_review(review)
+            for approval in saved.development_approvals:
+                if approval.approval_id in saved.written_approval_ids:
+                    self._write_saved_development_approval(approval)
+            for proposal in saved.rule_proposals:
+                if proposal.proposal_id in saved.written_proposal_ids:
+                    self._write_saved_rule_proposal(proposal)
+
+        return self._transaction(operation, write)
+
     def create_rule_proposal(self, proposal: RuleProposal) -> RuleProposal:
         def write(saved: RuleProposal) -> None:
-            self._write_rule_proposal(saved)
-            self._write_audit(
-                action="rule_proposal_created",
-                subject_type="rule_proposal",
-                subject_id=saved.proposal_id,
-                actor=saved.proposed_by,
-                occurred_at=saved.created_at,
-                payload={
-                    "feed": saved.feed,
-                    "category": saved.category,
-                    "status": saved.status.value,
-                    "dismissal_count": saved.dismissal_count,
-                },
-            )
+            self._write_saved_rule_proposal(saved)
 
         return self._transaction(
             lambda: super(SqliteEventRepository, self).create_rule_proposal(proposal),
@@ -944,26 +996,7 @@ class SqliteEventRepository(InMemoryEventRepository):
 
     def update_rule_proposal(self, proposal: RuleProposal) -> RuleProposal:
         def write(saved: RuleProposal) -> None:
-            self._write_rule_proposal(saved)
-            self._write_audit(
-                action=f"rule_proposal_{saved.status.value}",
-                subject_type="rule_proposal",
-                subject_id=saved.proposal_id,
-                actor=saved.decided_by or saved.proposed_by,
-                occurred_at=saved.updated_at,
-                payload={
-                    "feed": saved.feed,
-                    "category": saved.category,
-                    "dismissal_count": saved.dismissal_count,
-                    "auto_applied_count": saved.auto_applied_count,
-                    "expires_at": (
-                        saved.expires_at.isoformat()
-                        if saved.expires_at is not None
-                        else None
-                    ),
-                    "revision": saved.revision,
-                },
-            )
+            self._write_saved_rule_proposal(saved)
 
         return self._transaction(
             lambda: super(SqliteEventRepository, self).update_rule_proposal(proposal),

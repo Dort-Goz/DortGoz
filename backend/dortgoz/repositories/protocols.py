@@ -18,6 +18,7 @@ from ..domain.provenance import (
 )
 from ..domain.training import TrainingFrameReview, TrainingSample
 from ..domain.video import VideoMetadata
+from .bundles import FeedbackWriteBundle, FeedbackWriteResult
 
 
 class EventRepository(Protocol):
@@ -74,6 +75,8 @@ class EventRepository(Protocol):
     def save_development_approval(
         self, approval: DevelopmentApproval
     ) -> DevelopmentApproval: ...
+
+    def save_feedback_bundle(self, bundle: FeedbackWriteBundle) -> FeedbackWriteResult: ...
 
     def list_development_approvals(
         self, event_id: str
