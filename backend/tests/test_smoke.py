@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from dortgoz.events import Event
@@ -16,6 +17,20 @@ def test_health():
         r = client.get("/health")
         assert r.status_code == 200
         assert r.json()["status"] == "ok"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "/api/runs/..%5C..%5Csecret",
+        "/api/runs/..%5C..%5Csecret/export",
+    ],
+)
+def test_run_endpoints_reject_windows_path_traversal(url: str) -> None:
+    with TestClient(app) as client:
+        response = client.get(url)
+
+    assert response.status_code == 404
 
 
 def test_readiness_separates_local_components():

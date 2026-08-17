@@ -40,6 +40,7 @@ from .services.analysis_job import (
     CanonicalAnalysisJobService,
 )
 from .services.deployment_readiness import DeploymentReadinessService
+from .services.run_identity import safe_run_file
 from .ws import ConnectionManager, replay_jsonl
 
 app = FastAPI(title="Dörtgöz", version="0.1.0")
@@ -120,7 +121,11 @@ async def get_run(run_id: str) -> list[dict]:
     """Kayıtlı koşunun olay akışı — arayüz yeniden bağlandığında geçmişi çeker."""
     from .pipeline.runner import load_run
 
-    if not (settings.runs_dir / f"{run_id}.jsonl").is_file():
+    try:
+        path = safe_run_file(settings.runs_dir, run_id, ".jsonl")
+    except ValueError:
+        raise HTTPException(status_code=404, detail="koşu bulunamadı")
+    if not path.is_file():
         raise HTTPException(status_code=404, detail="koşu bulunamadı")
     return load_run(run_id)
 
@@ -133,8 +138,9 @@ async def export_run(run_id: str) -> FileResponse:
     from .services.analysis_package import export_with_evidence
 
     try:
+        safe_run_file(settings.runs_dir, run_id, ".jsonl")
         pkg = await export_with_evidence(run_id)
-    except FileNotFoundError:
+    except (FileNotFoundError, ValueError):
         raise HTTPException(status_code=404, detail="koşu bulunamadı")
     return FileResponse(pkg, filename=pkg.name, media_type="application/zip")
 

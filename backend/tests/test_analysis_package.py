@@ -120,3 +120,26 @@ def test_import_rejects_newer_version(run_fixture, tmp_path):
         zf.writestr("analiz.jsonl", "")
     with pytest.raises(ValueError, match="çok yeni"):
         ap.import_analysis(bad)
+
+
+@pytest.mark.parametrize("run_id", ["../../outside", r"..\..\outside", "C:outside"])
+def test_import_rejects_manifest_run_id_traversal(run_fixture, tmp_path, run_id):
+    bad = tmp_path / "traversal.zip"
+    with zipfile.ZipFile(bad, "w") as zf:
+        zf.writestr("manifest.json", json.dumps({
+            "format": "dortgoz-analiz",
+            "surum": ap.FORMAT_VERSION,
+            "run_id": run_id,
+            "sha256": {},
+        }))
+        zf.writestr("analiz.jsonl", "")
+
+    with pytest.raises(ValueError, match="koşu kimliği"):
+        ap.import_analysis(bad)
+
+    assert not (tmp_path / "outside.jsonl").exists()
+
+
+def test_export_rejects_run_id_traversal(run_fixture):
+    with pytest.raises(ValueError, match="koşu kimliği"):
+        ap.export_analysis(r"..\..\secret")

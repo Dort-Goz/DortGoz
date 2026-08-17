@@ -27,6 +27,7 @@ from ..domain.taxonomy import (
     legacy_ws_label_from_canonical,
 )
 from ..events import AgentStep, Event, RunStatus, WindowEvent, WindowReport
+from ..services.run_identity import require_safe_run_id, safe_run_file
 from ..services.runtime_metrics import CanonicalRunMetrics
 from ..services.runtime_policy import decide_runtime_policy
 from ..services.runtime_postprocess import RuntimeEvidenceScope, postprocess_finalized_report
@@ -84,10 +85,11 @@ class RunRecorder:
         metrics: CanonicalRunMetrics,
         feed: str = "",
     ) -> None:
+        require_safe_run_id(run_id)
         self.manager = manager
         self.feed = feed
         self.metrics = metrics
-        self.path = settings.runs_dir / f"{run_id}.jsonl"
+        self.path = safe_run_file(settings.runs_dir, run_id, ".jsonl")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._fh = self.path.open("w", encoding="utf-8")
         self._metrics_written = False
@@ -314,6 +316,7 @@ async def run_video(
     yapılandırması `runs/<id>.meta.json`'a yazılır — hangi istem hangi çıktıyı
     üretti sorusu (ablation/kanıt disiplini) her zaman cevaplanabilir kalır.
     """
+    require_safe_run_id(run_id)
     metrics = CanonicalRunMetrics(run_id)
     rec = RunRecorder(manager, run_id, metrics, feed=feed)
     evidence_scope = RuntimeEvidenceScope.create(run_id)
@@ -327,7 +330,7 @@ async def run_video(
         # Geniş kip, ölçülmüş genis2 yapılandırmasını kullanır (keskin hırsızlık
         # istisnası yalnız bu kipte — dengeli kipin yayımlanmış ölçümü değişmez).
         system_prompt = interpret.SYSTEM_TR_GENIS
-    (settings.runs_dir / f"{run_id}.meta.json").write_text(json.dumps({
+    safe_run_file(settings.runs_dir, run_id, ".meta.json").write_text(json.dumps({
         "video": video,
         "model": effective_model,
         "system_prompt": system_prompt or SYSTEM_TR,
@@ -919,7 +922,7 @@ async def run_video(
 
 def load_run(run_id: str) -> list[dict]:
     """Kayıtlı koşuyu JSONL'den okur (`/api/runs/{run_id}`)."""
-    path = settings.runs_dir / f"{run_id}.jsonl"
+    path = safe_run_file(settings.runs_dir, run_id, ".jsonl")
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 

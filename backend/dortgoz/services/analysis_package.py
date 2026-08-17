@@ -29,6 +29,7 @@ from ..config import settings
 from ..events import IncidentUpdate, WindowReport
 from ..pipeline.ingest import grab_frame
 from ..pipeline.runner import resolve_media
+from .run_identity import require_safe_run_id, safe_run_file
 
 FORMAT_VERSION = 1
 _CLOCK = "%02d:%02d"
@@ -67,10 +68,11 @@ def _parse_stream(jsonl: Path) -> tuple[list[WindowReport], dict[str, IncidentUp
 
 def export_analysis(run_id: str, *, include_video: bool = True) -> Path:
     """Koşuyu zip paketine yazar; paket yolunu döndürür."""
-    jsonl = settings.runs_dir / f"{run_id}.jsonl"
+    require_safe_run_id(run_id)
+    jsonl = safe_run_file(settings.runs_dir, run_id, ".jsonl")
     if not jsonl.is_file():
         raise FileNotFoundError(f"koşu bulunamadı: {run_id}")
-    meta_path = settings.runs_dir / f"{run_id}.meta.json"
+    meta_path = safe_run_file(settings.runs_dir, run_id, ".meta.json")
     meta = json.loads(meta_path.read_text()) if meta_path.is_file() else {}
     reports, incidents, _ = _parse_stream(jsonl)
 
@@ -189,16 +191,19 @@ def import_analysis(package: Path, feed: str = "") -> session.RunContext:
         if manifest.get("surum", 0) > FORMAT_VERSION:
             raise ValueError(f"paket sürümü çok yeni: {manifest.get('surum')}")
 
-        new_id = f"ithal-{manifest.get('run_id', 'analiz')}"[:48]
-        jsonl_dst = settings.runs_dir / f"{new_id}.jsonl"
+        source_id = require_safe_run_id(str(manifest.get("run_id", "analiz")))
+        new_id = require_safe_run_id(f"ithal-{source_id}"[:48])
+        jsonl_dst = safe_run_file(settings.runs_dir, new_id, ".jsonl")
         jsonl_dst.parent.mkdir(parents=True, exist_ok=True)
-        jsonl_dst.write_bytes(zf.read("analiz.jsonl"))
-        if manifest["sha256"].get("analiz.jsonl") and \
-                _sha256(jsonl_dst) != manifest["sha256"]["analiz.jsonl"]:
-            jsonl_dst.unlink()
+        analysis_bytes = zf.read("analiz.jsonl")
+        expected_analysis_hash = manifest.get("sha256", {}).get("analiz.jsonl")
+        if expected_analysis_hash and hashlib.sha256(analysis_bytes).hexdigest() != expected_analysis_hash:
             raise ValueError("analiz.jsonl sağlama toplamı tutmuyor")
+        jsonl_dst.write_bytes(analysis_bytes)
         if "meta.json" in names:
-            (settings.runs_dir / f"{new_id}.meta.json").write_bytes(zf.read("meta.json"))
+            safe_run_file(settings.runs_dir, new_id, ".meta.json").write_bytes(
+                zf.read("meta.json")
+            )
 
         video_rel = ""
         video_members = [n for n in names if n.startswith("video/") and not n.endswith("/")]
