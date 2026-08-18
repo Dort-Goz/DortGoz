@@ -96,6 +96,42 @@ SYSTEM_TR_GENIS = SYSTEM_TR.replace(
     "alışveriştir. ",
 )
 
+# İKİNCİ GÖRÜŞ istemi (2026-08-18). Tırmandırma çağrısı birincil modelin
+# "olagan" dediği YÜKSEK HAREKETLİ pencereleri görür — görevi birincilinkinden
+# farklıdır, o yüzden istemi de farklı olmalıdır. İçerik ölçümden türetildi:
+#  · Kurtardığı sınıflar (tam bölme): Shoplifting ×5, Burglary, Explosion, Shooting.
+#  · Ürettiği YENİ yanlış alarmların tamamı 4 klip ve 3'ü aynı desen: tezgâh
+#    ARKASINDAKİ personelin eğilip ürün alması, ödeme sırasında poşete koyma,
+#    kameraya yaklaşıp bakma. Bunlar ADIYLA dışlanır.
+# ⚠ Duyarlılık BİLEREK düşürülmedi ("şüphe yetmez" demiyoruz): ölçüm, kaçırılan
+# olayların modelin BELİRSİZLİĞİNDEN tırmandığını gösterdi (düşünme açıldığında
+# belirsizlik çözülüp yakalama düşüyordu). Dışlamalar hedeflidir, genel bir
+# eşik yükseltmesi değildir.
+SYSTEM_TR_IKINCI = (
+    "Sen bir güvenlik kamerası görüntü analiz uzmanısın ve İKİNCİ GÖRÜŞ veriyorsun. "
+    "Başka bir model bu pencereyi zaten okudu ve dikkat gerektiren bir şey bulmadı, "
+    "ama sahnede belirgin hareket var. Görevin ONUN KAÇIRMIŞ OLABİLECEĞİ ince "
+    "olayları aramaktır.\n\n"
+    "Özellikle şunlara bak: bir ürünün cebe/çantaya/giysi içine GİZLENMESİ; kasadan "
+    "veya çekmeceden izinsiz para alınması; yerde hareketsiz yatan kişi; silah benzeri "
+    "nesne; kapı/vitrin/kilit zorlanması; duman, alev veya ani parlama; bir kişiye "
+    "yönelen fiziksel temas.\n\n"
+    "⚠ UZANMAK GİZLEMEK DEĞİLDİR: bir nesneye uzanmak, dokunmak, tutmak veya "
+    "incelemek tek başına olay değildir. Ürünün cebe, çantaya veya giysi içine "
+    "girdiğini ya da ödenmeden dışarı çıkarıldığını KARELERDE GÖRMEDİYSEN hırsızlık "
+    "yazma; gördüklerini `summary`de betimle ve şüpheni `uncertainties`e koy.\n\n"
+    "Şunlar NORMAL işleyiştir, olay yazma: tezgâhın veya kasanın ARKASINDAKİ "
+    "personelin ürün alması, eğilmesi, çekmece açması; müşterinin ödeme sırasında "
+    "ürünü poşete koyması; rafta ürün inceleyip yerine bırakma; kameraya bakmak veya "
+    "yaklaşmak; güvenlik görevlisinin rutin devriyesi ve müşteriyle konuşması.\n\n"
+    "Yalnızca karelerde GÖRDÜĞÜNÜ yaz; kimlik iddiası kurma, hukukî hüküm verme. "
+    "Emin olmadığın çıkarımı `uncertainties` alanına koy. Her olayın `evidence` "
+    "alanında yalnız sana verilen FRAME_ID değerlerini kullan. `severity_hint` "
+    "ölçeğinde `dusuk` = olağan hareketlilik (ALARM DEĞİL); `orta` ve üstünü yalnız "
+    "gerçekten müdahale gerektiren durumlar için kullan. Rapor KISA olsun."
+)
+
+
 # İki kademeli çıktının sözleşme paragrafı — şemaya (tier_schema) bağlı olduğu
 # için SYSTEM_TR'den AYRI tutulur ve etkin sistem istemine mekanik eklenir:
 # deney paneli sistem istemini değiştirse de `durum` dalı açıklamasız kalmaz.
