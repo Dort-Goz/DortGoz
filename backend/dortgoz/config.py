@@ -70,7 +70,10 @@ class Settings(BaseSettings):
     # yeniden yüklemesidir; canlı düzende kuyrukla amorti edilir. "" = KAPALI.
     # Ölçüm: bench/results/ab_qwen38_rol_analizi_20260815.md
     second_opinion_model: str = ""   # ör. "qwen3.8-27b-vision-dg"
-    second_opinion_motion: float = 0.30
+    # 0,30 → 0,40 (2026-08-18, 3 replika üzerinde kural taraması): yakalama bandı
+    # AYNI (105-108/140), yanlış alarm 16-19 → 15-18, tırmandırılan pencere %24 az.
+    # Kesin iyileşme. 0,50 maliyeti %38 azaltıyor ama bandın altı 104'e düşüyor.
+    second_opinion_motion: float = 0.40
     # Düşünme kademesi (Qwen3.8 ailesi `reasoning_effort` bekler; Qwen3.6
     # ikili `enable_thinking` konuşur — çeviri pipeline/thinking.py'de).
     # "" = aile varsayılanı (üretim davranışı, düşünme kapalı okuma),
