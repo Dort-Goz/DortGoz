@@ -63,6 +63,8 @@ async def main() -> None:
     ap.add_argument("--model", default="qwen3.8-27b-vision-dg")
     ap.add_argument("--efor", default="", help="'' = düşünmesiz (ölçülen en iyi)")
     ap.add_argument("--hareket", type=float, default=0.30)
+    ap.add_argument("--esz", type=int, default=4,
+                    help="eşzamanlı pencere (profil -np ile uyumlu olmalı)")
     ap.add_argument("--ucf", type=Path)
     ap.add_argument("--out", type=Path,
                     default=Path(__file__).parent / "results" / "ikinci_gorus_testsplit.jsonl")
@@ -84,17 +86,27 @@ async def main() -> None:
 
     t0 = time.time()
     profiller: dict[str, list] = {}          # klip başına bir kez çıkar (pahalı)
-    for n, s in enumerate(kalan, 1):
-        # Klibi UCF ağacında bul (bölme dosyası sınıf/ad yolunu verir)
+    # Profil çıkarımı ffmpeg (CPU) — kilit altında tek sefer; VLM çağrıları eşzamanlı.
+    profil_gorevleri: dict[str, asyncio.Task] = {}
+    yaz_kilidi = asyncio.Lock()
+    sem = asyncio.Semaphore(a.esz)
+    sayac = {"n": 0}
+
+    async def isle(s: dict) -> None:
+      async with sem:
         adaylar = list(videolar.rglob(s["clip"]))
         if not adaylar:
             kayit = {**s, "hata": "klip diskte yok"}
         else:
             video = adaylar[0]
             try:
-                if s["clip"] not in profiller:
-                    profiller[s["clip"]] = await ingest.motion_profile(
-                        video, settings.base_fps)
+                # Klip BAŞINA tek görev: aynı klip bir kez çıkarılır ama FARKLI
+                # klipler paralel gider. Global kilit GPU'yu %9'a düşürüyordu —
+                # dört görev tek bir ffmpeg geçişini sırayla bekliyordu.
+                if s["clip"] not in profil_gorevleri:
+                    profil_gorevleri[s["clip"]] = asyncio.create_task(
+                        ingest.motion_profile(video, settings.base_fps))
+                profiller[s["clip"]] = await profil_gorevleri[s["clip"]]
                 kareler = select_keyframes(profiller[s["clip"]], s["start"],
                                            s["end"], settings.keyframes_per_window)
                 ts = time.monotonic()
@@ -108,12 +120,17 @@ async def main() -> None:
                          "summary": rapor.summary[:200]}
             except Exception as exc:
                 kayit = {**s, "hata": f"{type(exc).__name__}: {exc}"[:200]}
-        with a.out.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(kayit, ensure_ascii=False) + "\n")
-        if n % 10 == 0 or n == len(kalan):
-            hiz = (time.time() - t0) / n
-            print(f"[{n}/{len(kalan)}] {hiz:.1f} sn/pencere · "
-                  f"ETA {(len(kalan)-n)*hiz/60:.0f} dk", flush=True)
+        async with yaz_kilidi:
+            with a.out.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(kayit, ensure_ascii=False) + "\n")
+            sayac["n"] += 1
+            n = sayac["n"]
+            if n % 10 == 0 or n == len(kalan):
+                hiz = (time.time() - t0) / n
+                print(f"[{n}/{len(kalan)}] {hiz:.1f} sn/pencere (duvar) · "
+                      f"ETA {(len(kalan)-n)*hiz/60:.0f} dk", flush=True)
+
+    await asyncio.gather(*(isle(x) for x in kalan))
 
     puanla(a.birincil, a.out, a.hareket)
 
