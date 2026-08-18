@@ -35,7 +35,7 @@ from ..ws import ConnectionManager
 from . import ingest, interpret, perception, windowing
 from .candidate_intervals import IntervalConfig, build_candidate_intervals
 from .candidate_model import MotionBaselineModel
-from .interpret import SYSTEM_TR, TASK_TR, interpret_window
+from .interpret import SYSTEM_TR, SYSTEM_TR_IKINCI, TASK_TR, interpret_window
 
 THUMB_DIR = "_thumbs"       # media/ altında; /media mount'u üzerinden servis edilir
 LOGGER = logging.getLogger(__name__)
@@ -745,7 +745,12 @@ async def run_video(
                             meta=percep.meta_text() if percep else "",
                             model=settings.second_opinion_model,
                             effort=settings.second_opinion_effort,
-                            system_prompt=system_prompt,
+                            # Rol-özel istem: ikinci görüşün işi birincilinkinden
+                            # FARKLI (yalnız "olagan" denmiş hareketli pencereleri
+                            # görür). 3 replika: yakalama 105-108 → 109-111,
+                            # yanlış alarm 16-19 → 15-17. Deney paneli/bench
+                            # bir istem geçtiyse ona saygı duyulur.
+                            system_prompt=system_prompt or SYSTEM_TR_IKINCI,
                             task_prompt=task_prompt, context=hint,
                             timing=so_timing,
                             captured_frames=so_frames,
