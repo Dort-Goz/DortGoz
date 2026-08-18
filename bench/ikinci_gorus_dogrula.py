@@ -28,7 +28,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from dortgoz.pipeline.interpret import interpret_window   # noqa: E402
+from dortgoz.pipeline.interpret import SYSTEM_TR_GENIS, interpret_window  # noqa: E402
 from dortgoz.pipeline.windowing import select_keyframes   # noqa: E402
 from dortgoz.pipeline import ingest                       # noqa: E402
 from dortgoz.config import settings                       # noqa: E402
@@ -63,6 +63,8 @@ async def main() -> None:
     ap.add_argument("--model", default="qwen3.8-27b-vision-dg")
     ap.add_argument("--efor", default="", help="'' = düşünmesiz (ölçülen en iyi)")
     ap.add_argument("--hareket", type=float, default=0.30)
+    ap.add_argument("--genis", action="store_true",
+                    help="SYSTEM_TR_GENIS istemi (hırsızlık cümlesi keskin hâli)")
     ap.add_argument("--esz", type=int, default=4,
                     help="eşzamanlı pencere (profil -np ile uyumlu olmalı)")
     ap.add_argument("--ucf", type=Path)
@@ -110,8 +112,10 @@ async def main() -> None:
                 kareler = select_keyframes(profiller[s["clip"]], s["start"],
                                            s["end"], settings.keyframes_per_window)
                 ts = time.monotonic()
-                rapor = await interpret_window(video, (s["start"], s["end"]), kareler,
-                                               model=a.model, effort=a.efor)
+                rapor = await interpret_window(
+                    video, (s["start"], s["end"]), kareler, model=a.model,
+                    effort=a.efor,
+                    system_prompt=SYSTEM_TR_GENIS if a.genis else "")
                 sev = max((SEVERITY.index(e.severity_hint) for e in rapor.events),
                           default=-1)
                 kayit = {**s, "n_events": len(rapor.events), "severity": sev,
