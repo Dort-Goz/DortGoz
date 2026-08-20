@@ -62,14 +62,20 @@ class Settings(BaseSettings):
     # (71 klip alt kümesi): eşik 0,10'da pencerelerin ~%4'ü tırmanıyor,
     # klip yakalama +1 / yanlış alarm +0; kurtarılanlar GT-ilişkiliydi.
     escalate_p: float = 0.10
-    # İkinci görüş (çapraz model, 2026-08-15 A/B): birincil model olaysız
-    # bıraktı VE pencere hareketi eşiği aştıysa pencere BİR kez de ikinci
-    # modele okutulur. İki modelin kör noktaları tamamlayıcı ölçüldü (31 klip:
-    # 27B, 35B'nin olaysız 8 penceresinde orta+ buldu; tersi 2) — motion>=0,30
-    # kapısıyla klip yakalama 13/26 → 19/26, FA +0. Model değişimi model sunucusu
-    # yeniden yüklemesidir; canlı düzende kuyrukla amorti edilir. "" = KAPALI.
-    # Ölçüm: bench/results/ab_qwen38_rol_analizi_20260815.md
-    second_opinion_model: str = ""   # ör. "qwen3.8-27b-vision-dg"
+    # İkinci görüş (çapraz model): birincil model olaysız bıraktı VE pencere
+    # hareketi eşiği aştıysa pencere BİR kez de ikinci modele okutulur. İki
+    # modelin kör noktaları tamamlayıcı ölçüldü (31 klip: 27B, 35B'nin olaysız
+    # 8 penceresinde orta+ buldu; tersi 2). Model değişimi model sunucusu yeniden
+    # yüklemesidir; canlı düzende kuyrukla amorti edilir.
+    # ✔ VARSAYILAN AÇIK — 2026-08-19 mimari kararı (dört kollu tam-bölme
+    # kıyaslaması): hibrit en yüksek F1'i verir. 35B tek 95/140 @ 14 FA
+    # (F1 0,763) → HİBRİT 110/140 @ 16 FA (F1 0,827); kesinlik 0,87 KORUNUR,
+    # maliyet 5,73 → 8,04 GPU-sn/dk (1,4×). 27B tek başına daha çok yakalar
+    # (116/140) ama 35 FA ve 1,85× GPU ister. "" = KAPALI (35B tek kol).
+    # Ölçüm: bench/results/27b_birincil_analizi_20260818.md,
+    #        bench/results/ikinci_gorus_testsplit_20260818.md,
+    #        bench/results/ab_qwen38_rol_analizi_20260815.md
+    second_opinion_model: str = "qwen3.8-27b-vision-dg"
     # ⚠ EŞİK İSTEME BAĞLI. 0,40 VARSAYILAN istem için ayarlanmıştı (aynı yakalama,
     # bir az FA, %24 az maliyet). Rol-özel istem (SYSTEM_TR_IKINCI) geldiğinde
     # 0,30 yeniden üstün oldu: 111/15 vs 108/15 (r1). İstem değişirse eşik yeniden
