@@ -181,18 +181,10 @@ async def test_deprecated_profiles_never_invoke_legacy_execution(
         calls["event_orchestrator"] += 1
         raise AssertionError("legacy orchestrator çağrılmamalı")
 
-    def forbidden_local_vlm(*_args, **_kwargs):
-        calls["local_vlm"] += 1
-        raise AssertionError("legacy local VLM çağrılmamalı")
-
-    def forbidden_candidate(*_args, **_kwargs):
-        calls["candidate"] += 1
-        raise AssertionError("legacy candidate çağrılmamalı")
-
+    # LocalVlmAgentTools / LocalCandidateScreeningTool artık router'a hiç import
+    # edilmiyor: legacy çalıştırma yardımcısı silindi, yol çağrılamaz durumda.
     monkeypatch.setattr(MockVerticalAnalysisService, "analyze", forbidden_vertical)
     monkeypatch.setattr(EventOrchestrator, "run", forbidden_orchestrator)
-    monkeypatch.setattr(api_module, "LocalVlmAgentTools", forbidden_local_vlm)
-    monkeypatch.setattr(api_module, "LocalCandidateScreeningTool", forbidden_candidate)
 
     response = await canonical_api.client.post(
         f"/api/videos/{video.video_id}/analyze",

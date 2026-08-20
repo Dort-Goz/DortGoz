@@ -12,18 +12,10 @@ import tempfile
 from pathlib import Path
 from typing import cast
 
-from fastapi import APIRouter, File, Query, Request, UploadFile
+from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from ..config import settings
-from ..domain.event import VerifiedEvent
-from ..domain.evidence import EvidenceItem, VerifiedEventType
-from ..domain.memory import AnalysisStatus
-from ..domain.provenance import (
-    HumanReview,
-    ProcedureSource,
-    ReviewDecision,
-)
 from ..domain.video import VideoMetadata
 from ..infrastructure.storage import LocalVideoStorage
 from ..pipeline.candidate_model import CandidateScorer, load_candidate_scorer
@@ -39,23 +31,13 @@ from ..services.analysis_job import (
     AnalysisJobStartError,
     CanonicalAnalysisJobService,
 )
-from ..services.event_service import EventMemoryService
 from ..services.ingest_service import VideoIngestService
-from ..services.mock_vertical import MockVerticalAnalysisService
 from ..services.procedure_service import ProcedureService
 from ..services.risk_engine import RiskEngine, load_risk_ruleset
-from ..tools.local_agent import LocalVlmAgentTools
-from ..tools.local_vlm import LocalVlmManifest
-from ..tools.screening import LocalCandidateScreeningTool
 from .contracts import (
     AnalysisAccepted,
     AnalysisProgress,
     AnalyzeRequest,
-    HumanReviewInput,
-    QueryRequest,
-    QueryResponse,
-    ReportResponse,
-    SystemMetrics,
 )
 from .errors import error_response
 
@@ -69,7 +51,6 @@ class ApiRuntime:
             if settings.event_store_path is not None
             else InMemoryEventRepository()
         )
-        self.events = EventMemoryService(self.repository)
         self.storage = LocalVideoStorage(
             settings.media_dir,
             max_bytes=settings.video_max_bytes,
@@ -216,63 +197,6 @@ async def analyze_video(
     )
 
 
-# Legacy vertical helper: Patch C'ye kadar doğrudan test/uyumluluk için tutulur;
-# production REST route'larının hiçbirinden çağrılmaz.
-async def _run_analysis(
-    analysis_id: str,
-    video: VideoMetadata,
-    profile: str,
-    vlm_manifest: LocalVlmManifest | None = None,
-) -> None:
-    runtime.repository.update_analysis_status(analysis_id, AnalysisStatus.RUNNING.value, 0.05)
-    try:
-        screening = (
-            LocalCandidateScreeningTool(
-                video_root=settings.media_dir,
-                model=runtime.candidate_scorer,
-                cache=runtime.candidate_cache,
-            )
-            if profile in {"candidate", "local_vlm"}
-            else None
-        )
-        tools = (
-            LocalVlmAgentTools(metadata=video, settings=settings, manifest=vlm_manifest)
-            if profile == "local_vlm" and vlm_manifest is not None
-            else None
-        )
-        result = await MockVerticalAnalysisService(screening=screening, tools=tools).analyze(
-            video, analysis_id=analysis_id
-        )
-        total = max(1, len(result.candidates))
-        for index, state in enumerate(result.candidates, start=1):
-            projected = EventMemoryService._event_from_state(state)
-            risk = runtime.risk_engine.assess(projected)
-            recommendation = runtime.procedure_service.recommend(projected, risk)
-            state = state.model_copy(update={"risk": risk, "procedures": recommendation.actions})
-            runtime.events.persist_terminal_state(
-                state,
-                update_analysis=False,
-                progress=index / total,
-            )
-        final_status = (
-            AnalysisStatus.REVIEW_REQUIRED
-            if result.human_review_count
-            else AnalysisStatus.COMPLETED
-        )
-        runtime.repository.update_analysis_status(
-            analysis_id,
-            final_status.value,
-            1.0,
-        )
-    except Exception as exc:
-        runtime.repository.update_analysis_status(
-            analysis_id,
-            AnalysisStatus.FAILED.value,
-            1.0,
-            error=f"{type(exc).__name__}: {exc}",
-        )
-
-
 @router.get("/analyses/{analysis_id}/status", response_model=AnalysisProgress)
 async def analysis_status(analysis_id: str, request: Request) -> AnalysisProgress:
     status = await _canonical_analysis_jobs(request).status(analysis_id)
@@ -287,117 +211,6 @@ async def cancel_analysis(analysis_id: str, request: Request) -> AnalysisProgres
     if status is None:
         raise RepositoryNotFoundError(f"analysis bulunamadı: {analysis_id}")
     return AnalysisProgress(analysis_id=analysis_id, status=status)
-
-
-@router.get("/analyses/{analysis_id}/events", response_model=list[VerifiedEvent])
-async def analysis_events(
-    analysis_id: str,
-    status: str | None = Query(default=None),
-) -> list[dict]:
-    if runtime.repository.get_analysis(analysis_id) is None:
-        raise RepositoryNotFoundError(f"analysis bulunamadı: {analysis_id}")
-    try:
-        events = runtime.repository.list_events(analysis_id, status=status)
-    except ValueError as exc:
-        return error_response("INVALID_STATUS", str(exc), status_code=422)
-    return [event.model_dump(mode="json") for event in events]
-
-
-@router.get("/events/{event_id}", response_model=VerifiedEvent)
-async def get_event(event_id: str) -> VerifiedEvent:
-    event = runtime.repository.get_event(event_id)
-    if event is None:
-        raise RepositoryNotFoundError(f"event bulunamadı: {event_id}")
-    return event.model_dump(mode="json")
-
-
-@router.get("/events/{event_id}/evidence", response_model=list[EvidenceItem])
-async def get_event_evidence(event_id: str) -> list[EvidenceItem]:
-    event = runtime.repository.get_event(event_id)
-    if event is None:
-        raise RepositoryNotFoundError(f"event bulunamadı: {event_id}")
-    return [item.model_dump(mode="json") for item in event.evidence]
-
-
-@router.post("/events/{event_id}/review", response_model=HumanReview)
-async def review_event(event_id: str, request: HumanReviewInput) -> HumanReview | JSONResponse:
-    try:
-        decision = ReviewDecision(request.decision)
-        event_type = (
-            VerifiedEventType(request.event_type) if request.event_type is not None else None
-        )
-    except ValueError as exc:
-        return error_response("INVALID_REVIEW", str(exc), status_code=422)
-    review = runtime.events.review_event(
-        event_id,
-        decision,
-        reviewer=request.reviewer,
-        note=request.note,
-        event_type=event_type.value if event_type is not None else None,
-        start_time=request.start_time,
-        peak_time=request.peak_time,
-        end_time=request.end_time,
-        risk_level=request.risk_level,
-    )
-    return review.model_dump(mode="json")
-
-
-@router.post("/analyses/{analysis_id}/query", response_model=QueryResponse)
-async def query_analysis(analysis_id: str, request: QueryRequest) -> QueryResponse:
-    if runtime.repository.get_analysis(analysis_id) is None:
-        raise RepositoryNotFoundError(f"analysis bulunamadı: {analysis_id}")
-    if request.referenced_event_id:
-        referenced = runtime.repository.get_event(request.referenced_event_id)
-        if referenced is None or referenced.analysis_id != analysis_id:
-            raise RepositoryNotFoundError(f"event bulunamadı: {request.referenced_event_id}")
-    events = runtime.events.query(analysis_id, request.question)
-    if request.referenced_event_id:
-        events = [event for event in events if event.event_id == request.referenced_event_id]
-    event_refs = [event.event_id for event in events]
-    evidence_refs = [item.evidence_id for event in events for item in event.evidence]
-    procedure_sources = list(
-        {
-            (
-                action.document_id,
-                action.section,
-                action.version,
-                action.content_hash,
-            ): ProcedureSource(
-                document_id=action.document_id,
-                section=action.section,
-                version=action.version,
-                content_hash=action.content_hash,
-            )
-            for event in events
-            for action in event.actions
-        }.values()
-    )
-    uncertainties = [item for event in events for item in event.uncertainties]
-    labels = ", ".join(event.event_type.value for event in events)
-    answer = f"{len(events)} eşleşen olay bulundu" + (f": {labels}." if labels else ".")
-    return QueryResponse(
-        answer_tr=answer,
-        event_refs=event_refs,
-        evidence_refs=evidence_refs,
-        procedure_sources=procedure_sources,
-        uncertainties=sorted(set(uncertainties)),
-        tool_trace=[trace for event in events for trace in event.decision_trace],
-    )
-
-
-@router.get("/reports/{analysis_id}", response_model=ReportResponse)
-async def analysis_report(analysis_id: str) -> ReportResponse:
-    result = runtime.events.get_analysis_result(analysis_id)
-    if result is None:
-        raise RepositoryNotFoundError(f"analysis bulunamadı: {analysis_id}")
-    return ReportResponse.model_validate(result.model_dump())
-
-
-@router.get("/system/metrics", response_model=SystemMetrics)
-async def system_metrics() -> SystemMetrics:
-    snapshot = runtime.repository.snapshot_metrics()
-    active = sum(not task.done() for task in runtime.jobs.values())
-    return SystemMetrics(active_analyses=active, **snapshot)
 
 
 __all__ = ["ApiRuntime", "router", "runtime"]

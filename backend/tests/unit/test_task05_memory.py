@@ -26,7 +26,6 @@ from dortgoz.repositories.errors import (
     RepositoryDuplicateError,
 )
 from dortgoz.repositories.memory import InMemoryEventRepository
-from dortgoz.services.event_service import EventMemoryService
 from dortgoz.services.legacy_import import iter_legacy_jsonl
 
 VIDEO_ID = "00000000-0000-0000-0000-000000000010"
@@ -194,38 +193,6 @@ def test_bundle_is_atomic_when_trace_write_fails() -> None:
         repository.save_agent_bundle(candidate(), [trace(), trace()], event())
     assert repository.get_event("event-memory-1") is None
     assert repository.get_trace(ANALYSIS_ID, candidate().candidate_id) == []
-
-
-async def test_event_service_persists_mock_vertical_and_analysis_result() -> None:
-    from dortgoz.services.mock_vertical import MockVerticalAnalysisService
-
-    repository = InMemoryEventRepository()
-    service = EventMemoryService(repository)
-    vertical = await MockVerticalAnalysisService().analyze(metadata())
-    service.start_analysis(metadata(), provenance(), analysis_id=vertical.analysis_id)
-
-    for state in vertical.candidates:
-        service.persist_terminal_state(state)
-
-    result = service.get_analysis_result(vertical.analysis_id)
-    assert result is not None
-    assert result.candidate_count == 3
-    assert result.confirmed_count == 1
-    assert result.rejected_count == 1
-    assert result.human_review_count == 1
-    rejected = service.query(vertical.analysis_id, "rejected")
-    assert len(rejected) == 1
-
-    review_target = next(state for state in vertical.candidates if state.human_review_required)
-    event_id = f"{vertical.analysis_id}:{review_target.candidate_id}"
-    review = service.review_event(
-        event_id,
-        ReviewDecision.REJECT,
-        reviewer="operator-1",
-        note="Mock inceleme sonucu ret.",
-    )
-    assert review.revision == 2
-    assert repository.get_event(event_id).status == EventStatus.REJECTED
 
 
 def test_legacy_import_is_read_only() -> None:

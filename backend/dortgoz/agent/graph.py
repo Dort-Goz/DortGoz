@@ -23,10 +23,10 @@ from langgraph.graph import END, StateGraph
 
 from ..config import settings
 from ..events import AgentStep, ChatMessage, Event
+from ..pipeline.thinking import thinking_extra, thinking_on
 from ..ws import ConnectionManager
 from . import tools
 from .llm import create_chat, main_client
-from ..pipeline.thinking import thinking_extra, thinking_on
 
 SYSTEM_TR = (
     "Sen Dörtgöz saha güvenliği operatör asistanısın. Video analiz hattının "

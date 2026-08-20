@@ -7,13 +7,11 @@ import json
 import pytest
 
 from dortgoz.config import settings
-from dortgoz.services import live_cctv
 from dortgoz.services.live_cctv import (
     LiveFeedWorker,
     load_feeds,
     plan_segments,
 )
-
 
 # ---- akış listesi ----
 
