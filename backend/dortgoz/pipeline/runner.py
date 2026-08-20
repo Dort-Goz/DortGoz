@@ -28,9 +28,9 @@ from ..domain.taxonomy import (
 )
 from ..events import AgentStep, Event, RunStatus, WindowEvent, WindowReport
 from ..services.runtime_metrics import CanonicalRunMetrics
-from ..services.weight_guard import guard as weight_guard
 from ..services.runtime_policy import decide_runtime_policy
 from ..services.runtime_postprocess import RuntimeEvidenceScope, postprocess_finalized_report
+from ..services.weight_guard import guard as weight_guard
 from ..ws import ConnectionManager
 from . import ingest, interpret, perception, windowing
 from .candidate_intervals import IntervalConfig, build_candidate_intervals

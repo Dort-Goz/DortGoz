@@ -31,7 +31,7 @@ import asyncio
 import contextlib
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from ..config import settings
@@ -213,7 +213,7 @@ class LiveFeedWorker:
         run_id = f"canli-{self.status.name}-{seg.stem.removeprefix('seg_')}"
         self.status.state = "isleniyor"
         try:
-            from ..pipeline.runner import run_video   # geç import (mock kipte ağır hat yüklenmesin)
+            from ..pipeline.runner import run_video  # geç import (mock kipte ağır hat yüklenmesin)
             from .triage import store as triage_store
 
             # Uyarlanma döngüsü: operatör bu kamerada bir durumu defalarca
