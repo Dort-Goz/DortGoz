@@ -1,5 +1,3 @@
-"""Canonical runtime metrics için GPU'suz runner entegrasyon testleri."""
-
 from __future__ import annotations
 
 import asyncio

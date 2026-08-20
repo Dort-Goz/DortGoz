@@ -1,5 +1,3 @@
-"""Öğrenilmiş local temporal CNN candidate scorer testleri."""
-
 from __future__ import annotations
 
 import hashlib

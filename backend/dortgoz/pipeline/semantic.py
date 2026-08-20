@@ -1,13 +1,3 @@
-"""SigLIP-2 anlamsal screening scorer'ı — nedensel kamera-tabanı ile.
-
-Kampanya bulgusu (2026-08-08): hareket ailesi
-0.95 kapısını hiçbir eğitimle geçemedi; SigLIP-2 olay-çapa benzerliği + nedensel
-(yalnız-geçmiş) kamera-içi normalizasyon her iki alanda tam recall'u korurken
-kapsamayı düşüren tek varyanttır. Çalışma zamanı yalnız onnxruntime + numpy
-ister; görüntü kulesi ONNX'e bir kez aktarılır (scripts/export_siglip.py),
-metin kulesi hiç koşmaz — çapa embeddingleri artifact yanında hazır durur.
-"""
-
 from __future__ import annotations
 
 import subprocess
@@ -25,7 +15,6 @@ _BATCH = 16
 
 
 class SemanticPrior(BaseModel):
-    """Global öncül: yeni kamera koşan-tabanının sözde-gözlem başlangıcı."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -56,12 +45,6 @@ class SemanticArtifact(BaseModel):
 
 
 class CausalWelford:
-    """Yalnız-geçmiş koşan z-skoru; öncül = sözde-gözlem istatistiği.
-
-    Oracle tüm-klip normalizasyonundan bilerek farklı: olay kendi
-    normalizasyon istatistiğine katılmadan puanlanır (ölçüm: nedensel
-    varyant oracle'dan İYİ — %70,4 → %62,8 kapsama, val klipleri).
-    """
 
     def __init__(self, prior: SemanticPrior | None, sd_floor: float, warmup: int) -> None:
         self.sd_floor = sd_floor
@@ -93,12 +76,10 @@ class CausalWelford:
         return z
 
 
-# Oturum süreç başına bir kez kurulur; ort.InferenceSession.run thread-safe'tir.
 _RUNTIME_CACHE: dict[str, tuple[object, object, int]] = {}
 
 
 class SemanticCandidateModel:
-    """Kare akışı ister: runner ``score_video`` yolunu kullanır."""
 
     def __init__(self, artifact: SemanticArtifact, *, onnx_file: Path, anchors_file: Path) -> None:
         self.artifact = artifact
@@ -131,7 +112,6 @@ class SemanticCandidateModel:
         return runtime
 
     def _event_sims(self, video: Path) -> list[tuple[float, float]]:
-        """0,5 fps akış çözümü → parti ONNX çıkarımı → (t, olay-benzerliği)."""
         import numpy as np
 
         session, event_anchors, _ = self._runtime()

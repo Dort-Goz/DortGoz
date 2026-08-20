@@ -1,10 +1,3 @@
-"""SQLite-backed, local-only event memory adapter.
-
-The canonical repository contract stays unchanged.  A single JSON snapshot is
-stored in SQLite after each successful mutation so a local deployment can
-restart without losing uploaded-video metadata, event revisions, or reviews.
-"""
-
 from __future__ import annotations
 
 import json
@@ -26,13 +19,6 @@ _SCHEMA_VERSION = 1
 
 
 class SqliteEventRepository(InMemoryEventRepository):
-    """Persist the in-memory contract as an atomic local SQLite snapshot.
-
-    SQLite is deliberately used from the Python standard library: it adds no
-    cloud, paid service, or new runtime dependency.  The inherited lock also
-    serializes snapshot writes, keeping the adapter suitable for the current
-    one-process FastAPI deployment.
-    """
 
     def __init__(self, database_path: Path) -> None:
         super().__init__()

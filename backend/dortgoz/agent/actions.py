@@ -1,5 +1,3 @@
-"""Agent'in kullanabildiği canonical eylem kümesi."""
-
 from enum import StrEnum
 
 

@@ -1,20 +1,3 @@
-"""Ajan araç kaydı — sensörler, aktüatörler (mock) ve arayüz araçları.
-
-Şartname gereği aktüatörler mock fonksiyonlardır; her çağrı gerekçesiyle
-birlikte olay akışına yazılır (açıklanabilirlik). Kritik aktüatörler
-operatör onayı ister (human-in-the-loop → ActuatorRequest).
-
-Arayüz araçları ajanın konsolu yönlendirmesini sağlar: "00:15'teki olayı
-göster" → videoya_git + olayi_vurgula.
-
-## Şema kuralları (2026-08-03 araç çağırma geçişi ölçümleri)
-
-- strict: `additionalProperties: false` + TÜM alanlar `required`
-- Qwen'de `array<object>` parametre KULLANMA (llama.cpp #21771)
-- `parallel_tool_calls: false` (dilbilgisi-zorlamalı varsayılan)
-- Her araç `gerekce` alır — ToolCall olayı bu gerekçeyle akar (jüri şeffaflığı)
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -26,15 +9,13 @@ from ..config import settings
 from ..events import ActuatorRequest, Event, ToolCall, UICommand
 from ..ws import ConnectionManager
 
-# Onay gerektiren kritik aktüatörler
 CRITICAL = {"alarm_ver", "alan_kapat"}
 ACTUATORS = ["saglik_ekibi_cagir", "alarm_ver", "alan_kapat", "kayit_baslat"]
 
-EVIDENCE_DIR = "_evidence"      # media/ altında; /media mount'undan servis edilir
+EVIDENCE_DIR = "_evidence"
 
 
 def _tool(name: str, desc: str, props: dict[str, dict]) -> dict:
-    """Strict OpenAI araç tanımı üretir (kurallar üstte)."""
     return {
         "type": "function",
         "function": {
@@ -94,11 +75,6 @@ TOOLS: list[dict] = [
 
 
 async def execute(name: str, args: dict[str, Any], manager: ConnectionManager) -> str:
-    """Bir araç çağrısını çalıştırır; modele dönecek metin sonucu üretir.
-
-    Her çağrı ToolCall olayı olarak akar (gerekçe + sonuçla) — ajan konsolu
-    bu izlerle canlanır. Araç hatası metin olarak modele döner (koşu ölmez).
-    """
     gerekce = str(args.get("gerekce", ""))
     try:
         result = await _dispatch(name, args, manager)
@@ -175,7 +151,6 @@ async def _dispatch(name: str, args: dict[str, Any], manager: ConnectionManager)
 
 
 async def _reexamine(ctx, t: float) -> str:
-    """±15 sn'lik aralığı 8 yoğun kareyle ve düşünme açık yeniden okur."""
     from ..pipeline.interpret import interpret_window
     from ..pipeline.runner import resolve_media
 
@@ -194,7 +169,6 @@ async def _reexamine(ctx, t: float) -> str:
 
 
 async def _evidence_clip(ctx, start: float, end: float) -> str:
-    """Aralığı yeniden kodlamadan keser (anahtar kare hizalı, hızlı)."""
     from ..pipeline.runner import resolve_media
 
     if end <= start:
@@ -221,7 +195,6 @@ def tool_names() -> list[str]:
 
 
 def parse_args(raw: str) -> dict[str, Any]:
-    """Model JSON'ını güvenle ayrıştırır — bozuksa boş sözlük (araç HATA döner)."""
     try:
         parsed = json.loads(raw or "{}")
         return parsed if isinstance(parsed, dict) else {}

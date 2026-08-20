@@ -1,8 +1,4 @@
-"""Repository katmanının typed hata sınıfları."""
-
-
 class RepositoryError(RuntimeError):
-    """Beklenen repository hatalarının tabanı."""
 
     code = "REPOSITORY_ERROR"
 

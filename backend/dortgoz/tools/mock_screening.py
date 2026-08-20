@@ -1,5 +1,3 @@
-"""GPU gerektirmeyen, üç farklı routing dalı üreten screening mock'u."""
-
 from __future__ import annotations
 
 from ..domain.candidate import CandidateEvent, CandidateType

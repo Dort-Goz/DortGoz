@@ -1,5 +1,3 @@
-"""Hafif tarama ve candidate interval domain modelleri."""
-
 from __future__ import annotations
 
 from enum import StrEnum
@@ -37,7 +35,6 @@ class ScreeningSample(BaseModel):
 
 
 class CandidateEvent(BaseModel):
-    """Kesin hüküm değil; pahalı analiz gerektiren zaman aralığı."""
 
     model_config = ConfigDict(extra="forbid")
 

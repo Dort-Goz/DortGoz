@@ -1,16 +1,4 @@
 #!/usr/bin/env python3
-"""Canlı akış adaylarını ffprobe ile tarar, çalışanlardan live_feeds.json üretir.
-
-Girdi: aday listesi JSON — `[{"desc": "...", "url": "https://….m3u8"}, …]`
-(ör. OpenTrafficCamMap'ten süzülmüş; MIT lisanslı, kamu DOT kameraları).
-Çıktı: `config/live_feeds.json` biçiminde doğrulanmış liste + tarama raporu.
-
-    python scripts/canli_kaynak_tara.py adaylar.json --want 25 --out config/live_feeds.json
-
-Akışlar İNDİRİLMEZ; yalnız üstveri okunur (codec/çözünürlük, ~her aday birkaç
-sn). Kamu yayını geliştirme/prova içindir; kayıtlar repoya girmez (veri
-politikası) ve final hava boşluklu — aynı hat yerel RTSP ile çalışır.
-"""
 from __future__ import annotations
 
 import argparse

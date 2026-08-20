@@ -1,5 +1,3 @@
-"""Güvenli storage ile ffprobe doğrulamasını birleştiren ingest servisi."""
-
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable

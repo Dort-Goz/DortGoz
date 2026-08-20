@@ -1,16 +1,3 @@
-"""Phase B evidence-grounding A/B/C benchmark harness'ı.
-
-Bu dosya production pipeline'ını değiştirmez. Aynı seçilmiş JPEG payload'larını
-üç grounding gösterimiyle yerel Qwen'e gönderir:
-
-* A: ordinal ``image_index``
-* B: explicit ``frame_id``
-* C: explicit ``frame_id`` + input-only video timestamp
-
-Önce yalnız planı doğrulamak için ``--dry-run`` kullanın. Model çağrısı güvenlik
-amacıyla ancak açık ``--execute`` bayrağıyla yapılır.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -66,8 +53,7 @@ TEMPERATURE = 0
 GROUNDING_EVALUATION_CONDITION = "at_least_one_valid_selected_frame"
 EXCLUDED_KEYFRAME_FAILURE = "EXCLUDED_KEYFRAME_FAILURE"
 PERMUTATION_SCOPE = "single_controlled_order_perturbation_sensitivity"
-PRODUCTION_EVIDENCE_CONTRACT = ("frame_id", "claim")  # B-biçimi (2026-08-11):
-# timestamp model-facing şemadan çıkarıldı; uygulama frame_id→timestamp doldurur.
+PRODUCTION_EVIDENCE_CONTRACT = ("frame_id", "claim")
 BENCHMARK_EVIDENCE_CONTRACTS = {
     "A": ("image_index", "claim"),
     "B": ("frame_id", "claim"),
@@ -141,7 +127,6 @@ class EvaluationStage(StrEnum):
 
 
 class HarnessFailure(ValueError):
-    """Benchmark planı/kontratı için typed, fail-closed hata."""
 
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
@@ -405,7 +390,6 @@ def _valid_frame_index(
 
 
 def parse_sample(payload: dict[str, Any], *, line_number: int | None = None) -> EvidenceSample:
-    """Tek JSON annotation satırını doğrular ve canonical frame mapping kurar."""
 
     if not isinstance(payload, dict):
         raise _failure(
@@ -525,7 +509,6 @@ def parse_sample(payload: dict[str, Any], *, line_number: int | None = None) -> 
 
 
 def load_samples(path: Path) -> list[EvidenceSample]:
-    """JSONL annotation dosyasını typed ve duplicate-safe biçimde okur."""
 
     if not path.is_file():
         raise HarnessFailure("ANNOTATION_FILE_NOT_FOUND", f"annotation bulunamadı: {path}")
@@ -557,7 +540,6 @@ def load_samples(path: Path) -> list[EvidenceSample]:
 def parse_annotator_label(
     payload: dict[str, Any], *, line_number: int | None = None
 ) -> AnnotatorLabel:
-    """Kişisel veri taşımayan ayrı binary per-frame annotation satırını doğrular."""
 
     allowed_fields = {"sample_id", "frame_index", "annotator_slot", "is_valid_evidence"}
     if not isinstance(payload, dict) or set(payload) != allowed_fields:
@@ -598,7 +580,6 @@ def parse_annotator_label(
 
 
 def load_annotator_labels(path: Path) -> list[AnnotatorLabel]:
-    """Anonim annotator JSONL dosyasını duplicate-safe biçimde okur."""
 
     if not path.is_file():
         raise HarnessFailure("ANNOTATOR_FILE_NOT_FOUND", f"annotator kaydı bulunamadı: {path}")
@@ -633,7 +614,6 @@ def load_annotator_labels(path: Path) -> list[AnnotatorLabel]:
 def annotator_agreement_report(
     labels: Sequence[AnnotatorLabel], samples: Sequence[EvidenceSample]
 ) -> dict[str, Any]:
-    """Tam ann_1/ann_2 frame çiftlerinde raw agreement ve kappa üretir."""
 
     valid_units = {
         (sample.sample_id, frame.frame_index)
@@ -677,7 +657,6 @@ def annotator_agreement_report(
 def deterministic_order(
     sample: EvidenceSample, permutation_id: str, *, seed: int = DEFAULT_SEED
 ) -> tuple[int, ...]:
-    """Original veya sample-stable reproducible permutation üretir."""
 
     order = list(range(len(sample.selected_frames)))
     if permutation_id == "original":
@@ -731,7 +710,6 @@ def build_plans(
 
 
 def _normalized_benchmark_contract(plan: ExperimentPlan) -> str:
-    """Grounding encoding dışındaki prompt/schema yapısını canonicalize eder."""
 
     evidence_schema = _evidence_schema(plan.arm)
     expected_fields = BENCHMARK_EVIDENCE_CONTRACTS[plan.arm.value]
@@ -801,7 +779,6 @@ def assert_fairness(
     *,
     payload_hashes: dict[str, tuple[str, ...]] | None = None,
 ) -> None:
-    """Her sample×order×repeat grubunda grounding dışındaki girdileri eşitler."""
 
     groups: dict[tuple[str, str, int], list[ExperimentPlan]] = defaultdict(list)
     for plan in plans:
@@ -857,7 +834,6 @@ def _evidence_schema(arm: Arm) -> dict[str, Any]:
 
 
 def schema_for_arm(arm: Arm) -> dict[str, Any]:
-    """Production semantic schema'sını yalnız evidence representation'da ayırır."""
 
     schema = copy.deepcopy(tier_schema() if settings.two_tier else report_schema())
     branches = schema["oneOf"] if "oneOf" in schema else [schema]
@@ -875,7 +851,6 @@ def _image_part(jpeg: bytes) -> dict[str, Any]:
 def build_user_content(
     plan: ExperimentPlan, payloads: Sequence[FramePayload]
 ) -> list[dict[str, Any]]:
-    """Aynı payloadları seçilen order'da, yalnız arm etiketi değişerek dizer."""
 
     if len(payloads) != len(plan.sample.selected_frames):
         raise HarnessFailure(
@@ -923,7 +898,6 @@ async def load_frame_payloads(
     annotation_path: Path,
     media_root: Path | None,
 ) -> tuple[FramePayload, ...]:
-    """JPEG'leri sample başına bir kez yükler/çeker; bütün arm/repeat'ler paylaşır."""
 
     video_path: Path | None = None
     if sample.video_path:
@@ -1077,7 +1051,6 @@ def _frame_index_from_id(frame_id: Any, sample: EvidenceSample) -> int:
 
 
 def normalize_evidence(plan: ExperimentPlan, data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Arm-specific referansı canonical selected-frame index/timestamp'a map eder."""
 
     normalized: list[dict[str, Any]] = []
     events = data.get("events", [])
@@ -1250,7 +1223,7 @@ async def run_plan(
         row["latency_ms"] = (time.perf_counter() - started) * 1000
         row["error_code"] = exc.code
         row["error_detail"] = str(exc)[:500]
-    except Exception as exc:  # model/network hatası da kaybolmadan typed row olur
+    except Exception as exc:
         row["latency_ms"] = (time.perf_counter() - started) * 1000
         row["error_code"] = "MODEL_CALL_FAILED"
         row["error_detail"] = f"{type(exc).__name__}: {exc}"[:500]
@@ -1268,7 +1241,6 @@ def _pairwise(values: Sequence[Any]) -> tuple[list[Any], list[Any]]:
 
 
 def consistency_metrics(records: Sequence[dict[str, Any]]) -> dict[str, float]:
-    """Order ve repeat consistency'yi canonical frame referanslarıyla ölçer."""
 
     def event_value(record: dict[str, Any]) -> Any:
         return (

@@ -1,9 +1,3 @@
-"""Candidate/GT interval JSONL artifact'ından recall, FN, tIoU ve VLM oranı üretir.
-
-Her satır: ``video_id``, ``duration_seconds``, ``ground_truth`` ve ``candidates``;
-interval listelerindeki her kayıt ``start_time``/``end_time`` taşır.
-"""
-
 from __future__ import annotations
 
 import argparse

@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""GBNF grameri üretimi ne kadar yavaşlatıyor?
-
-Aynı pencere, aynı kareler, aynı istem — tek fark `response_format`/json_schema.
-Qwen3.8'in söz dağarcığı 248K; her adımda o kadar logit'i maskelemek bedava değil.
-Eğer gramer pahalıysa "önce serbest üret, sonra ucuz yapılandırılmış çıkarım"
-iki aşamalı desen daha hızlı olabilir.
-"""
 import argparse, asyncio, json, statistics as st, sys, time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))

@@ -1,20 +1,3 @@
-"""SigLIP-2 görüntü kulesini ONNX'e aktarır ve semantic scorer artifact'ini üretir.
-
-Yalnız bu aktarım torch+transformers ister (tek seferlik, ayrı bir venv'de);
-çalışma zamanı backend'in mevcut onnxruntime+numpy'ıyla yetinir. Çıktılar:
-
-  models/semantic/local/siglip2_vision.onnx   (git-ignored, ~355 MB)
-  models/semantic/local/siglip2_anchors.npz   (git-ignored, metin kulesi çıktısı)
-  models/semantic/semantic-v1.json            (artifact — commit edilir)
-  models/semantic/manifest.json               (manifest — commit edilir)
-
-Kullanım:  python scripts/export_siglip.py                 (tam aktarım)
-           python scripts/export_siglip.py --manifest-only (yalnız json'lar;
-           mevcut local/ dosyalarından hash üretir, torch istemez)
-Öncüller ve skor parametreleri 2026-08-08 kampanya ölçümlerinden gelir
-(kampanya kayıtları); model Apache-2.0 (google/siglip2-base).
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -27,10 +10,6 @@ OUT = ROOT / "models" / "semantic"
 LOCAL = OUT / "local"
 
 MODEL_ID = "google/siglip2-base-patch16-224"
-# Çapa süpürmesi 2026-08-08 (rapor §9.4): 18'lik havuzdan eğitim-kliplerinde
-# ileri-greedy seçim; val+feed doğrulaması TAM recall @ ~%40 kapsama (st=0,80).
-# Az ve keskin çapa = daha temiz nedensel taban (6'lı genel set %65 kapsamadaydı;
-# birleşim-10 ÖLÇÜMLE daha kötü — çapa eklemek bedava değil).
 EVENT_ANCHORS = [
     "a fire, smoke or an explosion",
     "a person snatching a bag and running away",
@@ -44,11 +23,6 @@ NORMAL_ANCHORS = [
     "people shopping in a store",
 ]
 
-# Kampanya ölçümlerinden gelen skor parametreleri (üretim varsayılanları).
-# act_prior: 187 eğitim klibinin activity istatistiği. ev_prior BİLEREK yok:
-# global benzerlik ortalaması sahneler arası taşınmıyor (öncüllü val recall'u
-# 13/13→11/13 düşürdü); kamera ilk `warmup` örnekte hüküm vermez, sonra kendi
-# geçmişini kullanır.
 SCORE_PARAMS = {
     "ev_weight": 0.5,
     "z_scale": 0.6,
@@ -108,7 +82,6 @@ def export() -> None:
     )
     print(f"onnx -> {onnx_file}")
 
-    # eşlik doğrulaması
     import onnxruntime as ort
 
     sess = ort.InferenceSession(str(onnx_file), providers=["CPUExecutionProvider"])

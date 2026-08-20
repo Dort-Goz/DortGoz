@@ -1,5 +1,3 @@
-"""Görev 05 repository contract ve revision audit testleri."""
-
 from __future__ import annotations
 
 from pathlib import Path

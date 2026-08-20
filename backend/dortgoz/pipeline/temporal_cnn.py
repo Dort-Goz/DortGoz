@@ -1,12 +1,3 @@
-"""Harici ML bağımlılığı olmadan eğitilebilen yerel 1-D temporal CNN.
-
-Bu katman görüntü backbone'u değildir: FFmpeg'den gelen dört düşük maliyetli
-hareket özelliğinin zaman içindeki örüntüsünü öğrenir. Böylece lisansı belirsiz
-bir ağırlık veya bulut servisi kullanmadan gerçek, eğitilmiş bir convolutional
-scorer üretilebilir. Daha güçlü MobileNet/ONNX encoder geldiğinde aynı
-``ScreeningSample`` sözleşmesini korur.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -23,7 +14,6 @@ FEATURE_SCHEMA = ("changed", "fg", "mad", "activity")
 
 
 class TemporalCnnArtifact(BaseModel):
-    """JSON olarak saklanan tek-kanallı temporal convolution ağırlıkları."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -60,7 +50,6 @@ class TemporalCnnArtifact(BaseModel):
 
 @dataclass(frozen=True)
 class TemporalCnnTrainingExample:
-    """Bir videonun motion profili ve pozitif candidate zaman aralıkları."""
 
     video_id: str
     profile: list[MotionSample]
@@ -77,7 +66,6 @@ class TemporalCnnTrainingExample:
 
 
 class TemporalCnnCandidateModel:
-    """Motion özellikleri üzerinde 1-D convolution + sigmoid candidate scorer."""
 
     def __init__(self, artifact: TemporalCnnArtifact) -> None:
         self.artifact = artifact
@@ -113,10 +101,6 @@ class TemporalCnnTrainingMetrics:
     mean_loss: float
     recall_at_half: float
     false_positive_rate_at_half: float
-    # Mimarinin gerçek sözleşmesi: histerezisli aralık kurucusundan geçen
-    # ADAY ARALIKLARIN GT olaylarını yakalama oranı. Örnek-düzeyi recall@0.5
-    # yüksek-recall interval screener için yanlış kabul ölçütüydü (2026-08-07:
-    # örnek-recall 0.16 iken aralık-recall 19/19 ölçüldü).
     interval_event_recall: float = 0.0
 
 
@@ -132,12 +116,6 @@ def train_temporal_cnn(
     seed: int = 20260806,
     artifact_license: Literal["Apache-2.0", "MIT"] = "Apache-2.0",
 ) -> tuple[TemporalCnnCandidateModel, TemporalCnnTrainingMetrics]:
-    """Binary cross-entropy ile deterministic local temporal CNN eğitir.
-
-    Etiketler yalnız proje annotation dosyalarındaki candidate interval'larından
-    gelir. UCA dil açıklamalarını anomali etiketi varsaymak bilinçli olarak
-    yapılmaz; aksi durumda normal davranışlar yanlış pozitif olarak öğretilir.
-    """
 
     if not model_id:
         raise ValueError("model_id boş olamaz")
@@ -165,11 +143,6 @@ def train_temporal_cnn(
         for _ in range(kernel_size)
     ]
     bias = 0.0
-    # 2026-08-07 düzeltmeleri (ölçümle): (a) SINIF AĞIRLIĞI — örneklerin ~%93'ü
-    # negatif; ağırlıksız SGD veri/özellikten bağımsız hiç-ateşleme'ye çöküyordu
-    # (val recall 0.000-0.028). (b) EPOK-BAŞI KARIŞTIRMA — klip-sıralı gezinti
-    # son kliplerin lehine yamultuyordu. İkisiyle birlikte aynı model soak
-    # GT'sinde 19/19 aralık-recall / %47 kapsama verdi (taban: %52-68).
     n_pos = sum(1 for _, _, label in samples if label)
     w_pos = (len(samples) - n_pos) / max(n_pos, 1)
     order = list(range(len(samples)))
@@ -212,7 +185,6 @@ def evaluate_temporal_cnn(
     *,
     threshold: float = 0.5,
 ) -> TemporalCnnTrainingMetrics:
-    """Ayrı validation örneklerinde eşik raporu üretir; eşiği ayarlamaz."""
 
     if not 0 < threshold < 1:
         raise ValueError("evaluation threshold 0 ile 1 arasında olmalı")
@@ -232,8 +204,6 @@ def evaluate_temporal_cnn(
           + (0.0 if label else 1.0) * _log_safe(1.0 - score))
         for label, score in labels_and_scores
     ) / len(labels_and_scores)
-    # aralık-düzeyi olay recall'u: skorlar histerezisli aralık kurucusundan
-    # geçirilir, GT aralıklarının kaçı bir adayla kesişiyor sayılır
     from .candidate_intervals import IntervalConfig, build_candidate_intervals
     ev_total = ev_hit = 0
     for example in examples:

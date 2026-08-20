@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""durum_p MTP altında hayatta kalıyor mu? (-dg profilinin VARLIK SEBEBİ bu)
-
-durum_p, `"durum": "` sonrasındaki AKIŞ-İÇİ token'ın top_logprobs'unu okur —
-yani MTP'nin taslaktan kabul ettiği token tipinin ta kendisi. İlk token her zaman
-hedef modelden gelir, o yüzden basit bir logprobs sondası YANILTIR.
-"""
 import argparse, asyncio, json, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
@@ -26,7 +20,7 @@ async def main() -> None:
         return {"pencere": bas, "durum_p": stats.get("durum_p"),
                 "olay": len(rapor.events)}
 
-    if a.esz > 1:                      # gerçek eşzamanlılık: yığınlama etkisi ölçülür
+    if a.esz > 1:
         cikti = list(await asyncio.gather(*(bir(i) for i in range(3))))
     else:
         cikti = [await bir(i) for i in range(3)]

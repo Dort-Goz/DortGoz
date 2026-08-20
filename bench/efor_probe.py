@@ -1,18 +1,4 @@
 #!/usr/bin/env python3
-"""Düşünme kademesi probu — gerçek yorumlama yolunu her kademede bir kez koşar.
-
-Neden gerekli: Qwen3.8 kademeli düşünür (`reasoning_effort`), Qwen3.6 ikili
-(`enable_thinking`). Kademeli modun bu hatta ÇALIŞTIĞI varsayılamaz, çünkü aynı
-istekte GBNF json_schema var — llama.cpp grameri `</think>` sonrasına erteler ve
-düşünme tavanı yerse şema-geçerli rapor HİÇ üretilmez (aynı hata ev tarafında
-MMLU-Pro @xhigh koşusunda 140 sorunun 8'ini boş bıraktı).
-
-Prob tek pencerede her kademeyi ölçer: gecikme, düşünce uzunluğu, şema geçerliliği,
-olay sayısı. Kol koşusundan (ab_pipeline) ÖNCE koşulur — 5 çağrı, ~1-2 dk.
-
-Kullanım:
-  cd backend && uv run python ../bench/efor_probe.py --klip ../media/Abuse005_x264.mp4
-"""
 
 import argparse
 import asyncio
@@ -38,7 +24,7 @@ async def bir_kademe(klip: Path, pencere: tuple[float, float],
     try:
         rapor = await interpret_window(
             klip, pencere, kareler, effort=kademe, stats=stats, timing=timing)
-    except Exception as exc:                     # şema hatası da bir SONUÇTUR
+    except Exception as exc:
         hata = f"{type(exc).__name__}: {exc}"[:200]
     return {
         "kademe": kademe or "(aile varsayılanı)",

@@ -1,11 +1,3 @@
-"""Ajan/diyalog katmanı: düşünme bütçeli açılıyor mu, model ayrılabiliyor mu?
-
-Düşünme burada tarihsel olarak KAPALIYDI çünkü bütçesiz düşünme 700 token'lık
-tavanın tamamını `reasoning_content`e harcayıp `content`i boş bırakıyordu —
-operatör boş yanıt görüyordu. Bu testler arızanın çözümünü sabitler: kademe
-açıkken bütçe GİDER ve tavan yükselir, yani yanıta yer kalır.
-"""
-
 from types import SimpleNamespace
 
 import pytest
@@ -15,7 +7,6 @@ from dortgoz.config import settings
 
 
 class _Yakala:
-    """create_chat çağrısının argümanlarını yakalayan sahte istemci."""
 
     def __init__(self):
         self.kwargs = None
@@ -35,7 +26,6 @@ def yakala(monkeypatch):
 
 
 class _SessizManager:
-    """WS yayınını yutar — bu testin konusu istek argümanları."""
 
     async def broadcast(self, *args, **kwargs) -> None:
         return None
@@ -54,7 +44,6 @@ async def test_varsayilan_uretim_davranisi_dusunmesiz_kalir(yakala, monkeypatch)
     kw = yakala.kwargs
     assert kw["extra_body"]["chat_template_kwargs"] == {"enable_thinking": False}
     assert kw["max_tokens"] == 700
-    # bütçe düşünmeyen turda GÖNDERİLMEZ (gereksiz alan)
     assert "reasoning_budget_tokens" not in kw["extra_body"]
 
 
@@ -68,13 +57,11 @@ async def test_kademe_acikken_butce_gider_ve_tavan_yukselir(yakala, monkeypatch)
     kw = yakala.kwargs
     assert kw["extra_body"]["chat_template_kwargs"] == {"reasoning_effort": "medium"}
     assert kw["extra_body"]["reasoning_budget_tokens"] == 1200
-    # Tavan yükselmezse düşünce yine yanıtı yer — arızanın ta kendisi
     assert kw["max_tokens"] > 1200
 
 
 @pytest.mark.asyncio
 async def test_agent_model_bos_ise_main_model_kullanilir(yakala, monkeypatch):
-    """A7: tek yüklü örnek. Ayrı profil model sunucusu yeniden yüklemesi demektir."""
     monkeypatch.setattr(settings, "agent_model", "")
     monkeypatch.setattr(settings, "main_model", "qwen3.6-35b-a3b-vision")
     graf = await _tek_tur()

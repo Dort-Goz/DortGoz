@@ -1,5 +1,3 @@
-"""Patch 2 runtime validation → Ledger/risk/procedure policy testleri."""
-
 from __future__ import annotations
 
 import json

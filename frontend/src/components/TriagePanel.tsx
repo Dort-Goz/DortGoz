@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 
-/** `/api/triage` kaydı (backend TriageItem aynası). */
 interface TriageItem {
   key: string;
   feed: string;
@@ -30,9 +29,6 @@ interface Snapshot {
   categories: string[];
 }
 
-/** Teknik gerekçe metnini operatör diline çevirir (ham metin tooltip'te kalır).
- *  "Runtime evidence yalnız provisional... (event[0]=VALIDATED)" gibi satırlar
- *  mühendis jargonu — operatöre KARARINI etkileyen bilgiyi söyler. */
 function humanizeReason(reason: string): string {
   return reason
     .split(" · ")
@@ -69,7 +65,6 @@ function PendingCard({ item, categories, feedLabel, onDecide }: {
   feedLabel: string;
   onDecide: (key: string, verdict: string, category?: string) => void;
 }) {
-  // Kategori varsayılanı modelin önerisi — operatör düzeltebilir
   const [cat, setCat] = useState(
     categories.includes(item.model_category) ? item.model_category : "bilinmeyen");
   return (
@@ -136,7 +131,6 @@ function PendingCard({ item, categories, feedLabel, onDecide }: {
 
 export default function TriagePanel({ onSelectFeed, feedNames = {} }: {
   onSelectFeed?: (feed: string) => void;
-  /** akış kimliği → insan-okur ad (canlı ızgaradan; yoksa kimlik gösterilir) */
   feedNames?: Record<string, string>;
 }) {
   const [snap, setSnap] = useState<Snapshot | null>(null);
@@ -148,7 +142,7 @@ export default function TriagePanel({ onSelectFeed, feedNames = {} }: {
         const r = await fetch("/api/triage");
         const body = await r.json();
         if (alive) setSnap(body);
-      } catch { /* geçici kopukluk */ }
+      } catch {}
     };
     poll();
     const id = setInterval(poll, 2500);
@@ -161,7 +155,6 @@ export default function TriagePanel({ onSelectFeed, feedNames = {} }: {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ key, verdict, category }),
     });
-    // Kuyruğu hemen tazele (sonraki poll'u bekletme)
     const r = await fetch("/api/triage");
     setSnap(await r.json());
   };
@@ -190,8 +183,6 @@ export default function TriagePanel({ onSelectFeed, feedNames = {} }: {
             </div>
           ))}
         </div>
-        {/* Öğrenilen bastırma kuralları: 3× "sorun değil" → otomatik eleme.
-            Kural görünür ve tek tıkla iptal edilir — sessiz kara kutu değil. */}
         {snap.rules.length > 0 && (
           <div className="mt-1.5 pt-1.5 border-t border-zinc-800 text-xs space-y-1">
             <div className="text-zinc-500">

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Yeni bir Dörtgöz klonunun mock veya gerçek yerel çalışmaya hazır olduğunu denetler."""
 
 from __future__ import annotations
 

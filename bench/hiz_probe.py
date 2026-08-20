@@ -1,15 +1,4 @@
 #!/usr/bin/env python3
-"""Görü profili hız probu — aynı pencere okumasını N kez yapıp llama.cpp
-`timings` alanlarını raporlar (kare kodlama dahil PE, üretim t/s).
-
-Profil varyantlarını KIYASLAMAK için: sunucu elle bir portta ayağa kaldırılır,
-bu prob aynı iş yükünü her varyanta uygular. DörtGöz'ün GERÇEK yolunu kullanır
-(interpret_window + GBNF şema), sentetik istek değil.
-
-Kullanım:
-  DORTGOZ_LLAMA_BASE_URL=http://127.0.0.1:9099/v1 \
-  DORTGOZ_MAIN_MODEL=test uv run python ../bench/hiz_probe.py --klip ../media/Abuse005_x264.mp4
-"""
 import argparse, asyncio, json, statistics as st, sys, time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
@@ -24,11 +13,8 @@ async def main() -> None:
     ap.add_argument("--etiket", default="")
     ap.add_argument("--sure", type=float, default=20.0, help="pencere uzunluğu (klip kısa)")
     a = ap.parse_args()
-    # ⚠ Her tekrar FARKLI pencere: aynı pencere tekrarlanırsa llama.cpp önek
-    # önbelleği prompt'u servis eder ve PE ölçümü kare kodlamayı HİÇ içermez
-    # (ilk sürümde 1,9 sn/okuma çıktı, gerçek koşuda 9,6 sn).
     olcum = []
-    for i in range(a.tekrar + 1):          # ilk tur ısınma
+    for i in range(a.tekrar + 1):
         bas = i * a.sure
         pencere = (bas, bas + a.sure)
         kareler = [bas + a.sure * (j + 0.5) / 6 for j in range(6)]

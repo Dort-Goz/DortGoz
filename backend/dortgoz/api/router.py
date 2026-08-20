@@ -1,9 +1,3 @@
-"""Canonical local REST uçları.
-
-REST ve WebSocket analiz başlatma yolları aynı process-local canonical job
-servisini kullanır. Legacy event repository uçları ayrı sözleşme olarak korunur.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -43,7 +37,6 @@ from .errors import error_response
 
 
 class ApiRuntime:
-    """Uygulama yaşamı boyunca paylaşılan local adapter'lar ve işler."""
 
     def __init__(self) -> None:
         self.repository = (
@@ -59,8 +52,6 @@ class ApiRuntime:
         self.candidate_scorer: CandidateScorer = load_candidate_scorer(
             settings.candidate_manifest_path
         )
-        # Candidate profilinin feature cache'i process yeniden başlasa da korunur;
-        # yalnız türetilmiş skorları taşır, ham medya veya tensor saklamaz.
         self.candidate_cache = JsonFeatureCache(settings.candidate_cache_dir)
         project_root = settings.media_dir.parent
         self.risk_engine = RiskEngine(
@@ -88,7 +79,6 @@ def _canonical_analysis_jobs(request: Request) -> CanonicalAnalysisJobService:
 
 @router.post("/videos", response_model=VideoMetadata, status_code=201)
 async def upload_video(file: UploadFile = File(...)) -> VideoMetadata | JSONResponse:
-    """Videoyu UUID adıyla media köküne alır ve ffprobe ile doğrular."""
 
     incoming_root = settings.media_dir / ".incoming"
     incoming_root.mkdir(parents=True, exist_ok=True)

@@ -1,5 +1,3 @@
-"""Görev 10 deterministik risk ruleset testleri."""
-
 from __future__ import annotations
 
 from pathlib import Path

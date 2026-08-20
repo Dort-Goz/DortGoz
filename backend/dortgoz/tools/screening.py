@@ -1,5 +1,3 @@
-"""Yerel candidate screening adapter'ı."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,11 +17,6 @@ class ScreeningError(RuntimeError):
 
 
 class LocalCandidateScreeningTool:
-    """FFmpeg motion profile + local scorer + hysteresis adapter.
-
-    Bu adapter ağ çağrısı yapmaz. Learned CNN/ONNX scorer daha sonra aynı
-    ``model.score`` arayüzüne takılabilir; interval üretimi değişmez.
-    """
 
     def __init__(
         self,
@@ -46,9 +39,6 @@ class LocalCandidateScreeningTool:
             min_duration_seconds=settings.candidate_min_duration_seconds,
             threshold_version=settings.candidate_threshold_version,
         )
-        # Manifest hash'i doğrulanmadan hiçbir candidate artifact'i yüklenmez.
-        # Varsayılan manifest hâlâ ölçülebilir motion baseline'dır; local temporal
-        # CNN eğitildikten sonra yalnız DORTGOZ_CANDIDATE_MANIFEST_PATH değiştirilir.
         self.model = model or load_candidate_scorer(settings.candidate_manifest_path)
         self.cache = cache
 
@@ -94,7 +84,6 @@ class LocalCandidateScreeningTool:
 
 
 def screening_tool_contract(tool: ScreeningTool) -> ScreeningTool:
-    """Tip seviyesinde contract helper; runtime'da no-op'tur."""
 
     return tool
 

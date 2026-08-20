@@ -1,13 +1,10 @@
 import type { Event, OperatorMessage } from "../types/events";
 
-/** Otomatik yeniden bağlanan, tipli WS istemcisi. */
 export class DortgozSocket {
   private ws: WebSocket | null = null;
   private url: string;
   private handler: (e: Event) => void;
   private closed = false;
-  // Bağlantı kurulmadan gönderilenler SESSİZCE düşüyordu (sayfa açılır açılmaz
-  // "demo"ya basmak 4 start_run'ı yutuyordu) → açılana dek kuyrukta bekletilir.
   private pending: OperatorMessage[] = [];
 
   constructor(handler: (e: Event) => void) {

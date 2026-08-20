@@ -2,12 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import type { IncidentUpdate } from "../types/events";
 import TriagePanel from "./TriagePanel";
 
-/** `GET /api/live/status` akış görünümü (backend FeedStatus aynası). */
 interface LiveFeed {
   name: string;
   url: string;
-  desc: string;            // insan-okur kamera adı (boşsa name gösterilir)
-  state: string;           // baslatiliyor | akiyor | isleniyor | hata
+  desc: string;
+  state: string;
   lag_s: number | null;
   dropped_s: number;
   segments_done: number;
@@ -15,7 +14,6 @@ interface LiveFeed {
   snapshot: string;
 }
 
-/** Gecikme rozeti: segment süresi 30 sn → ~45 sn'e kadar "canlıya yetişik". */
 function lagBadge(f: LiveFeed): { text: string; cls: string } {
   if (f.state === "hata") return { text: "KOPUK", cls: "bg-red-700" };
   if (f.lag_s == null) return { text: "başlıyor…", cls: "bg-zinc-700" };
@@ -26,7 +24,6 @@ function lagBadge(f: LiveFeed): { text: string; cls: string } {
 }
 
 export default function LiveGrid({ incidents, onSelectFeed }: {
-  /** Akış adı → olay kartları (WS'ten; hücre rozetinde sayı gösterilir) */
   incidents: Record<string, IncidentUpdate[]>;
   onSelectFeed: (feed: string) => void;
 }) {
@@ -34,9 +31,6 @@ export default function LiveGrid({ incidents, onSelectFeed }: {
   const [active, setActive] = useState(false);
   const [error, setError] = useState("");
   const [zoom, setZoom] = useState<string | null>(null);
-  // Kare tazeleme yoğunluğu: N segmentte 1 kare indirilir (bant genişliği
-  // seçimi — yavaş istemci bağlantısında düşürülür). Sunucu her segmentte
-  // anlık görüntü üretmeye devam eder; bu YALNIZ istemcinin indirme sıklığı.
   const [rate, setRate] = useState<number>(() =>
     Number(localStorage.getItem("dortgoz.canliKareOrani") || 1));
   const changeRate = (v: number) => {
@@ -44,10 +38,6 @@ export default function LiveGrid({ incidents, onSelectFeed }: {
     localStorage.setItem("dortgoz.canliKareOrani", String(v));
   };
 
-  // Izgaranın nabzı: 2 sn'de bir durum tazele. Görüntüler AYRICA tazelenmez:
-  // img önbellek kırıcısı segments_done'a bağlı — tarayıcı bir kareyi yalnız
-  // YENİ anlık görüntü varken indirir (yoksa yavaş bağlantıda 25 img × 2 sn
-  // ≈ 2 Mbps boşa akıyordu ve kareler yarım/bayat yükleniyordu).
   useEffect(() => {
     let alive = true;
     const poll = async () => {
@@ -57,7 +47,7 @@ export default function LiveGrid({ incidents, onSelectFeed }: {
         if (!alive) return;
         setActive(body.active);
         setFeeds(body.feeds);
-      } catch { /* backend geçici kopuk — sonraki turda tekrar */ }
+      } catch {}
     };
     poll();
     const id = setInterval(poll, 2000);
@@ -201,8 +191,6 @@ export default function LiveGrid({ incidents, onSelectFeed }: {
           </div>
         )}
       </div>
-      {/* Nöbet kuyruğu: tespitler insan hükmüne düşer, doğrulananlar oturum
-          listesine geçer (insan-döngüde karar katmanı) */}
       <TriagePanel
         onSelectFeed={onSelectFeed}
         feedNames={Object.fromEntries(

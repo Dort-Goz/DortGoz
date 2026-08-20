@@ -1,26 +1,4 @@
 #!/usr/bin/env python3
-"""UCF-Crime örnek kliplerini `media/` altına indirir — klipler REPOYA GİRMEZ.
-
-Veri politikası (veri politikası): UCF-Crime lisanssız
-ve yeniden dağıtım hakkı yok. Depoda yalnızca bu betik, kendi etiketlerimiz ve
-atıflar bulunur; klipleri herkes kendi makinesine indirir.
-
-Kaynak: HF aynası `backseollgi/UCF-Crime` — resmî `UCF_Crimes.zip`'in 5 parçalı
-ham bölünmesi (103 GB). Parçalar HTTP Range ile sanal olarak birleştirilip
-yalnız seçilen üyeler çekilir; 103 GB indirilmez (toplam ~100 MB).
-
-İnen set aşağıdaki MANIFEST ile SABİTLENMİŞTİR: 13 anomali sınıfının her
-birinden 2 + 5 normal = 31 klip. Liste, "her sınıftan 2 MB üstü en küçük 2 klip"
-kuralıyla üretildi ama sabitlendi; çünkü `bench/results/` altındaki ölçümler tam
-olarak bu dosyalara atıf yapıyor. Böylece ekipteki herkes birebir AYNI
-değerlendirme setini alır ve kıyaslama sonuçları karşılaştırılabilir kalır.
-
-    python scripts/fetch_ucf_samples.py            # indir
-    python scripts/fetch_ucf_samples.py --list     # ne inecek, indirmeden göster
-
-Atıf: Sultani et al., "Real-world Anomaly Detection in Surveillance Videos",
-CVPR 2018 · https://www.crcv.ucf.edu/projects/real-world/
-"""
 
 from __future__ import annotations
 
@@ -38,10 +16,6 @@ UA = {"User-Agent": "curl/8"}
 
 MEDIA = Path(__file__).resolve().parents[1] / "media"
 
-# Değerlendirme seti — SABİT LİSTE. Kural tabanlı seçim (her sınıftan 2 MB üstü
-# en küçük 2 klip) bu listeyi ÜRETTİ, ama kıyaslama sonuçları (bench/results/)
-# tam olarak bu dosyalara atıf yapıyor; herkesin birebir aynı seti alması için
-# liste sabitlendi. Set değişecekse bench sonuçları da yenilenmeli.
 MANIFEST = [
     "Abuse005_x264.mp4",
     "Abuse021_x264.mp4",
@@ -85,7 +59,6 @@ def _size(url: str) -> int:
 
 
 class SplitRemoteFile(io.RawIOBase):
-    """Parçalı uzak zip'i tek, seekable dosya gibi gösterir (HTTP Range)."""
 
     def __init__(self, urls: list[str]) -> None:
         self.urls = urls
@@ -122,7 +95,7 @@ class SplitRemoteFile(io.RawIOBase):
             take = min(n, self.sizes[i] - local)
             req = urllib.request.Request(
                 self.urls[i], headers={**UA, "Range": f"bytes={local}-{local + take - 1}"})
-            for attempt in range(3):                  # ağ hatasında yeniden dene
+            for attempt in range(3):
                 try:
                     with urllib.request.urlopen(req, timeout=300) as r:
                         chunk = r.read()
@@ -137,7 +110,6 @@ class SplitRemoteFile(io.RawIOBase):
 
 
 def choose(zf: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
-    """Manifestteki dosyaları zip içinde bulur; eksik kalanı bildirir."""
     want = set(MANIFEST)
     found: dict[str, zipfile.ZipInfo] = {}
     for info in zf.infolist():

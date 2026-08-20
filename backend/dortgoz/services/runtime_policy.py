@@ -1,5 +1,3 @@
-"""Gerçek runner validation sonucunu fail-closed çalışma politikasına çevirir."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -16,7 +14,6 @@ _RISK_ORDER = {"dusuk": 0, "orta": 1, "yuksek": 2, "kritik": 3}
 
 @dataclass(frozen=True, slots=True)
 class RuntimePolicyDecision:
-    """Yalnız mevcut pencere iterasyonunda yaşayan Ledger/risk guard sonucu."""
 
     ledger_report: WindowReport | None
     admitted_event_indices: tuple[int, ...]
@@ -34,7 +31,6 @@ def decide_runtime_policy(
     report: WindowReport,
     validation: RuntimeWindowValidation | None,
 ) -> RuntimePolicyDecision:
-    """WS raporunu değiştirmeden event-index bazlı Ledger projection'ı üret."""
 
     if not report.events:
         return RuntimePolicyDecision(

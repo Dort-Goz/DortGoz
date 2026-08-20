@@ -1,30 +1,3 @@
-"""Canlı CCTV kipi — gerçek akışların 7/24 dönen segmentlerle işlenmesi.
-
-Akış başına bir işçi, iki döngüyle çalışır:
-
-1. **Çekici** (`_ffmpeg_loop`): ffmpeg kaynağı (HLS/RTSP) çeker ve
-   `media/canli/<akış>/seg_<epoch>.mp4` dönen segmentlerine yazar
-   (`-c copy` — yeniden kodlama yok; 25 akış CPU'yu yormaz). Süreç ölürse
-   artan gecikmeyle yeniden başlar (7/24 dayanıklılık); `-strftime` adları
-   yeniden başlatmalar arasında benzersiz kalır.
-2. **İşleyici** (`_process_loop`): KAPANMIŞ segmentleri sırayla normal işleme
-   hattından (`run_video`, `live=True`) geçirir. Canlıya yetişme kuralı:
-   bekleyen segment sayısı sınırı aşarsa en eskiler İŞLENMEDEN atılır ve
-   atılan süre raporlanır — canlı sistemde gecikme sınırsız büyüyemez,
-   dürüstçe "şu kadar atlandı" denir. Gecikme = şimdi − son işlenen segmentin
-   kapanış anı; ızgaradaki "yetişiyor mu" rozeti bu sayıdır.
-
-Her segment kapanışında son kareden `latest.jpg` üretilir (yerel dosyadan tek
-kare çözme — akışın ikinci kez çekilmesi yok); ızgara bu görüntüyü tazeler.
-
-Sohbet canlı kipte SÜREKLİDİR (session.start reset_chat=False) ve her akışın
-bağlamı son segmentiyle tazelenir. Sınırlama (v1): olay defteri segment
-sınırında devretmez — segmenti aşan olay iki kart üretebilir.
-
-Kaynak listesi `config/live_feeds.json`: `[{"name": "...", "url": "..."}]`.
-Genel-açık kamu yayınları (ör. ulaşım idaresi kameraları) geliştirme/prova
-içindir; yarışma finali hava boşluklu — aynı hat yerel RTSP ile çalışır.
-"""
 from __future__ import annotations
 
 import asyncio
@@ -44,21 +17,19 @@ SEGMENT_GLOB = "seg_*.mp4"
 
 @dataclass
 class FeedStatus:
-    """`GET /api/live/status` içindeki tek akış görünümü."""
 
     name: str
     url: str
-    desc: str = ""                    # insan-okur kamera adı (ör. "US 301 SB Ramp")
-    state: str = "baslatiliyor"       # baslatiliyor | akiyor | isleniyor | hata
-    lag_s: float | None = None        # şimdi − son işlenen segment kapanışı
-    dropped_s: float = 0.0            # canlıya yetişmek için atılan süre
+    desc: str = ""
+    state: str = "baslatiliyor"
+    lag_s: float | None = None
+    dropped_s: float = 0.0
     segments_done: int = 0
     last_error: str = ""
-    snapshot: str = ""                # /media altında URL
+    snapshot: str = ""
 
 
 def load_feeds(path: Path | None = None) -> list[dict]:
-    """Akış listesini okur ve doğrular; örnek dosyaya düşer."""
     import json
 
     p = path or settings.live_feeds_path
@@ -82,11 +53,6 @@ def load_feeds(path: Path | None = None) -> list[dict]:
 
 
 def plan_segments(pending: list[Path], max_backlog: int) -> tuple[list[Path], list[Path]]:
-    """(atılacaklar, işlenecekler): canlıya yetişme kuralının saf çekirdeği.
-
-    En yenisi hariç kapanmış segmentlerden fazlası birikirse en eskiler atılır;
-    işleme her zaman kalan EN ESKİ segmentten sürer (zaman sırası korunur).
-    """
     if len(pending) <= max_backlog:
         return [], pending
     return pending[:-max_backlog], pending[-max_backlog:]
@@ -105,7 +71,6 @@ class LiveFeedWorker:
         self._tasks: list[asyncio.Task] = []
         self._last_seg_mtime: float | None = None
 
-    # ---- yaşam döngüsü ----
 
     def start(self) -> None:
         self.running = True
@@ -117,12 +82,6 @@ class LiveFeedWorker:
                                            name=f"canli-isle-{self.status.name}")]
 
     def _wipe_stale(self) -> None:
-        """Önceki oturumdan kalan segmentleri siler — "canlı" ŞİMDİ demektir.
-
-        Eski segment işlenirse gecikme saatler gerideki dosyaya demirlenir
-        (2026-08-14 canlı test: taze başlatmada tüm rozetler "−59 dk geride"
-        gösterdi). Canlı kipin geçmişi yoktur; kayıt runs/'ta zaten durur.
-        """
         for stale in self.dir.glob(SEGMENT_GLOB):
             stale.unlink(missing_ok=True)
 
@@ -137,7 +96,6 @@ class LiveFeedWorker:
             with contextlib.suppress(asyncio.CancelledError):
                 await t
 
-    # ---- çekici ----
 
     def _ffmpeg_cmd(self) -> list[str]:
         return ["ffmpeg", "-nostdin", "-loglevel", "error",
@@ -169,19 +127,14 @@ class LiveFeedWorker:
                     self.status.last_error = "ffmpeg bulunamadı"
                     return
                 await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 60.0)   # 7/24: kalıcı kopuşta nazik tekrar
+                backoff = min(backoff * 2, 60.0)
         finally:
-            # İptal communicate() içinde yakalanırsa alt süreç YAŞAMAYA devam
-            # eder (2026-08-14 canlı ölçümde bir ffmpeg sızdı) — görev nasıl
-            # biterse bitsin çekici burada öldürülür.
             if self._proc and self._proc.returncode is None:
                 with contextlib.suppress(ProcessLookupError):
                     self._proc.kill()
 
-    # ---- işleyici ----
 
     def _closed_segments(self) -> list[Path]:
-        """Yazımı bitmiş segmentler: en yenisi hâlâ yazılıyor sayılır."""
         segs = sorted(self.dir.glob(SEGMENT_GLOB))
         return [s for s in segs[:-1]
                 if s.name not in self._done and s.stat().st_size > 0]
@@ -193,7 +146,6 @@ class LiveFeedWorker:
                 await asyncio.sleep(2.0)
 
     async def _step(self) -> bool:
-        """Bir işleyici adımı (test edilebilir çekirdek): atla-yetiş + tek segment."""
         drop, pending = plan_segments(self._closed_segments(),
                                       settings.live_max_backlog)
         for old in drop:
@@ -213,11 +165,9 @@ class LiveFeedWorker:
         run_id = f"canli-{self.status.name}-{seg.stem.removeprefix('seg_')}"
         self.status.state = "isleniyor"
         try:
-            from ..pipeline.runner import run_video  # geç import (mock kipte ağır hat yüklenmesin)
+            from ..pipeline.runner import run_video
             from .triage import store as triage_store
 
-            # Uyarlanma döngüsü: operatör bu kamerada bir durumu defalarca
-            # elediyse modele "bu olağandır" notu eklenir — tespit hiç doğmaz.
             note = triage_store.feed_note(self.status.name)
             system_prompt = ""
             if note:
@@ -228,7 +178,7 @@ class LiveFeedWorker:
                             system_prompt=system_prompt)
             self.status.segments_done += 1
             self.status.last_error = ""
-        except Exception as exc:   # tek segmentin hatası akışı durdurmaz (7/24)
+        except Exception as exc:
             self.status.last_error = f"{type(exc).__name__}: {exc}"[:200]
             log.exception("canlı %s: segment işlenemedi: %s", self.status.name, seg.name)
         self._done.add(seg.name)
@@ -244,7 +194,6 @@ class LiveFeedWorker:
             self.status.lag_s = round(time.time() - self._last_seg_mtime, 1)
 
     async def _snapshot(self, seg: Path) -> None:
-        """Segmentin son karesinden ızgara görüntüsü (yerel, tek kare çözümü)."""
         out = self.dir / "latest.jpg"
         proc = await asyncio.create_subprocess_exec(
             "ffmpeg", "-nostdin", "-loglevel", "error", "-y",
@@ -256,7 +205,6 @@ class LiveFeedWorker:
             self.status.snapshot = f"/media/canli/{self.status.name}/latest.jpg"
 
     def _prune(self, current: Path) -> None:
-        """Disk 7/24 dolamaz: eski segmentler ve eski segment koşu kayıtları gider."""
         processed = sorted(p for p in self.dir.glob(SEGMENT_GLOB)
                            if p.name in self._done)
         for old in processed[:-settings.live_keep_segments]:
@@ -265,13 +213,11 @@ class LiveFeedWorker:
         for old in runs[:-settings.live_keep_runs]:
             old.unlink(missing_ok=True)
             old.with_name(old.stem + ".meta.json").unlink(missing_ok=True)
-        # _done kümesi de sınırlı kalsın (adlar diskten silindi)
         if len(self._done) > 500:
             self._done = set(sorted(self._done)[-200:])
 
 
 class LiveCctvService:
-    """Tüm canlı akış işçilerinin sahibi — REST uçları buna bağlanır."""
 
     def __init__(self, manager: ConnectionManager) -> None:
         self.manager = manager

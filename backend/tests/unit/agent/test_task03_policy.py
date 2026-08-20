@@ -1,5 +1,3 @@
-"""Görev 03 canonical action, state invariant ve pure policy testleri."""
-
 from __future__ import annotations
 
 import pytest

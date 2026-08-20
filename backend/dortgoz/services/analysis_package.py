@@ -1,20 +1,3 @@
-"""Analiz paketi: bir koşuyu taşınabilir klasör/zip olarak dışa aktarma ve
-içe aktarınca AJAN SOHBETİ DAHİL tam yetenekle geri yükleme.
-
-Paket düzeni (sürüm 1):
-    manifest.json      # format sürümü + dosya SHA-256'ları
-    analiz.jsonl       # koşunun tam olay akışı (runs/<id>.jsonl kopyası)
-    meta.json          # koşu meta'sı (kip, model, istemler)
-    ozet.md            # insan-okur özet (uygulamasız da anlamlı)
-    video/<ad>         # kaynak video (varsayılan dahil — sohbet araçları
-                       # kare/klip üretimi için gerekir)
-    kanitlar/t_<sn>.jpg  # kanıt kareleri — videodan yeniden türetilir
-                         # (çalışma anındaki kopyalar bilerek geçicidir)
-
-İçe aktarma: video media köküne, JSONL runs/'a alınır; WindowReport'lar ve
-defter olayları akıştan yeniden kurulur ve oturum bağlamı kaydedilir —
-LangGraph sohbeti içe aktarılan analiz üzerinde aynen çalışır.
-"""
 from __future__ import annotations
 
 import json
@@ -34,7 +17,6 @@ FORMAT_VERSION = 1
 
 
 def _parse_stream(jsonl: Path) -> tuple[list[WindowReport], dict[str, IncidentUpdate], float]:
-    """JSONL → raporlar + olay başına SON güncelleme + süre."""
     reports: list[WindowReport] = []
     incidents: dict[str, IncidentUpdate] = {}
     duration = 0.0
@@ -53,7 +35,6 @@ def _parse_stream(jsonl: Path) -> tuple[list[WindowReport], dict[str, IncidentUp
 
 
 def export_analysis(run_id: str, *, include_video: bool = True) -> Path:
-    """Koşuyu zip paketine yazar; paket yolunu döndürür."""
     jsonl = settings.runs_dir / f"{run_id}.jsonl"
     if not jsonl.is_file():
         raise FileNotFoundError(f"koşu bulunamadı: {run_id}")
@@ -65,7 +46,6 @@ def export_analysis(run_id: str, *, include_video: bool = True) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     pkg = out_dir / f"{run_id}.dortgoz.zip"
 
-    # Kanıt kareleri: akıştaki kanıt zamanlarından yeniden türet
     evidence_ts = sorted({
         round(ref.timestamp, 3)
         for r in reports for e in r.events for ref in e.evidence
@@ -95,8 +75,6 @@ def export_analysis(run_id: str, *, include_video: bool = True) -> Path:
             try:
                 src = resolve_media(video_name)
             except Exception:
-                # Video media kökü dışında (ör. benchmark koşusu) → videosuz paket;
-                # sohbetin metin yeteneği tam kalır, kare üretimi çalışmaz.
                 src = None
             if src is not None:
                 arc = f"video/{Path(video_name).name}"
@@ -110,7 +88,6 @@ def export_analysis(run_id: str, *, include_video: bool = True) -> Path:
 
 
 async def export_with_evidence(run_id: str, *, include_video: bool = True) -> Path:
-    """`export_analysis` + videodan kanıt karelerini pakete ekler (async ffmpeg)."""
     pkg = export_analysis(run_id, include_video=include_video)
     manifest = json.loads(zipfile.ZipFile(pkg).read("manifest.json"))
     meta = json.loads(zipfile.ZipFile(pkg).read("meta.json"))
@@ -125,7 +102,7 @@ async def export_with_evidence(run_id: str, *, include_video: bool = True) -> Pa
         for ts in manifest["kanit_zamanlari"]:
             try:
                 jpeg = await grab_frame(src, float(ts))
-            except Exception:  # tek kare hatası paketi düşürmez
+            except Exception:
                 continue
             zf.writestr(f"kanitlar/t_{ts:.3f}.jpg", jpeg)
     return pkg
@@ -161,11 +138,6 @@ def _rebuild_context(run_id: str, video_rel: str,
 
 
 def import_analysis(package: Path, feed: str = "") -> session.RunContext:
-    """Paketi doğrular, yerleştirir ve sohbete hazır oturum bağlamı kurar.
-
-    Dönen bağlamın run_id'si `ithal-` önekiyle yenidir — mevcut koşularla
-    çakışmaz; aynı paketin yeniden içe alımı aynı kimliğe biner (idempotent).
-    """
     with zipfile.ZipFile(package) as zf:
         names = set(zf.namelist())
         if "manifest.json" not in names or "analiz.jsonl" not in names:

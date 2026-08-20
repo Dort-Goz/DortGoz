@@ -1,5 +1,3 @@
-"""İki kademeli yorumlama şeması — GPU'suz birim testleri."""
-
 import json
 
 from dortgoz.pipeline.interpret import (
@@ -23,7 +21,6 @@ def test_tier_schema_two_branches():
     s = tier_schema()
     olagan, dikkat = s["oneOf"]
     assert olagan["properties"]["durum"]["enum"] == ["olagan"]
-    # Gözlem-önce sırası: summary her iki dalda İLK alan, durum ondan sonra
     assert list(olagan["properties"]) == ["summary", "durum"]
     assert list(dikkat["properties"])[:2] == ["summary", "durum"]
     assert dikkat["properties"]["durum"]["enum"] == ["dikkat"]
@@ -52,24 +49,20 @@ def test_to_report_dikkat_branch():
 
 
 def test_to_report_single_tier_backcompat():
-    """two_tier kapalıyken model `durum` üretmez — düz rapor aynen çalışmalı."""
     raw = json.dumps({"anomaly_type": "normal", "summary": "s", "events": [],
                       "uncertainties": []})
     r = _to_report(0.0, 30.0, raw)
     assert r.anomaly_type == "normal" and r.summary == "s"
 
 
-# ---- kesilmiş çıktı kurtarma (2026-08-05: bir koşu 19. dakikada bu yüzden düştü) ----
-
 def test_repair_truncated_event_list():
-    """Olay listesi ortasında kesilen JSON, son TAM olaya kadar kurtarılmalı."""
     raw = ('{"summary": "İki kişi tartışıyor", "durum": "dikkat", '
            '"anomaly_type": "kavga", "uncertainties": [], "events": ['
            '{"t": 5.0, "desc": "itişme", "severity_hint": "orta"}, '
            '{"t": 9.0, "desc": "yumruk atıl')
     fixed = repair_truncated_json(raw)
-    data = json.loads(fixed)          # geçerli JSON üretmeli
-    assert len(data["events"]) == 1   # yarım olay atıldı
+    data = json.loads(fixed)
+    assert len(data["events"]) == 1
     assert data["events"][0]["desc"] == "itişme"
     assert data["anomaly_type"] == "kavga"
 
@@ -81,7 +74,7 @@ def test_to_report_recovers_and_flags_truncation():
            '{"t": 7.0, "desc": "yar')
     r = _to_report(0.0, 30.0, raw)
     assert len(r.events) == 1
-    assert any("kesildi" in u for u in r.uncertainties)   # operatör görmeli
+    assert any("kesildi" in u for u in r.uncertainties)
 
 
 def test_to_report_flags_length_finish_even_if_valid():
@@ -93,8 +86,6 @@ def test_to_report_flags_length_finish_even_if_valid():
 def test_repair_returns_none_for_hopeless_input():
     assert repair_truncated_json('{"summary": "yarım') is None
 
-
-# ---- süreklilik ipucu + olay geneli 2. geçiş (2026-08-05) ----
 
 def test_continuity_hint_empty_when_no_open_incident():
     from dortgoz.agent.memory import Ledger
@@ -111,7 +102,6 @@ def test_continuity_hint_carries_state_and_guards_anchoring():
                                                 severity_hint="yuksek")]))
     hint = led.continuity_hint()
     assert "SÜREGELEN OLAY" in hint and "12. saniyede" in hint
-    # çapa etkisine karşı çıkış yolu AÇIKÇA verilmeli
     assert "BİTTİYSE" in hint and "uydurma" in hint
 
 
@@ -145,7 +135,6 @@ def test_apply_review_rewrites_incident():
                                  "anomaly_type": "saldiri", "risk": "yuksek",
                                  "belirsizlikler": ["yaralı mı belirsiz"]})
     assert rev.anomaly_type == "saldiri" and rev.risk == "orta"
-    # Anlatı yapılandırılmış satırlar hâlinde (arayüz satır satır basar)
     assert rev.t == 42.0
     assert "Başlangıç: Grup toplandı" in rev.detail
     assert "Zirve: Kişi yere düşürüldü" in rev.detail
@@ -155,15 +144,14 @@ def test_apply_review_rewrites_incident():
 
 def test_review_detail_trims_at_sentence_boundary():
     from dortgoz.agent.memory import _trim
-    long = ("Olay başladı. " * 120)            # >1200 ch
+    long = ("Olay başladı. " * 120)
     out = _trim(long)
     assert len(out) <= 1210
-    assert out.endswith(". …")                 # kelime ortasında değil, cümle sonunda
+    assert out.endswith(". …")
     assert _trim("kısa metin") == "kısa metin"
 
 
 def test_ledger_grace_keeps_incident_open_across_one_quiet_window():
-    """Tek sessiz pencere olayı kapatmamalı (uzun olay bölünmesi, 2026-08-05)."""
     from dortgoz.agent.memory import Ledger
     from dortgoz.events import WindowEvent, WindowReport
     def rep(t, sev=None):
@@ -173,13 +161,13 @@ def test_ledger_grace_keeps_incident_open_across_one_quiet_window():
     led = Ledger(grace_windows=1)
     led.ingest(rep(0, "orta"))
     assert led.open_incident is not None
-    assert led.ingest(rep(30)) == []               # sessiz pencere → tolere
-    assert led.open_incident is not None           # olay HÂLÂ açık
-    ups = led.ingest(rep(60, "orta"))              # olay geri döndü
+    assert led.ingest(rep(30)) == []
+    assert led.open_incident is not None
+    ups = led.ingest(rep(60, "orta"))
     assert ups and ups[0].phase == "gelisiyor"
-    assert len({u.incident_id for u in ups}) == 1  # aynı olay, yenisi değil
-    led.ingest(rep(90))                            # 1. sessiz
-    closed = led.ingest(rep(120))                  # 2. sessiz → kapanır
+    assert len({u.incident_id for u in ups}) == 1
+    led.ingest(rep(90))
+    closed = led.ingest(rep(120))
     assert closed and closed[0].phase == "sonuclandi"
 
 
@@ -194,15 +182,12 @@ def test_ledger_grace_zero_is_old_behaviour():
 
 
 def test_title_strips_leading_timestamps():
-    """Kart başlığı NE olduğunu söylemeli, NE ZAMAN olduğunu değil (saat solda yazıyor)."""
     from dortgoz.agent.memory import _title_text
     assert _title_text("t=1147s ile t=1200s arasında zirve yaptı") == "Zirve yaptı"
     assert _title_text("t=1102s civarında, merdiven kenarında duran kişi düştü") \
         == "Merdiven kenarında duran kişi düştü"
     assert _title_text("İki kişi kavga ediyor") == "İki kişi kavga ediyor"
 
-
-# ---- etkinliğe hizalı pencereleme (2026-08-05) ----
 
 def _prof(vals, step=1.0):
     from dortgoz.pipeline.ingest import MotionSample
@@ -213,15 +198,14 @@ def test_activity_windows_skip_dead_footage_and_anchor_on_onset():
     from dortgoz.pipeline.windowing import activity_windows
     prof = _prof([0.0] * 10 + [0.5] * 5 + [0.0] * 20 + [0.6] * 3 + [0.0] * 10)
     w = activity_windows(prof, duration=48, gate=0.1, preroll=3.0)
-    assert len(w) == 2                     # iki ayrı etkinlik, iki pencere
-    assert 6.0 <= w[0][0] <= 8.0           # 10. sn'deki olay, preroll ile ~7'de açılır
-    assert w[0][1] < w[1][0]               # aradaki ölü bölge HİÇ pencere olmadı
+    assert len(w) == 2
+    assert 6.0 <= w[0][0] <= 8.0
+    assert w[0][1] < w[1][0]
     covered = sum(b - a for a, b in w)
-    assert covered < 48 * 0.6              # süre çoğunlukla atlandı
+    assert covered < 48 * 0.6
 
 
 def test_activity_windows_do_not_split_on_short_pause():
-    """Kısa duraklama olayı bölmemeli (quiet_tail)."""
     from dortgoz.pipeline.windowing import activity_windows
     w = activity_windows(_prof([0.5] * 5 + [0.0] * 3 + [0.5] * 5),
                          duration=13, gate=0.1, quiet_tail=6.0)

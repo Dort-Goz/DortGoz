@@ -1,5 +1,3 @@
-"""Yerel SQLite event memory kalıcılığı."""
-
 from __future__ import annotations
 
 from pathlib import Path

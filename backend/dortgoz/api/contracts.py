@@ -1,10 +1,3 @@
-"""REST request/response sözleşmeleri.
-
-Bu modeller, UI ile repository arasındaki sınırı açık tutar. Domain modelleri
-doğrudan HTTP detaylarıyla kirletilmez; response modelleri domain nesnelerini
-JSON'a güvenli biçimde taşır.
-"""
-
 from __future__ import annotations
 
 from typing import Literal
@@ -23,7 +16,6 @@ class AnalyzeRequest(BaseModel):
     model: str = Field(default="", max_length=500)
     system_prompt: str = Field(default="", max_length=20_000)
     task_prompt: str = Field(default="", max_length=20_000)
-    # Çalışma kipi: "" | dengeli | temkinli | genis (bkz. runner._mode_flags)
     mode: Literal["", "dengeli", "temkinli", "genis"] = ""
 
 

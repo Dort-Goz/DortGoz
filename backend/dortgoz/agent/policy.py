@@ -1,5 +1,3 @@
-"""Araç çağırmayan, deterministik ve sınırlandırılmış routing policy'si."""
-
 from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -79,7 +77,6 @@ def _decision(
 def decide_next_action(
     state: EventAgentState, config: RoutingConfig
 ) -> AgentDecision:
-    """State'ten tek bir sonraki eylem üretir; yan etkisi yoktur."""
 
     if state.completed:
         return _decision(
@@ -142,8 +139,6 @@ def decide_next_action(
                 priority=8,
             )
 
-    # Son izinli adımı yalnız terminal karara ayır. Böylece tool/recovery çağrısı
-    # trace sınırını tüketip state'i kararsız bırakamaz.
     if state.current_step >= config.max_steps - 1:
         return _decision(
             AgentAction.REQUEST_HUMAN_REVIEW,

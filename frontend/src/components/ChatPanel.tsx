@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "../types/events";
 
-/** Operatör sohbeti — basit panel. */
 export default function ChatPanel({
   messages, onSend,
 }: { messages: ChatMessage[]; onSend: (text: string) => void }) {

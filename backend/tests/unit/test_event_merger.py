@@ -1,5 +1,3 @@
-"""Görev 09 duplicate event merge sözleşmesi."""
-
 from __future__ import annotations
 
 from dortgoz.domain.event import EventStatus, VerifiedEvent

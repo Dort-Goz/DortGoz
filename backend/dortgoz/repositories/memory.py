@@ -1,9 +1,3 @@
-"""Thread-safe, process içi event memory adapter'ı.
-
-Bu adapter Görev 05'in ilk kalıcı sınırıdır. Süreç yeniden başlatılınca veri
-silinir; API/SQLite/PostgreSQL adapter'ları aynı protocol'e sonradan bağlanır.
-"""
-
 from __future__ import annotations
 
 from copy import deepcopy
@@ -325,7 +319,6 @@ class InMemoryEventRepository:
         trace_items: list[TraceRecord],
         event: VerifiedEvent,
     ) -> VerifiedEvent:
-        """Candidate + trace + event'i tek lock altında atomik kaydeder."""
 
         with self._lock:
             snapshot = (

@@ -1,18 +1,4 @@
 #!/usr/bin/env python3
-"""Kolları yan yana koyar: yakalama, maliyet, şiddet karışımı ve TAMAMLAYICILIK.
-
-`ab_pipeline.py --analyze` her kolu TEK BAŞINA raporlar. Karar için gereken şey
-kolların BİRBİRİNE göre durumu: hangi klibi kim yakalıyor, kim kimin kör noktasını
-kapatıyor. 2026-08-15 rol analizi bunu elle yaptı; burada tekrarlanabilir hâli.
-
-Puanlama kuralları ab_pipeline ile AYNI kaynaktan gelir (orta+ = gerçek olay).
-
-Kullanım:
-  cd backend && uv run python ../bench/efor_karsilastir.py \\
-      ../bench/results/ab_ctrl35b_20260815.jsonl:35B-taban \\
-      ../bench/results/ab_qwen38dg_20260815.jsonl:27B-düşünmesiz \\
-      ../bench/results/efor_low.jsonl:27B-low
-"""
 
 import sys
 from pathlib import Path
@@ -41,7 +27,7 @@ def kol_ozeti(yol: Path) -> dict:
         olayli = False
         for w in c.get("windows", []):
             if w.get("gated"):
-                continue                 # kapıda düşen pencere derin okunmadı
+                continue
             s = window_severity(w)
             if s >= 0:
                 siddetler.append(s)
@@ -105,7 +91,6 @@ def main() -> None:
         sayim = [sum(1 for s in k["siddet"] if s == i) for i in range(4)]
         print(f"| {k['etiket']} | " + " | ".join(str(x) for x in sayim) + " |")
 
-    # Birleşim üst sınırı: kolların TAMAMI kullanılsa yakalama ne olurdu
     birlesim: set[str] = set()
     tum_anomali: set[str] = set()
     for k in kollar:

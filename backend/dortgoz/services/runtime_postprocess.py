@@ -1,5 +1,3 @@
-"""Gerçek WindowReport hattı için transient ve fail-closed evidence köprüsü."""
-
 from __future__ import annotations
 
 import asyncio
@@ -32,7 +30,6 @@ CapturedFrames = Mapping[str, tuple[FrameReference, bytes]]
 
 @dataclass(frozen=True, slots=True)
 class RuntimeEvidenceScope:
-    """Public run_id'den bağımsız, yalnız artifact yolu için kullanılan kimlik."""
 
     public_run_id: str = field(repr=False, compare=False)
     artifact_run_id: UUID = field(default_factory=uuid4)
@@ -43,7 +40,6 @@ class RuntimeEvidenceScope:
 
 
 class RuntimeValidationStatus(StrEnum):
-    """Yalnız gözlem sidecar'ı; terminal EventStatus veya VLMStatus değildir."""
 
     VALIDATED = "VALIDATED"
     HUMAN_REVIEW = "HUMAN_REVIEW"
@@ -52,7 +48,6 @@ class RuntimeValidationStatus(StrEnum):
 
 
 class RuntimeEvidenceDigest(BaseModel):
-    """Cleanup sonrasında kalabilen, path taşımayan transient evidence özeti."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -72,7 +67,6 @@ class RuntimeEventValidation(BaseModel):
 
 
 class RuntimeWindowValidation(BaseModel):
-    """WS'ye ve durable state'e eklenmeyen transient pencere sidecar'ı."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -125,7 +119,6 @@ def postprocess_finalized_report(
     workspace_root: Path,
     evidence_root: Path,
 ) -> RuntimeWindowValidation | None:
-    """Olaylı final raporu doğrula ve her koşulda ephemeral dosyaları temizle."""
 
     if not report.events:
         return None
@@ -196,7 +189,6 @@ def materialize_runtime_evidence(
     captured_frames: CapturedFrames,
     tracker: _ArtifactTracker,
 ) -> list[_MaterializedFrame]:
-    """Yalnız raporda referans verilen selected JPEG'leri atomik yayımla."""
 
     if tracker.window_directory is None:
         raise RuntimeEvidenceOperationalError("ephemeral workspace hazırlanmadı")
@@ -244,7 +236,6 @@ def validate_materialized_report(
     video_duration: float,
     workspace_root: Path,
 ) -> RuntimeWindowValidation:
-    """Final raporu mevcut EvidenceValidator kurallarıyla sidecar'a dönüştür."""
 
     keyframes = [item.keyframe for item in materialized_frames]
     event_results: list[RuntimeEventValidation] = []

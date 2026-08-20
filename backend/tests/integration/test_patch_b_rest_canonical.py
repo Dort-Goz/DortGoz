@@ -1,5 +1,3 @@
-"""Patch B REST → canonical analysis job entegrasyon testleri."""
-
 from __future__ import annotations
 
 import asyncio

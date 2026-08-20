@@ -2,28 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import type { TraceEntry } from "../state";
 import { NODE_TR, humanizeEnums, stripPerf } from "../lib/labels";
 
-/** Ajan izleme konsolu — düğüm geçişleri ve araç çağrıları gerekçesiyle akar.
- *  Jüri açıklanabilirlik kriterinin görünür yüzü.
- *
- *  ⚠ Ham akış OKUNAMIYORDU: her pencere 4 satır üretiyordu (interpret ▶/✔ +
- *  ledger ▶/✔) ve saatlik kayıtta bunların yüzlercesi "0 olay" diyordu; gerçek
- *  bulgular arada kayboluyordu. Bu yüzden:
- *   1) ▶başlangıç/✔bitiş çiftleri TEK satıra indirgenir (sonuç neyse o yazılır),
- *   2) eski anlamsız `ledger` sayaç satırları atılır (backend artık
- *      NE DEĞİŞTİĞİNİ yazıyor: açıldı/genişledi/kapandı + tolerans),
- *   3) ardışık olaysız pencereler katlanır — tıklayınca açılır.
- *  Hata satırları ve olay üreten satırlar HER ZAMAN görünür kalır.
- *  ⚠ Bu kip bilgi ATAR; akışı hata ayıklamak için **detay** düğmesi ham
- *  akışı (sıra no + ▶/✔ ayrı, hiçbir satır gizli değil) gösterir.
- */
-
 type StepRow = { kind: "step"; seq: number; node: string; status: string; detail: string };
 type Row =
   | StepRow
   | { kind: "tool"; seq: number; entry: TraceEntry }
   | { kind: "quiet"; seq: number; rows: { seq: number; detail: string }[] };
 
-const QUIET = /atlandı|^0 olay$/;              // olaysız pencere imzaları
+const QUIET = /atlandı|^0 olay$/;
 
 function build(entries: TraceEntry[]): Row[] {
   const merged: Row[] = [];
@@ -31,9 +16,6 @@ function build(entries: TraceEntry[]): Row[] {
     if (e.kind === "tool") { merged.push({ kind: "tool", seq: e.seq, entry: e }); continue; }
     const s = e.step;
     if (!s) continue;
-    // Defterin "N olay defterde" satırları yalnız SAYAÇ — asıl haber
-    // incident_update olayları ve zaman çizelgesi kartlarıdır. Bunlar hem
-    // gürültü yapıyor hem de ardışık sessiz pencerelerin katlanmasını bölüyordu.
     if (s.node === "ledger" && s.status !== "error" &&
         (!s.detail || /\d+\s*olay defterde/.test(s.detail))) continue;
 
@@ -41,7 +23,6 @@ function build(entries: TraceEntry[]): Row[] {
       merged.push({ kind: "step", seq: e.seq, node: s.node, status: "start", detail: s.detail });
       continue;
     }
-    // ✔/✖ geldiğinde aynı düğümün bekleyen ▶ satırının yerine geçer
     let idx = -1;
     for (let i = merged.length - 1; i >= 0; i--) {
       const r = merged[i];
@@ -90,9 +71,6 @@ function QuietRow({ rows }: { rows: { seq: number; detail: string }[] }) {
 
 export default function AgentTrace({ entries }: { entries: TraceEntry[] }) {
   const endRef = useRef<HTMLDivElement>(null);
-  // "detay" = hata ayıklama kipi: hiçbir satır gizlenmez/katlanmaz, ▶/✔ ayrı
-  // durur. Varsayılan kipin okunabilirliği için bilgi ATILIYOR — akışı gerçekten
-  // izlemek gerektiğinde (hangi pencere, neden, defter ne karar verdi) bu açılır.
   const [verbose, setVerbose] = useState(false);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [entries.length]);
   const rows = build(entries);

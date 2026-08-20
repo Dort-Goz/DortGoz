@@ -1,11 +1,3 @@
-"""Screening skorlarını yüksek-recall candidate aralıklarına dönüştürür.
-
-Bu modül modelden bağımsızdır. CNN, ONNX veya ileride başka bir local scorer
-aynı ``ScreeningSample`` akışını üretebilir; temporal karar burada tek yerde
-kalır. Böylece model değişimi candidate sözleşmesini veya agent policy'yi
-değiştirmez.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -17,12 +9,6 @@ from ..domain.candidate import CandidateEvent, CandidateType, ScreeningSample
 
 @dataclass(frozen=True)
 class IntervalConfig:
-    """Histerezis ve temporal merge ayarları.
-
-    ``start_threshold`` candidate'i açar; açık candidate'de daha düşük olan
-    ``continue_threshold`` kullanılır. Düşük skorların ``end_patience`` kadar
-    arka arkaya gelmesi aralığı kapatır.
-    """
 
     start_threshold: float = 0.65
     continue_threshold: float = 0.40
@@ -53,12 +39,6 @@ _SCORE_FIELDS = (
 
 
 def sample_score(sample: ScreeningSample) -> float:
-    """Bir örneğin routing skorunu döndürür.
-
-    Sinyaller OR mantığıyla birleşir: yüksek-recall screening'de tek bir
-    uzman başlığın (ör. fall) anomaly skorundan daha yüksek olması candidate'i
-    düşürmemelidir.
-    """
 
     return max(getattr(sample, field) for field in _SCORE_FIELDS)
 
@@ -71,18 +51,6 @@ def adaptive_saturation_shift(
     raised_threshold: float = 0.85,
     warmup_samples: int = 30,
 ) -> list[ScreeningSample]:
-    """Per-kamera nedensel eşik adaptasyonu — doygunluk politikası.
-
-    Kamera GEÇMİŞTE ≥saturation skor ürettiyse (olayları doyurduğu kanıtlı),
-    yeni aralık başlatma barı raised_threshold'a çıkar; hiç doymamış kamera
-    start_threshold tabanında kalır. Karar her örnekte yalnız geçmişe bakar.
-
-    Uygulama kaydırma hilesiyle: skor (start_threshold − o anki eşik) kadar
-    kaydırılır ve kurucu SABİT eşikle çalışır — histerezis mantığı tek yerde
-    kalır. Yan etki: adapte kamerada rapor edilen peak_score kaydırılmış
-    değerdir (ölçüm 2026-08-08: semantic scorer'da val 13/13 @ %57,1,
-    feed 19/19 @ %38,5 — sabit eşik %65,6 / %64,9'a karşı).
-    """
 
     out: list[ScreeningSample] = []
     seen_saturation = False
@@ -93,8 +61,6 @@ def adaptive_saturation_shift(
         if shift:
             adjusted = min(max(score + shift, 0.0), 1.0)
             out.append(sample.model_copy(update={
-                # Tüm başlıklar tek routing skoruna indirgenir; OR mantığı
-                # sample_score'da zaten uygulandı, kaydırma onu taşır.
                 "anomaly_score": adjusted,
                 "interaction_score": 0.0, "fall_score": 0.0,
                 "fire_smoke_score": 0.0, "vehicle_conflict_score": 0.0,
@@ -115,12 +81,6 @@ def build_candidate_intervals(
     model_id: str,
     config: IntervalConfig | None = None,
 ) -> list[CandidateEvent]:
-    """Histerezisli candidate aralıkları üretir.
-
-    Timestamps monotonik olmalı ve video süresi içinde kalmalıdır. Her aralık
-    en az ``min_duration_seconds`` kadar genişletilir; bu, tek örnekli kısa
-    olayları downstream context katmanına güvenli biçimde taşır.
-    """
 
     cfg = config or IntervalConfig()
     if not analysis_id or not video_id or not model_id:
@@ -178,7 +138,6 @@ def build_candidate_intervals(
 def merge_candidate_events(
     candidates: Iterable[CandidateEvent], *, gap_seconds: float = 2.0
 ) -> list[CandidateEvent]:
-    """Uyumluluk gösteren yakın candidate'leri tek aralıkta birleştirir."""
 
     if gap_seconds < 0:
         raise ValueError("gap_seconds negatif olamaz")

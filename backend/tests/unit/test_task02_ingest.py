@@ -1,5 +1,3 @@
-"""Görev 02 video contract, storage ve gerçek ffmpeg smoke testleri."""
-
 from __future__ import annotations
 
 import asyncio

@@ -1,5 +1,3 @@
-"""Doğrulanmış olay, risk ve prosedür çıktı modelleri."""
-
 from __future__ import annotations
 
 from datetime import UTC, datetime

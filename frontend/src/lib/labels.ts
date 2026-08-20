@@ -1,6 +1,5 @@
 import type { AnomalyType, CanonicalEventType, Risk } from "../types/events";
 
-/** Canonical internal tiplerin operatöre görünen Türkçe adları. */
 export const CANONICAL_TYPE_TR: Record<CanonicalEventType, string> = {
   normal: "olağan",
   uncertain: "belirsiz",
@@ -15,7 +14,6 @@ export const CANONICAL_TYPE_TR: Record<CanonicalEventType, string> = {
   vandalism: "vandalizm",
 };
 
-/** WS wire contract eski Türkçe değerleri taşımaya devam eder. */
 export const LEGACY_ANOMALY_TO_CANONICAL: Record<AnomalyType, CanonicalEventType> = {
   kavga: "physical_fight",
   saldiri: "assault",
@@ -29,7 +27,6 @@ export const LEGACY_ANOMALY_TO_CANONICAL: Record<AnomalyType, CanonicalEventType
   bilinmeyen: "unknown_anomaly",
 };
 
-/** Eski bileşenler için canonical label'dan türetilen uyumluluk görünümü. */
 export const TYPE_TR = Object.fromEntries(
   Object.entries(LEGACY_ANOMALY_TO_CANONICAL).map(([legacy, canonical]) => [
     legacy,
@@ -37,7 +34,6 @@ export const TYPE_TR = Object.fromEntries(
   ]),
 ) as Record<AnomalyType, string>;
 
-/** Risk değerleri ASCII enum (dusuk/yuksek) — operatör Türkçesini burada alır. */
 export const RISK_TR: Record<Risk, string> = {
   dusuk: "düşük", orta: "orta", yuksek: "yüksek", kritik: "kritik",
 };
@@ -46,13 +42,11 @@ export const PHASE_TR: Record<string, string> = {
   basladi: "başladı", gelisiyor: "gelişiyor", sonuclandi: "sonuçlandı",
 };
 
-/** Ajan izleme düğümlerinin operatörce adları (detay kipi ham adları korur). */
 export const NODE_TR: Record<string, string> = {
   perceive: "algı", triage: "eleme", interpret: "yorum", ledger: "defter",
   oversight: "gözetmen", tools: "araç", respond: "yanıt",
 };
 
-/** Mühendis ölçümlerini (token/PP/P(dikkat)) satırdan ayıklar. */
 export function stripPerf(detail: string): string {
   return detail
     .replace(/ · P\(dikkat\)=[\d.]+/g, "")
@@ -60,7 +54,6 @@ export function stripPerf(detail: string): string {
     .replace(/ · \d+\+\d+ tok.*$/g, "");
 }
 
-/** Backend izleme satırları legacy WS değerlerini yazar; UI canonical label gösterir. */
 const ENUM_TR: [RegExp, string][] = [
   ...Object.entries(TYPE_TR).map(([k, v]) => [new RegExp(`\\b${k}\\b`, "g"), v] as [RegExp, string]),
   ...Object.entries(RISK_TR).map(([k, v]) => [new RegExp(`\\b${k}\\b`, "g"), v] as [RegExp, string]),

@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""Eşzamanlı pencere okuma verimi — `-np N` slotları gerçekten kazandırıyor mu?
-
-Gecikme (tek pencere süresi) DEĞİL, TOPLAM verim ölçülür: toptan işlerde
-(tırmandırma doğrulaması, bench koşuları, çok akışlı canlı) önemli olan budur.
-"""
 import argparse, asyncio, json, sys, time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
@@ -26,7 +21,7 @@ async def main() -> None:
     ap.add_argument("--etiket", default="")
     a = ap.parse_args()
 
-    await bir(a.klip, 0.0, a.sure)                    # ısınma
+    await bir(a.klip, 0.0, a.sure)
     sem = asyncio.Semaphore(a.esz)
 
     async def gorev(i: int) -> float:

@@ -1,5 +1,3 @@
-"""Sadece yerel, hash-doğrulanmış prosedür manifest index'i."""
-
 from __future__ import annotations
 
 import hashlib

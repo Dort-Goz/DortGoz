@@ -1,5 +1,3 @@
-"""Yerel prosedür index/retrieval entegrasyon testleri."""
-
 from __future__ import annotations
 
 import hashlib

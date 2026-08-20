@@ -1,10 +1,3 @@
-"""İz kaydı — her koşunun tam olay günlüğü (JSONL, salt-ekleme).
-
-JSONL seçimi bilinçli: grep'lenebilir, kıyaslama düzeneğinin girdisidir ve
-`replay_jsonl` ile demo tekrarı aynı dosyadan yapılır. (İlişkisel sorgu
-gerekirse SQLite sonradan eklenir — şimdilik gerek yok.)
-"""
-
 from __future__ import annotations
 
 from pathlib import Path

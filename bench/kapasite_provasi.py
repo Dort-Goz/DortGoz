@@ -1,19 +1,4 @@
 #!/usr/bin/env python3
-"""24 kamera kapasite provası — şartname senaryosunun yük testi.
-
-Çalışan backend'e WS üzerinden N eşzamanlı `start_run` gönderir (UI'daki
-"⊞ demo ×24" ile aynı yol) ve akış başına `run_status` olaylarını toplayarak
-kuyruklanma davranışını ölçer: hangi akış ne zaman başladı/bitti, hız çarpanı
-(RunStatus.speed) nasıl seyretti, hata/açlık oldu mu.
-
-Ölçülen kapasite ~10 kamera @1× (5,8 GPU-sn/dk) — 24 akışta hızın 1×'in
-altına inmesi BEKLENEN davranıştır; prova, sistemin yavaşlayıp DÜŞMEDİĞİNİ
-ve hız rozetlerinin dürüst kaldığını gösterir.
-
-    # backend gerçek kipte çalışırken (GPU boşta!):
-    uv run python ../bench/kapasite_provasi.py --feeds 24 --out prova24.json
-    # küçük duman testi: --feeds 2 --timeout 900
-"""
 from __future__ import annotations
 
 import argparse
@@ -22,7 +7,7 @@ import json
 import functools
 import time
 
-print = functools.partial(print, flush=True)  # arka planda canlı izleme için
+print = functools.partial(print, flush=True)
 from pathlib import Path
 
 import httpx
@@ -38,7 +23,6 @@ async def run(base: str, feeds: int, timeout: float, out: Path) -> int:
         print("media/ boş — önce scripts/make_long_feed.py çalıştırın")
         return 2
 
-    # feed -> durum kaydı; olaylar geldikçe işlenir
     stats: dict[str, dict] = {}
     t0 = time.monotonic()
 
@@ -83,7 +67,7 @@ async def run(base: str, feeds: int, timeout: float, out: Path) -> int:
                     s["error"] = p.get("detail", "?")
                     print(f"  ✖ {feed} HATA @{now}s: {s['error']}")
             elif kind == "window_report" and s["first_report"] is None:
-                s["first_report"] = now   # ilk sonuca kadar gecikme (açlık ölçüsü)
+                s["first_report"] = now
 
     wall = round(time.monotonic() - t0, 1)
     done = sum(1 for s in stats.values() if s["done_at"] is not None)

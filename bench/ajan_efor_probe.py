@@ -1,19 +1,4 @@
 #!/usr/bin/env python3
-"""Ajan/diyalog katmanı probu — düşünme kademesi araç çağırmayı bozuyor mu?
-
-Diyalog katmanında düşünme KAPALIYDI: bütçesiz düşünme 700 token tavanını
-`reasoning_content` ile doldurup `content`i boş bırakıyordu. Bütçe bunu çözmeli.
-Ama düşünme + araç çağırma birlikte doğrulanmadı — bu prob iki soruyu ölçer:
-
-  1. `content` BOŞ gelir mi (eski arıza geri mi geliyor)?
-  2. Araç çağrısı hâlâ yapılandırılmış `tool_calls` olarak mı dönüyor?
-
-Yarışma puanının %20'si "Otonomi ve Zekâ (diyalog davranışı dahil)" olduğu için
-bu iki soru doğrudan puana bakar.
-
-Kullanım:
-  cd backend && uv run python ../bench/ajan_efor_probe.py [--model qwen3.8-27b-vision-dg]
-"""
 
 import argparse
 import asyncio
@@ -29,7 +14,6 @@ from dortgoz.agent.llm import create_chat, main_client  # noqa: E402
 from dortgoz.config import settings                   # noqa: E402
 from dortgoz.pipeline.thinking import EFFORT_LADDER, thinking_extra  # noqa: E402
 
-# İki senaryo: biri düz Türkçe yanıt ister, biri araç çağırmayı ZORLAR.
 SENARYOLAR = [
     ("düz yanıt", "Merhaba, şu an sistemde kaç kamera akışı izleniyor ve "
                   "son durumu bir cümleyle özetler misin?"),

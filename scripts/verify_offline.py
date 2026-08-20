@@ -1,5 +1,3 @@
-"""Dörtgöz offline release girdilerini ağ kullanmadan doğrular."""
-
 from __future__ import annotations
 
 import argparse

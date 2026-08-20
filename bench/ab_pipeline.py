@@ -1,23 +1,3 @@
-"""A2 iki kollu kıyaslama — "hepsini derin oku" vs "ucuz bakış → derin oku".
-
-Tek geçişte her pencere için HEM ucuz bakış (P(YES) + süre) HEM derin okuma
-(rapor + süre) ölçülür. Kol B böylece herhangi bir eşik için sonradan yeniden
-kurulabilir — eşik taraması için yeniden koşmak gerekmez.
-
-    cd backend && uv run python ../bench/ab_pipeline.py            # media/ klipleri
-    cd backend && uv run python ../bench/ab_pipeline.py --limit 4  # hızlı deneme
-    cd backend && uv run python ../bench/ab_pipeline.py --split test   # resmî UCF test bölmesi
-    cd backend && uv run python ../bench/ab_pipeline.py --analyze bench/results/ab_*.jsonl
-
-Etiket: klip adının sınıfı (UCF-Crime). Normal_* klipler negatif kontrol.
-Bu klip-düzeyi zayıf etikettir; zamansal IoU için UCA anotasyonları gerekir
-(açık iş #10) — o gelince aynı JSON üzerinden hesaplanabilir.
-
-Çıktı JSONL'dir ve klip klip YAZILIR: saatler süren bölme koşusu kesintiye
-uğrarsa aynı `--out` ile yeniden başlatmak kaldığı yerden devam eder
-(hatalı biten klipler yeniden denenir). Eski tek-JSON kayıtlar da okunur.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -43,20 +23,11 @@ def clip_class(path: Path) -> str:
     return re.sub(r"_?\d+$", "", path.stem.replace("_x264", ""))
 
 
-# İstem A/B'si: --sysprompt/--tierprompt ile doldurulur; boş = pipeline
-# varsayılanı. interpret_window'a parametre olarak gider.
 SYSTEM_OVERRIDE = ""
 TIER_OVERRIDE = ""
 
-# --escalate TAU: olagan verdikli ama durum_p ≥ TAU pencereyi DÜŞÜNMELİ ikinci
-# çağrıyla yeniden sorgula (tırmandırma deneyi). Her iki sonuç da kaydedilir —
-# çözümleme tırmandırmanın kazancını/maliyetini ayrı ayrı okur.
 ESCALATE_TAU = 0.0
 
-# --parallel N: aynı anda N klip. ⚠ N>1'de glance_s/deep_s duvar saatidir ve
-# sunucu kuyruğu beklemesini İÇERİR — birim maliyet ölçümü için N=1 kullanın;
-# N>1 yalnız toplam süreyi kısaltmak için (-np 2 profilinde ~2×, -np 1'de
-# CPU kare çekimi GPU üretimiyle örtüştüğü kadar).
 PARALLEL = 1
 
 
@@ -70,8 +41,6 @@ async def measure_clip(path: Path) -> dict:
         "duration": duration,
         "windows": [],
     }
-    # Pencere planı önden çıkarılır ki i. pencerenin VLM çağrısı beklenirken
-    # i+1'in kareleri arka planda ısınabilsin (GPU/ffmpeg örtüşmesi).
     plan: list[tuple[float, float, float, list[float] | None]] = []
     for start, end in windowing.windows(duration, settings.window_seconds):
         peak = windowing.window_motion(profile, start, end)
@@ -84,7 +53,7 @@ async def measure_clip(path: Path) -> dict:
     for start, end, peak, keys in plan:
         rec = {"start": start, "end": end, "motion": peak, "gated": keys is None}
         if not rec["gated"]:
-            ingest.prefetch_frames(path, keys)      # bakış + derin aynı görevleri paylaşır
+            ingest.prefetch_frames(path, keys)
             if live_idx + 1 < len(live_keys):
                 ingest.prefetch_frames(path, live_keys[live_idx + 1])
             live_idx += 1
@@ -103,14 +72,11 @@ async def measure_clip(path: Path) -> dict:
             rec["n_events"] = len(report.events)
             rec["summary"] = report.summary
             rec["events"] = [e.model_dump() for e in report.events]
-            if "durum_p" in stats:      # dal token'ın ham P(dikkat) kütlesi
+            if "durum_p" in stats:
                 rec["durum_p"] = round(stats["durum_p"], 5)
 
             if (ESCALATE_TAU and not rec["n_events"]
                     and stats.get("durum_p", 0.0) >= ESCALATE_TAU):
-                # Tırmandırma TABAN KARARI ASLA KAYBETTİRMEZ: düşünme token
-                # bütçesini yiyip JSON üretmeden bitebiliyor (canlı görüldü,
-                # 6/71 klip) — hata durumunda taban sonuç geçerli kalır.
                 t0 = time.time()
                 try:
                     esc = await interpret_window(path, (start, end), keys,
@@ -132,14 +98,10 @@ def current_config() -> dict:
         "window_seconds": settings.window_seconds,
         "keyframes_per_window": settings.keyframes_per_window,
         "motion_gate": settings.motion_gate,
-        # İstem varyantı koşunun kimliğinin parçası — hangi istem hangi sayıyı
-        # üretti sorusu her zaman cevaplanabilir olmalı (deney paneli ilkesi)
         "system_prompt_override": SYSTEM_OVERRIDE,
         "tier_prompt_override": TIER_OVERRIDE,
         "parallel": PARALLEL,
         "escalate_tau": ESCALATE_TAU,
-        # Düşünme kademesi ve ikinci görüş kolu koşunun kimliğinin parçası:
-        # aynı model farklı kademede BAŞKA bir koldur, karışmamalı.
         "interpret_effort": settings.interpret_effort,
         "second_opinion_model": settings.second_opinion_model,
         "second_opinion_effort": settings.second_opinion_effort,
@@ -148,7 +110,6 @@ def current_config() -> dict:
 
 
 def load_results(path: Path) -> dict:
-    """JSONL (satır satır) ya da eski tek-JSON kaydı ortak biçime okur."""
     text = path.read_text(encoding="utf-8")
     if path.suffix == ".json":
         return json.loads(text)
@@ -165,12 +126,6 @@ def load_results(path: Path) -> dict:
 
 
 async def collect(clips: list[Path], out: Path) -> None:
-    """Klipleri ölçer ve her birini bittiği an `out`'a (JSONL) yazar.
-
-    `out` zaten varsa tamamlanmış klipler atlanır (hatalılar yeniden denenir) —
-    saatlik koşu kesintiden kaldığı yerden sürer. Model değişmişse durdurur:
-    tek dosyada iki modelin ölçümü karışmamalı.
-    """
     done: set[str] = set()
     if out.exists():
         prev = load_results(out)
@@ -230,16 +185,8 @@ async def collect(clips: list[Path], out: Path) -> None:
     await asyncio.gather(*(one(p) for p in todo))
 
 
-# ---- çözümleme ----
-
 SEVERITY = ["dusuk", "orta", "yuksek", "kritik"]
-ALARM_FLOOR = 1          # "orta" ve üstü gerçek olay sayılır
-
-# Neden eşik: ilk koşuda (2026-08-03) normal kliplerin ürettiği 14 olayın
-# TAMAMI "dusuk" çıktı (park eden araç, içeri giren motosikletli, yürüyen
-# insanlar) — bunlar yanlış alarm değil, modelin istendiği gibi sahneyi
-# betimlemesi. Anomali kliplerinde ise 40 orta + 25 yuksek + 5 kritik var.
-# "Herhangi bir olay = yakalama" ölçütü bu yüzden yanıltıcıydı.
+ALARM_FLOOR = 1
 
 
 def _live_windows(data: dict) -> list[tuple[dict, dict]]:
@@ -248,7 +195,6 @@ def _live_windows(data: dict) -> list[tuple[dict, dict]]:
 
 
 def window_severity(w: dict) -> int:
-    """Penceredeki en yüksek olay şiddeti (-1 = olay yok)."""
     return max((SEVERITY.index(e["severity_hint"]) for e in w.get("events", [])),
                default=-1)
 
@@ -261,7 +207,6 @@ def analyze(data: dict) -> str:
     live = _live_windows(data)
 
     def detected(clip: dict, thr: float | None) -> bool:
-        """Klipte, eşiği geçen bir pencerede `orta`+ şiddetinde olay bulundu mu?"""
         return any(not w["gated"] and window_severity(w) >= ALARM_FLOOR
                    and (thr is None or w["glance_p"] >= thr)
                    for w in clip["windows"])
@@ -300,14 +245,12 @@ def analyze(data: dict) -> str:
             f"{len(passed)}/{len(live)} | {hit}/{len(anomaly)} | {fa}/{len(normal)} |"
         )
 
-    # Ortalama birim maliyet — kaskad öncülünün geçerliliği buna bakar
     if live:
         g_avg = glance_all / len(live)
         d_avg = deep_all / len(live)
         lines += ["", f"Ortalama: bakış {g_avg:.2f} sn · derin okuma {d_avg:.2f} sn · "
                       f"**oran {d_avg / g_avg:.1f}×** (kaskad deseni ~20× varsayar)"]
 
-    # Bakışın ayırt ediciliği: P(YES) dağılımı, şiddet gruplarına göre
     def bucket(w):
         s = window_severity(w)
         return "orta+ olaylı" if s >= ALARM_FLOOR else ("yalnız dusuk" if s >= 0 else "olaysız")
@@ -329,7 +272,6 @@ def analyze(data: dict) -> str:
                      f"gerçek olaylı pencerelerin en düşük P(YES) değeri. Dağılımlar "
                      f"örtüştüğü için bu eşik neredeyse tüm pencereleri geçirir.")
 
-    # Şiddet dağılımı — ölçütün dayanağı
     lines += ["", "## Şiddet dağılımı", "", "| Klip türü | " +
               " | ".join(SEVERITY) + " |", "|---|" + "---|" * len(SEVERITY)]
     for label, group in (("anomali", anomaly), ("normal", normal)):
@@ -382,7 +324,6 @@ def main() -> None:
         return
 
     if args.clips:
-        # Hedefli alt küme (istem A/B'leri): ad → yol, UCF ağacından tek geçişte
         videos = resolve_ucf(args.ucf)
         index = {p.name: p for p in videos.rglob("*.mp4")}
         names = [l.strip() for l in args.clips.read_text(encoding="utf-8").splitlines()
@@ -404,8 +345,6 @@ def main() -> None:
                   f"(ilk: {missing[0].name})")
             clips = [c for c in clips if c.is_file()]
     else:
-        # Yalnız UCF-Crime klipleri (`*_x264.mp4`) — sentetik/test videoları
-        # (ör. surveillance_5min.mp4) değerlendirme setini kirletmemeli
         clips = sorted(settings.media_dir.glob("*_x264.mp4"))
         if not clips:
             raise SystemExit("media/ altında klip yok")

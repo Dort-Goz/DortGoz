@@ -1,5 +1,3 @@
-"""Canonical ``run_video`` task ownership and process-local job state."""
-
 from __future__ import annotations
 
 import asyncio
@@ -31,7 +29,7 @@ class AnalysisJobStatus(StrEnum):
 
 
 class AnalysisJobStartError(RuntimeError):
-    """A start request that cannot safely create or reuse a canonical job."""
+    pass
 
 
 class AnalysisJobConflict(AnalysisJobStartError):
@@ -43,7 +41,7 @@ class AnalysisJobCapacityError(AnalysisJobStartError):
 
 
 class AnalysisJobExecutionDisabled(AnalysisJobStartError):
-    """Execution is disabled while the WS mock fixture owns the UI stream."""
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,7 +49,7 @@ class EffectiveRuntimeConfig:
     model: str
     system_prompt: str
     task_prompt: str
-    mode: str = ""  # "" = dengeli; temkinli | genis (bkz. runner._mode_flags)
+    mode: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,7 +92,6 @@ async def _default_run_video(
     run_id: str,
     **kwargs: str,
 ) -> None:
-    # Keep the heavy pipeline lazy: mock-only UI sessions do not import it.
     from ..pipeline.runner import run_video
 
     await run_video(manager, video, run_id, **kwargs)
@@ -112,13 +109,11 @@ def _default_runtime_config() -> EffectiveRuntimeConfig:
 
 
 def _video_identity(video: str) -> str:
-    """Normalize harmless path spelling differences without resolving media paths."""
 
     return Path(video).as_posix()
 
 
 def _retrieve_task_exception(task: asyncio.Task[None]) -> None:
-    """Retrieve and log an unexpected task failure without changing its semantics."""
 
     try:
         error = task.exception()
@@ -133,7 +128,6 @@ def _retrieve_task_exception(task: asyncio.Task[None]) -> None:
 
 
 class CanonicalAnalysisJobService:
-    """Own exactly one ``run_video`` task for each active feed/config identity."""
 
     def __init__(
         self,
@@ -158,8 +152,6 @@ class CanonicalAnalysisJobService:
         self._lock = asyncio.Lock()
         self._records: dict[str, _JobRecord] = {}
         self._active_by_feed: dict[str, str] = {}
-        # Keep completed Task objects out of the active registry. The compact
-        # process-local cache covers immediate/idempotent queries; JSONL covers restart.
         self._terminal_status: dict[str, AnalysisJobStatus] = {}
 
     async def start(
@@ -172,7 +164,6 @@ class CanonicalAnalysisJobService:
         task_prompt: str = "",
         mode: str = "",
     ) -> AnalysisJobSnapshot:
-        """Start or atomically reuse an identical active canonical analysis."""
 
         if not self._enabled():
             raise AnalysisJobExecutionDisabled("mock fixture etkin; gerçek runner başlatılmadı")
@@ -227,7 +218,6 @@ class CanonicalAnalysisJobService:
             return record.snapshot()
 
     async def cancel(self, analysis_id: str) -> AnalysisJobStatus | None:
-        """Cancel one active job; repeated cancellation is a no-op."""
 
         async with self._lock:
             record = self._records.get(analysis_id)
@@ -246,9 +236,6 @@ class CanonicalAnalysisJobService:
             await task
         except asyncio.CancelledError:
             pass
-        # A task cancelled before its first event-loop turn never enters
-        # ``_execute`` and therefore cannot run that coroutine's ``finally``.
-        # Resolve and clean it here as well; this also keeps repeated cancel stable.
         async with self._lock:
             parsed = resolve_jsonl_status(self.runs_dir, analysis_id, active=False)
             if parsed is not None:
@@ -265,7 +252,6 @@ class CanonicalAnalysisJobService:
             return record.status
 
     async def cancel_all(self) -> None:
-        """Cancel every active feed, preserving the existing WS stop-all behavior."""
 
         async with self._lock:
             analysis_ids = [
@@ -277,7 +263,6 @@ class CanonicalAnalysisJobService:
             await asyncio.gather(*(self.cancel(analysis_id) for analysis_id in analysis_ids))
 
     async def status(self, analysis_id: str) -> AnalysisJobStatus | None:
-        """Resolve live state or reconstruct terminal/interrupted state from JSONL."""
 
         async with self._lock:
             record = self._records.get(analysis_id)
@@ -345,10 +330,6 @@ class CanonicalAnalysisJobService:
                 self._records.pop(record.analysis_id, None)
                 self._terminal_status[record.analysis_id] = record.status
                 idle = self._active_count_locked() == 0
-            # Ağırlık nöbetçisi: sistematik CJK sızıntısı görüldüyse ve kuyruk
-            # boşaldıysa sayfa önbelleğini ŞİMDİ tazele — koşu ortasında asla
-            # (model çekilirse etkin istekler düşer). Bozulma /unload'a dayanır;
-            # tek çare sayfaların diskten yeniden okunması (2026-08-13 ölçümü).
             if idle and weight_guard.needs_heal:
                 try:
                     await weight_guard.heal()
@@ -383,7 +364,6 @@ def resolve_jsonl_status(
     *,
     active: bool,
 ) -> AnalysisJobStatus | None:
-    """Read the last valid RunStatus, ignoring malformed/partial JSONL lines."""
 
     if not analysis_id or Path(analysis_id).name != analysis_id:
         return None
@@ -418,7 +398,6 @@ def resolve_jsonl_status(
     if last_state == "error":
         return AnalysisJobStatus.FAILED
     if last_state == "idle":
-        # Real runner emits terminal idle only from its operator-cancellation branch.
         return AnalysisJobStatus.CANCELLED
     if last_state == "processing":
         return AnalysisJobStatus.RUNNING if active else AnalysisJobStatus.INTERRUPTED

@@ -1,5 +1,3 @@
-"""Authoritative runner ephemeral WindowReport evidence gate testleri."""
-
 from __future__ import annotations
 
 import asyncio

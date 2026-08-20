@@ -1,5 +1,3 @@
-"""Analiz paketi: dışa aktarma → içe aktarma gidiş-dönüşü ve doğrulama."""
-
 from __future__ import annotations
 
 import json
@@ -79,14 +77,11 @@ def test_roundtrip_rebuilds_chat_context(run_fixture):
     assert (inc.olay_baslangic, inc.olay_bitis) == (40.5, 42.5)
     assert inc.first_seen == 40.5 and inc.last_seen == 42.5
 
-    # Sohbetin kullandığı yol: session.current() içe alınan koşuyu görür,
-    # brifing olay + pencere gözlemlerini taşır.
     assert session.current() is ctx
     briefing = ctx.briefing()
     assert "Fiziksel kavga" in briefing and "yumruklaşma" in briefing.lower()
     assert "1 olay tespit edildi" in ctx.verdict()
 
-    # İçe alınan akış tekrar dışa aktarılabilir (zincir taşınabilirlik).
     assert ap.export_analysis(ctx.run_id).is_file()
 
 

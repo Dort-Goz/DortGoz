@@ -1,5 +1,3 @@
-"""Deterministik evidence doğrulayıcı; modele veya ağa yeniden başvurmaz."""
-
 from __future__ import annotations
 
 import re
@@ -47,12 +45,6 @@ OBSERVABLE_WEAPON_LIKE_OBJECT = re.compile(
 def validate_evidence(
     state: EventAgentState, *, workspace_root: Path | None = None
 ) -> EvidenceValidationResult:
-    """State'teki öneriyi gerçek keyframe/clip ve güvenlik kurallarına karşı sınar.
-
-    ``workspace_root`` verilirse VLM akışında evidence dosyalarının varlığı ve
-    SHA-256 bütünlüğü zorunlu hale gelir. Mock-only akışların sözleşmesini
-    korumak için dosya denetimi açıkça opt-in'dir.
-    """
 
     status = state.proposal_status
     issues: list[ValidationIssue] = []
@@ -112,14 +104,6 @@ def validate_runtime_evidence(
     video_duration: float,
     workspace_root: Path,
 ) -> EvidenceValidationResult:
-    """Gerçek runner gözlemini confidence veya olay sınırı uydurmadan doğrula.
-
-    Bu giriş, ``EventAgentState`` üretmez: WindowReport event-level confidence ile
-    start/end taşımadığı için onu ``VLMResult.CONFIRMED`` biçimine sokmak güvenli
-    değildir. Aynı claim, timestamp, dosya ve hash kuralları paylaşılır; doğrulanan
-    kareler yalnız runtime sidecar'ında kalır ve ``permits_confirmation`` bilinçli
-    olarak false kalır.
-    """
 
     issues: list[ValidationIssue] = []
     root = workspace_root.resolve()
@@ -156,8 +140,6 @@ def validate_runtime_evidence(
         unsupported_critical_claim=unsupported_claim,
         critical_evidence_sufficient=critical_evidence_sufficient,
         validation_errors=issues,
-        # WindowReport'ta confidence/start/end yoktur. EvidenceItem üretmemek,
-        # bu sonucun yanlışlıkla auto-confirm kapısını açmasını da engeller.
         validated_evidence=[],
         validator_version=VALIDATOR_VERSION,
     )
@@ -431,12 +413,6 @@ def _is_vague(claim: str) -> bool:
 
 
 def _has_unsupported_critical_claim(claim: str) -> bool:
-    """Gözlemlenebilir silah-benzeri nesneyi hukukî hükümden ayırır.
-
-    ``possible_armed_incident`` yine otomatik confirmed olamaz; bu dar istisna
-    yalnız "silaha benzeyen bir nesne" gözleminin evidence olarak kaybolmasını
-    önler. Kimlik, niyet, yaralanma ve kesin silah ifadeleri yasak kalır.
-    """
 
     if not UNSUPPORTED_CRITICAL_TERMS.search(claim):
         return False

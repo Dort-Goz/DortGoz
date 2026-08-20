@@ -1,5 +1,3 @@
-"""UUID tabanlı yerel video saklama adaptörü."""
-
 from __future__ import annotations
 
 import asyncio
@@ -25,7 +23,6 @@ class StoredVideo:
 
 
 class LocalVideoStorage:
-    """Kaynak videoyu değiştirmeden güvenli adla yerel media köküne kopyalar."""
 
     def __init__(
         self,

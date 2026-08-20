@@ -1,5 +1,3 @@
-"""Policy ve araçlar arasında sınırlı, izlenebilir yürütme döngüsü."""
-
 from __future__ import annotations
 
 from time import perf_counter
@@ -44,8 +42,6 @@ class EventOrchestrator:
         except VlmSchemaError as exc:
             success = False
             error_code = exc.code
-            # İlk malformed/schema-invalid yanıt terminal hata değildir: policy
-            # yalnız bir strict retry'a izin verir; ikinci hata human review'a gider.
             next_state = _replace(
                 state,
                 vlm_attempts=state.vlm_attempts + 1,

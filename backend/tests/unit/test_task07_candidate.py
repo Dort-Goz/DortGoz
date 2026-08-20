@@ -1,5 +1,3 @@
-"""Görev 07 candidate score ve interval sözleşme testleri."""
-
 from __future__ import annotations
 
 import json
@@ -126,7 +124,6 @@ def test_feature_cache_round_trip_is_restart_safe(tmp_path: Path) -> None:
     assert cache.path_for(key).is_file()
     assert saved.created_at.tzinfo is not None
 
-    # Dosya içeriği bozulursa sessizce yanlış candidate üretmek yerine reddet.
     cache.path_for(key).write_text(json.dumps({"key": key.model_dump()}), encoding="utf-8")
     with pytest.raises(ValueError, match="cache okunamadı|Field required"):
         cache.load(key)

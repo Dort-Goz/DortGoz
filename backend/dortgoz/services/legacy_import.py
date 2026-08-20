@@ -1,5 +1,3 @@
-"""Legacy JSONL kayıtlarını yalnızca okumak için migration görünümü."""
-
 from __future__ import annotations
 
 import json
@@ -16,11 +14,6 @@ class LegacyRecord:
 
 
 def iter_legacy_jsonl(path: Path) -> Iterator[LegacyRecord]:
-    """`runs/*.jsonl` dosyasını değiştirmeden satır satır okur.
-
-    Bu fonksiyon bilerek repository'ye otomatik yazmaz; legacy şemadan canonical
-    event'e dönüşüm için Görev 09/10'da açık migration mapping'i uygulanacaktır.
-    """
 
     resolved = path.resolve()
     if not resolved.is_file():

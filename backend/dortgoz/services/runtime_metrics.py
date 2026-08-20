@@ -1,5 +1,3 @@
-"""Canonical runner için küçük, JSONL-only observability sayaçları."""
-
 from __future__ import annotations
 
 import time
@@ -15,7 +13,6 @@ Clock = Callable[[], float]
 
 @dataclass(slots=True)
 class CanonicalRunMetrics:
-    """Model kararını etkilemeyen, süreç içi canonical run ölçümleri."""
 
     run_id: str
     clock: Clock = field(default=time.monotonic, repr=False)
@@ -73,7 +70,6 @@ class CanonicalRunMetrics:
             self.second_pass_total_ms += _elapsed_ms(self.clock(), started)
 
     def record_qwen_timing(self, timing: dict[str, float | int]) -> None:
-        """`interpret` tarafından gerçek create_chat çevresinde ölçülen süreyi al."""
 
         self.qwen_calls += int(timing.get("calls", 0))
         self.qwen_total_ms += float(timing.get("total_ms", 0.0))
@@ -93,7 +89,6 @@ class CanonicalRunMetrics:
                 self.evidence_undetermined_count += 1
 
     def observe_emitted(self, payload: object) -> None:
-        """Yalnız başarıyla JSONL'ye yazılmış mevcut runtime olaylarını say."""
 
         if isinstance(payload, IncidentUpdate):
             if payload.phase == "basladi":
@@ -110,7 +105,6 @@ class CanonicalRunMetrics:
                 self.terminal_status = terminal
 
     def to_payload(self) -> dict[str, object]:
-        """Frontend sözleşmesine girmeyen tek JSONL summary payload'u üret."""
 
         return {
             "type": "run_metrics",

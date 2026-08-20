@@ -1,17 +1,3 @@
-"""Pencere-düzeyi ZAMANSAL doğruluk — ab_pipeline JSONL'i + resmî anomali sınırları.
-
-Klip-düzeyi zayıf etiket ("klipte olay var mıydı") yerine gerçek soru: alarm
-üreten pencereler anomalinin GERÇEK zaman aralığıyla örtüşüyor mu? Referans:
-`Temporal_Anomaly_Annotation.txt` (orijinal UCF-Crime yazarları; kare indeksli,
-yalnız test bölmesi; lisanssız → repo dışında, yerel veri kopyasının yanında —
-ekip içi veri kılavuzuna bakın).
-
-    cd backend && uv run python ../bench/temporal_eval.py --results ../bench/results/ab_testsplit_96k.jsonl
-
-Alarm ölçütü ab_pipeline ile AYNI: pencerede `orta`+ şiddetinde olay (ALARM_FLOOR).
-Kare→saniye çevrimi videonun kendi fps'iyle yapılır (ffprobe, önbellekli).
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -21,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 from ab_pipeline import ALARM_FLOOR, clip_class, load_results, window_severity
-from make_long_feed import resolve_ucf  # ab_pipeline sys.path'i zaten kurar
+from make_long_feed import resolve_ucf
 
 
 def video_fps(path: Path) -> float:
@@ -34,7 +20,6 @@ def video_fps(path: Path) -> float:
 
 
 def load_ground_truth(videos_dir: Path) -> dict[str, list[tuple[float, float]]]:
-    """Klip adı → saniye cinsinden anomali aralıkları (normal kliplerde boş)."""
     ann = videos_dir.parent / "Temporal_Anomaly_Annotation.txt"
     if not ann.is_file():
         raise SystemExit(
@@ -47,7 +32,7 @@ def load_ground_truth(videos_dir: Path) -> dict[str, list[tuple[float, float]]]:
         name, cls = parts[0], parts[1]
         frames = [int(p) for p in parts[2:6]]
         spans = [(frames[i], frames[i + 1]) for i in (0, 2) if frames[i] >= 0]
-        if spans:  # normal kliplerde aralık yok → fps problamaya gerek yok
+        if spans:
             fps = video_fps(videos_dir / cls / name)
             gt[name] = [(f0 / fps, f1 / fps) for f0, f1 in spans]
         else:
@@ -70,13 +55,12 @@ def main() -> None:
     data = load_results(args.results)
     clips = [c for c in data["clips"] if "windows" in c]
 
-    # pencere sayaçları
-    tp = fp_anom = fn_windows = 0        # anomali klipleri, pencere düzeyi
-    fp_normal = 0                        # normal kliplerde alarm penceresi
+    tp = fp_anom = fn_windows = 0
+    fp_normal = 0
     normal_hours = sum(c["duration"] for c in clips if not c["anomaly"]) / 3600
-    events_total = events_hit = 0        # GT aralığı düzeyi (asıl yakalama)
-    delays: list[float] = []             # GT başlangıcı → ilk alarm penceresi
-    per_class: dict[str, list[int]] = {} # sınıf → [aralık, yakalanan]
+    events_total = events_hit = 0
+    delays: list[float] = []
+    per_class: dict[str, list[int]] = {}
     skipped = 0
 
     for c in clips:
@@ -137,8 +121,6 @@ def main() -> None:
         n, hit = per_class[cls]
         print(f"| {cls} | {n} | {hit} |")
 
-    # GT süresine göre yakalama — "kısa olay 30 sn pencerede kayboluyor mu"
-    # sorusunun ölçümü (kare seçimi ~5 sn aralıklı: 2-3 sn'lik olay 0-1 kareye düşer)
     buckets = [(0, 5), (5, 15), (15, 30), (30, float("inf"))]
     counts = {b: [0, 0] for b in buckets}
     for c in clips:

@@ -1,22 +1,4 @@
 #!/usr/bin/env python3
-"""İkinci görüş tırmandırmasının TAM test bölmesinde doğrulaması.
-
-2026-08-15 rol analizi birleştirme için bunu ŞART koştu: 31 klip / sınıf başına
-2 klip küçük-n'dir, karar tam bölmede ölçülmeden verilmez.
-
-Canlı tırmandırma koşusu YAPILMAZ — pencere başına model değişimi model sunucusu
-yeniden yüklemesidir (13-15 GB) ve saatler ekler. Bunun yerine 2026-08-15'in
-yaptığı şey tekrarlanır: birincil (35B) koşusunun KAYDI okunur, tırmandırma
-ölçütünü karşılayan pencereler seçilir, YALNIZ onlar ikinci modele okutulur
-(model bir kez yüklenir), sonra birleşim puanlanır.
-
-Tırmandırma ölçütü = birincil pencereyi OLAYSIZ bıraktı VE hareket >= eşik.
-
-Kullanım:
-  cd backend && uv run python ../bench/ikinci_gorus_dogrula.py \\
-      --birincil ../bench/results/ab_testsplit_96k.jsonl \\
-      --model qwen3.8-27b-vision-dg --hareket 0.30
-"""
 
 import argparse
 import asyncio
@@ -40,7 +22,6 @@ ALARM_FLOOR = 1
 
 
 def tirmanacaklar(yol: Path, hareket: float) -> list[dict]:
-    """Birincil kayıttan tırmandırma ölçütünü karşılayan pencereleri çıkarır."""
     secim = []
     for satir in yol.read_text(encoding="utf-8").splitlines():
         if not satir.strip():
@@ -77,7 +58,7 @@ async def main() -> None:
     secim = tirmanacaklar(a.birincil, a.hareket)
 
     bitmis = set()
-    if a.out.exists():                       # kesinti sonrası kaldığı yerden
+    if a.out.exists():
         for satir in a.out.read_text(encoding="utf-8").splitlines():
             if satir.strip():
                 r = json.loads(satir)
@@ -88,8 +69,7 @@ async def main() -> None:
           f"model={a.model} efor={a.efor or 'düşünmesiz'}", flush=True)
 
     t0 = time.time()
-    profiller: dict[str, list] = {}          # klip başına bir kez çıkar (pahalı)
-    # Profil çıkarımı ffmpeg (CPU) — kilit altında tek sefer; VLM çağrıları eşzamanlı.
+    profiller: dict[str, list] = {}
     profil_gorevleri: dict[str, asyncio.Task] = {}
     yaz_kilidi = asyncio.Lock()
     sem = asyncio.Semaphore(a.esz)
@@ -103,9 +83,6 @@ async def main() -> None:
         else:
             video = adaylar[0]
             try:
-                # Klip BAŞINA tek görev: aynı klip bir kez çıkarılır ama FARKLI
-                # klipler paralel gider. Global kilit GPU'yu %9'a düşürüyordu —
-                # dört görev tek bir ffmpeg geçişini sırayla bekliyordu.
                 if s["clip"] not in profil_gorevleri:
                     profil_gorevleri[s["clip"]] = asyncio.create_task(
                         ingest.motion_profile(video, settings.base_fps))
@@ -142,7 +119,6 @@ async def main() -> None:
 
 
 def puanla(birincil: Path, ikinci: Path, hareket: float) -> None:
-    """Birleşimi puanlar: birincil yakaladıysa VEYA ikinci görüş alarm verdiyse."""
     klipler: dict[str, dict] = {}
     for satir in birincil.read_text(encoding="utf-8").splitlines():
         if not satir.strip():

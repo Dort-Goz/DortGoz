@@ -1,5 +1,3 @@
-"""Görev 04 mock araç/orchestrator dikey entegrasyon testleri."""
-
 from __future__ import annotations
 
 from dortgoz.agent.actions import AgentAction
