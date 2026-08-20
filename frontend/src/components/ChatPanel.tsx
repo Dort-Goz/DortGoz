@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "../types/events";
 
-/** Operatör sohbeti — v0 basit panel.
- *  TODO(hafta 3): @assistant-ui/react bileşenlerine geçiş (araç çağrısı kartları,
- *  zengin markdown, öneri düğmeleri) — WS sözleşmesi değişmeden view katmanı yükseltilir. */
+/** Operatör sohbeti — basit panel. */
 export default function ChatPanel({
   messages, onSend,
 }: { messages: ChatMessage[]; onSend: (text: string) => void }) {

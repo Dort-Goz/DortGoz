@@ -83,7 +83,7 @@ class ApiRuntime:
         self.candidate_cache = JsonFeatureCache(settings.candidate_cache_dir)
         project_root = settings.media_dir.parent
         self.risk_engine = RiskEngine(
-            load_risk_ruleset(project_root / "configs" / "risk_rules.yaml")
+            load_risk_ruleset(project_root / "defaults" / "risk_rules.yaml")
         )
         self.procedure_service = ProcedureService(
             LocalProcedureIndex.load(

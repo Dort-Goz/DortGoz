@@ -30,18 +30,12 @@ export const LEGACY_ANOMALY_TO_CANONICAL: Record<AnomalyType, CanonicalEventType
 };
 
 /** Eski bileşenler için canonical label'dan türetilen uyumluluk görünümü. */
-export const TYPE_TR: Record<AnomalyType, string> = {
-  kavga: CANONICAL_TYPE_TR[LEGACY_ANOMALY_TO_CANONICAL.kavga],
-  saldiri: CANONICAL_TYPE_TR[LEGACY_ANOMALY_TO_CANONICAL.saldiri],
-  hirsizlik: CANONICAL_TYPE_TR[LEGACY_ANOMALY_TO_CANONICAL.hirsizlik],
-  silahli_olay: CANONICAL_TYPE_TR[LEGACY_ANOMALY_TO_CANONICAL.silahli_olay],
-  yangin: CANONICAL_TYPE_TR[LEGACY_ANOMALY_TO_CANONICAL.yangin],
-  patlama: CANONICAL_TYPE_TR[LEGACY_ANOMALY_TO_CANONICAL.patlama],
-  arac_kazasi: CANONICAL_TYPE_TR[LEGACY_ANOMALY_TO_CANONICAL.arac_kazasi],
-  vandalizm: CANONICAL_TYPE_TR[LEGACY_ANOMALY_TO_CANONICAL.vandalizm],
-  normal: CANONICAL_TYPE_TR[LEGACY_ANOMALY_TO_CANONICAL.normal],
-  bilinmeyen: CANONICAL_TYPE_TR[LEGACY_ANOMALY_TO_CANONICAL.bilinmeyen],
-};
+export const TYPE_TR = Object.fromEntries(
+  Object.entries(LEGACY_ANOMALY_TO_CANONICAL).map(([legacy, canonical]) => [
+    legacy,
+    CANONICAL_TYPE_TR[canonical],
+  ]),
+) as Record<AnomalyType, string>;
 
 /** Risk değerleri ASCII enum (dusuk/yuksek) — operatör Türkçesini burada alır. */
 export const RISK_TR: Record<Risk, string> = {

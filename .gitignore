@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
+.pytest-tmp*/
+.pytest-all/
 .ruff_cache/
 
 # Node
@@ -25,6 +27,7 @@ models/**/*.bin
 !bench/results/**/*.jsonl
 
 # Local
+local/
 .env
 *.db
 .DS_Store

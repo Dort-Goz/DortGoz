@@ -144,10 +144,7 @@ export default function LiveGrid({ incidents, onSelectFeed }: {
       )}
 
       <div className="flex-1 min-h-0 flex gap-2">
-      <div
-        className="flex-1 min-h-0 grid gap-1 overflow-auto"
-        style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}
-      >
+      <div className="flex-1 min-h-0 grid grid-cols-5 gap-1 overflow-auto">
         {feeds.map((f) => {
           const badge = lagBadge(f);
           const inc = incidents[f.name]?.length ?? 0;
