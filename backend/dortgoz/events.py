@@ -83,9 +83,27 @@ class ToolCall(BaseModel):
     result: str | None = None
 
 
+class WindowSignals(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    durum_p: float | None = None
+    anomaly_score: float | None = None
+    interaction_score: float | None = None
+    fall_score: float | None = None
+    fire_smoke_score: float | None = None
+    vehicle_conflict_score: float | None = None
+    tampering_score: float | None = None
+    image_quality: float | None = None
+    changed: float | None = None
+    fg: float | None = None
+    mad: float | None = None
+    screening_model: str = ""
+
+
 class IncidentUpdate(BaseModel):
 
     type: Literal["incident_update"] = "incident_update"
+    signals: WindowSignals | None = None
     incident_id: str
     t: float
     phase: Literal["basladi", "gelisiyor", "sonuclandi"]

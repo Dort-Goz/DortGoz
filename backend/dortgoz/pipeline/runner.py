@@ -16,7 +16,7 @@ from ..domain.taxonomy import (
     canonical_event_type_from_ws_label,
     legacy_ws_label_from_canonical,
 )
-from ..events import AgentStep, Event, RunStatus, WindowEvent, WindowReport
+from ..events import AgentStep, Event, RunStatus, WindowEvent, WindowReport, WindowSignals
 from ..services.runtime_metrics import CanonicalRunMetrics
 from ..services.runtime_policy import decide_runtime_policy
 from ..services.runtime_postprocess import RuntimeEvidenceScope, postprocess_finalized_report
@@ -55,6 +55,31 @@ def resolve_media(video: str) -> Path:
 def screening_covers(start: float, end: float,
                      spans: list[tuple[float, float]]) -> bool:
     return any(a < end and b > start for a, b in spans)
+
+
+def window_signals(start: float, end: float, screen_samples: list,
+                   profile: list, call: dict) -> WindowSignals:
+    peak = None
+    for sample in screen_samples:
+        if start <= sample.timestamp < end:
+            if peak is None or sample.anomaly_score > peak.anomaly_score:
+                peak = sample
+    motion = [m for m in profile if start <= m.t < end]
+    durum_p = call.get("durum_p")
+    return WindowSignals(
+        durum_p=float(durum_p) if durum_p is not None else None,
+        anomaly_score=peak.anomaly_score if peak else None,
+        interaction_score=peak.interaction_score if peak else None,
+        fall_score=peak.fall_score if peak else None,
+        fire_smoke_score=peak.fire_smoke_score if peak else None,
+        vehicle_conflict_score=peak.vehicle_conflict_score if peak else None,
+        tampering_score=peak.tampering_score if peak else None,
+        image_quality=peak.image_quality if peak else None,
+        changed=max((m.changed for m in motion), default=None),
+        fg=max((m.fg for m in motion), default=None),
+        mad=max((m.mad for m in motion), default=None),
+        screening_model=peak.source_model if peak else "",
+    )
 
 
 class RunRecorder:
@@ -307,6 +332,7 @@ async def run_video(
             wins = windowing.windows(duration, settings.window_seconds)
 
         cand_spans: list[tuple[float, float]] | None = None
+        screen_samples: list = []
         if settings.candidate_screening and not settings.dynamic_windows:
             scorer = MotionBaselineModel()
             if settings.candidate_model_manifest:
@@ -680,7 +706,9 @@ async def run_video(
                         thumb,
                         uncertain=" · ".join(review_reasons),
                     )
+                sig = window_signals(start, end, screen_samples, profile, call)
                 for update in updates:
+                    update = update.model_copy(update={"signals": sig})
                     await rec.emit(update)
                     await review_if_closed(
                         rec,

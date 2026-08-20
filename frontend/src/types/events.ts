@@ -56,8 +56,24 @@ export interface ToolCall {
   result?: string | null;
 }
 
+export interface WindowSignals {
+  durum_p?: number | null;
+  anomaly_score?: number | null;
+  interaction_score?: number | null;
+  fall_score?: number | null;
+  fire_smoke_score?: number | null;
+  vehicle_conflict_score?: number | null;
+  tampering_score?: number | null;
+  image_quality?: number | null;
+  changed?: number | null;
+  fg?: number | null;
+  mad?: number | null;
+  screening_model?: string;
+}
+
 export interface IncidentUpdate {
   type: "incident_update";
+  signals?: WindowSignals | null;
   incident_id: string;
   t: number;
   phase: "basladi" | "gelisiyor" | "sonuclandi";

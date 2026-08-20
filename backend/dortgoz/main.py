@@ -169,12 +169,34 @@ async def triage_revoke_rule(body: dict) -> dict:
     return triage.store.snapshot()
 
 
+def _triage_args(body: dict) -> dict:
+    return {
+        "category": body.get("category", ""),
+        "note": body.get("note", ""),
+        "reviewer": body.get("reviewer", ""),
+        "operator_start": body.get("operator_start"),
+        "operator_end": body.get("operator_end"),
+    }
+
+
 @app.post("/api/triage/decide")
 async def triage_decide(body: dict) -> dict:
     try:
         item = triage.store.decide(
-            body.get("key", ""), body.get("verdict", ""),
-            category=body.get("category", ""), note=body.get("note", ""))
+            body.get("key", ""), body.get("verdict", ""), **_triage_args(body))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    from dataclasses import asdict
+    return asdict(item)
+
+
+@app.post("/api/triage/duzelt")
+async def triage_revise(body: dict) -> dict:
+    try:
+        item = triage.store.revise(
+            body.get("key", ""), body.get("verdict", ""), **_triage_args(body))
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:

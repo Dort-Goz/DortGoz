@@ -211,3 +211,49 @@ def test_dedup_survives_missing_grids():
     samples = [_grid_sample(float(t), b"") for t in range(30)]
     times = [2.0, 7.0, 12.0]
     assert _dedup(times, samples, threshold=0.006) == times
+
+
+def _screen(ts, anomaly, model="siglip2-semantic-v1"):
+    from dortgoz.domain.candidate import ScreeningSample
+    return ScreeningSample(
+        timestamp=ts, anomaly_score=anomaly, interaction_score=0.2,
+        fall_score=0.1, fire_smoke_score=0.0, vehicle_conflict_score=0.0,
+        tampering_score=0.0, image_quality=0.8, source_model=model,
+    )
+
+
+def _motion(t, changed, fg, mad):
+    return ingest.MotionSample(t=t, changed=changed, fg=fg, mad=mad)
+
+
+def test_window_signals_picks_the_peak_sample_inside_the_window():
+    from dortgoz.pipeline.runner import window_signals
+    samples = [_screen(1.0, 0.2), _screen(5.0, 0.9), _screen(9.0, 0.4),
+               _screen(40.0, 0.99)]
+    motion = [_motion(1.0, 0.1, 0.2, 0.01), _motion(5.0, 0.5, 0.3, 0.09),
+              _motion(40.0, 0.9, 0.9, 0.9)]
+    sig = window_signals(0.0, 30.0, samples, motion, {"durum_p": 0.61})
+
+    assert sig.anomaly_score == pytest.approx(0.9)
+    assert sig.image_quality == pytest.approx(0.8)
+    assert sig.durum_p == pytest.approx(0.61)
+    assert sig.changed == pytest.approx(0.5)
+    assert sig.mad == pytest.approx(0.09)
+    assert sig.screening_model == "siglip2-semantic-v1"
+
+
+def test_window_signals_is_empty_when_nothing_falls_in_the_window():
+    from dortgoz.pipeline.runner import window_signals
+    sig = window_signals(0.0, 30.0, [_screen(90.0, 0.9)], [_motion(90.0, 1.0, 1.0, 1.0)], {})
+    assert sig.anomaly_score is None
+    assert sig.changed is None
+    assert sig.durum_p is None
+    assert sig.screening_model == ""
+
+
+def test_window_signals_survives_screening_being_disabled():
+    from dortgoz.pipeline.runner import window_signals
+    sig = window_signals(0.0, 30.0, [], [_motion(2.0, 0.4, 0.1, 0.02)], {"durum_p": 0.05})
+    assert sig.anomaly_score is None
+    assert sig.changed == pytest.approx(0.4)
+    assert sig.durum_p == pytest.approx(0.05)

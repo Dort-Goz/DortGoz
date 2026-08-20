@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import asdict, dataclass
+import uuid
+from dataclasses import asdict, dataclass, field
+from typing import Any
 
 from ..config import settings
 from ..events import Event
+
+LEDGER_VERSION = 2
 
 CATEGORIES = ["kavga", "saldiri", "hirsizlik", "silahli_olay", "yangin",
               "patlama", "arac_kazasi", "vandalizm", "bilinmeyen"]
@@ -27,6 +31,32 @@ _NOTE_TR = {
 }
 
 
+def _config_snapshot() -> dict[str, Any]:
+    return {
+        "escalate_p": settings.escalate_p,
+        "candidate_start_threshold": settings.candidate_start_threshold,
+        "candidate_continue_threshold": settings.candidate_continue_threshold,
+        "candidate_screening": settings.candidate_screening,
+        "second_opinion_model": settings.second_opinion_model,
+        "dual_read": settings.dual_read,
+        "final_sweep": settings.final_sweep,
+    }
+
+
+def _run_meta(run_id: str) -> dict[str, Any]:
+    if not run_id:
+        return {}
+    try:
+        raw = (settings.runs_dir / f"{run_id}.meta.json").read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    try:
+        meta = json.loads(raw)
+    except ValueError:
+        return {}
+    return {k: meta.get(k, "") for k in ("model", "mode", "video", "system_prompt")}
+
+
 @dataclass
 class TriageItem:
     key: str
@@ -41,11 +71,22 @@ class TriageItem:
     thumbnail: str | None = None
     needs_review: bool = False
     review_reason: str = ""
+    run_id: str = ""
+    video: str = ""
+    signals: dict[str, Any] = field(default_factory=dict)
     verdict: str = ""
     operator_category: str = ""
+    operator_start: float | None = None
+    operator_end: float | None = None
+    reviewer: str = ""
     note: str = ""
     decided_wall: float | None = None
     tekrar: int = 1
+    decision_id: str = ""
+    supersedes: str | None = None
+    ledger_version: int = LEDGER_VERSION
+    config: dict[str, Any] = field(default_factory=dict)
+    run_meta: dict[str, Any] = field(default_factory=dict)
 
 
 class TriageStore:
@@ -56,12 +97,36 @@ class TriageStore:
         self.auto_dismissed = 0
         self._dismissals: dict[tuple[str, str], int] = {}
         self.rules: dict[tuple[str, str], int] = {}
+        self._runs: dict[str, tuple[str, str]] = {}
+        self.expired_count = 0
 
+
+    def _signal_dict(self, payload: Any) -> dict[str, Any]:
+        sig = getattr(payload, "signals", None)
+        return sig.model_dump() if sig is not None else {}
+
+    def _merge_signals(self, item: TriageItem, payload: Any) -> None:
+        incoming = self._signal_dict(payload)
+        if not incoming:
+            return
+        if not item.signals:
+            item.signals = incoming
+            return
+        old = item.signals.get("durum_p")
+        new = incoming.get("durum_p")
+        if new is not None and (old is None or new > old):
+            item.signals = incoming
 
     def observe(self, event: Event) -> None:
         p = event.payload
-        if getattr(p, "type", "") != "incident_update":
+        kind = getattr(p, "type", "")
+        if kind == "run_status":
+            if getattr(p, "run_id", ""):
+                self._runs[event.feed] = (p.run_id, getattr(p, "video", ""))
             return
+        if kind != "incident_update":
+            return
+        run_id, video = self._runs.get(event.feed, ("", ""))
         key = f"{event.feed}:{p.incident_id}"
         if key in self._pending:
             item = self._pending[key]
@@ -71,6 +136,7 @@ class TriageStore:
             item.thumbnail = p.thumbnail or item.thumbnail
             item.needs_review = p.needs_review
             item.review_reason = p.review_reason
+            self._merge_signals(item, p)
             return
         if any(r.key == key for r in self._resolved):
             return
@@ -78,10 +144,11 @@ class TriageStore:
         if pair in self.rules:
             self.rules[pair] += 1
             self.auto_dismissed += 1
-            self._log(TriageItem(
+            self._stamp_and_log(TriageItem(
                 key=key, feed=event.feed, incident_id=p.incident_id,
                 t=p.t, wall=time.time(), title=p.title,
                 model_category=p.anomaly_type, risk=p.risk, phase=p.phase,
+                run_id=run_id, video=video, signals=self._signal_dict(p),
                 verdict="sorun_degil", decided_wall=time.time(),
                 note=f"otomatik: operatör kuralı ({self._dismissals.get(pair, 0)}× sorun değil)"))
             return
@@ -92,19 +159,28 @@ class TriageStore:
                 if RISK.index(p.risk) > RISK.index(item.risk):
                     item.risk = p.risk
                 item.thumbnail = p.thumbnail or item.thumbnail
+                self._merge_signals(item, p)
                 return
         self._pending[key] = TriageItem(
             key=key, feed=event.feed, incident_id=p.incident_id,
             t=p.t, wall=time.time(), title=p.title,
             model_category=p.anomaly_type, risk=p.risk, phase=p.phase,
             thumbnail=p.thumbnail, needs_review=p.needs_review,
-            review_reason=p.review_reason)
+            review_reason=p.review_reason,
+            run_id=run_id, video=video, signals=self._signal_dict(p))
         while len(self._pending) > MAX_PENDING:
-            self._pending.pop(next(iter(self._pending)))
+            dropped = self._pending.pop(next(iter(self._pending)))
+            dropped.verdict = "expired"
+            dropped.decided_wall = time.time()
+            dropped.note = "kuyruk taştı: operatör karar veremeden düştü"
+            self.expired_count += 1
+            self._stamp_and_log(dropped)
 
 
     def decide(self, key: str, verdict: str, category: str = "",
-               note: str = "") -> TriageItem:
+               note: str = "", reviewer: str = "",
+               operator_start: float | None = None,
+               operator_end: float | None = None) -> TriageItem:
         if verdict not in {"anomali", "sorun_degil"}:
             raise ValueError(f"geçersiz karar: {verdict}")
         item = self._pending.pop(key, None)
@@ -121,15 +197,56 @@ class TriageStore:
             self._dismissals[pair] = self._dismissals.get(pair, 0) + 1
             if self._dismissals[pair] >= RULE_THRESHOLD and pair not in self.rules:
                 self.rules[pair] = 0
+        if operator_start is not None and operator_end is not None:
+            if operator_start > operator_end:
+                raise ValueError("operatör başlangıcı bitişten sonra olamaz")
         item.verdict = verdict
         item.note = note[:500]
+        item.reviewer = reviewer[:120]
+        item.operator_start = operator_start
+        item.operator_end = operator_end
         item.decided_wall = time.time()
         self._resolved.append(item)
         del self._resolved[:-MAX_RESOLVED]
-        self._log(item)
+        self._stamp_and_log(item)
         return item
 
-    def _log(self, item: TriageItem) -> None:
+    def revise(self, key: str, verdict: str, category: str = "",
+               note: str = "", reviewer: str = "",
+               operator_start: float | None = None,
+               operator_end: float | None = None) -> TriageItem:
+        prior = next((i for i in reversed(self._resolved) if i.key == key), None)
+        if prior is None:
+            raise KeyError(f"düzeltilecek karar yok: {key}")
+        if verdict not in {"anomali", "sorun_degil"}:
+            raise ValueError(f"geçersiz karar: {verdict}")
+        if verdict == "anomali" and category not in CATEGORIES:
+            raise ValueError(f"geçersiz kategori: {category}")
+        from dataclasses import replace
+        item = replace(
+            prior,
+            verdict=verdict,
+            operator_category=category if verdict == "anomali" else "",
+            note=note[:500],
+            reviewer=reviewer[:120],
+            operator_start=operator_start,
+            operator_end=operator_end,
+            decided_wall=time.time(),
+            decision_id="",
+            supersedes=prior.decision_id,
+        )
+        self._resolved.append(item)
+        del self._resolved[:-MAX_RESOLVED]
+        self._stamp_and_log(item)
+        return item
+
+    def _stamp_and_log(self, item: TriageItem) -> None:
+        if not item.decision_id:
+            item.decision_id = uuid.uuid4().hex
+        if not item.config:
+            item.config = _config_snapshot()
+        if not item.run_meta:
+            item.run_meta = _run_meta(item.run_id)
         try:
             settings.runs_dir.mkdir(parents=True, exist_ok=True)
             with (settings.runs_dir / "nobet_defteri.jsonl").open("a") as fh:
@@ -159,6 +276,7 @@ class TriageStore:
             "confirmed": confirmed,
             "dismissed_count": self.dismissed_count,
             "auto_dismissed": self.auto_dismissed,
+            "expired_count": self.expired_count,
             "rules": [{"feed": f, "category": c, "auto_count": n}
                       for (f, c), n in self.rules.items()],
             "categories": CATEGORIES,
@@ -169,8 +287,10 @@ class TriageStore:
         self._resolved.clear()
         self.dismissed_count = 0
         self.auto_dismissed = 0
+        self.expired_count = 0
         self._dismissals.clear()
         self.rules.clear()
+        self._runs.clear()
 
 
 store = TriageStore()

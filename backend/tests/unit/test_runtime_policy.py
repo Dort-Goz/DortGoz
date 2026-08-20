@@ -431,6 +431,7 @@ def test_incident_update_wire_contract_is_unchanged() -> None:
         "review_reason",
         "olay_baslangic",
         "olay_bitis",
+        "signals",
     }
 
 
