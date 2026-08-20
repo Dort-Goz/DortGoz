@@ -31,11 +31,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..agent.llm import call_stats, create_chat, main_client
 from ..config import settings
-from ..services.weight_guard import guard as weight_guard
 from ..domain.evidence import FRAME_TIMESTAMP_TOLERANCE_SECONDS
 from ..domain.taxonomy import CanonicalEventType, legacy_ws_label_from_canonical
 from ..events import EventEvidenceRef, FrameReference, Risk, WindowReport
+from ..services.weight_guard import guard as weight_guard
 from ..tools.protocols import VlmSchemaError
+from ..utils import inline_defs
 from .ingest import grab_frame
 from .thinking import thinking_extra, thinking_on
 
@@ -208,7 +209,7 @@ class IncidentReviewResult(BaseModel):
 
 def review_schema(frame_ids: list[str] | None = None) -> dict[str, Any]:
     """Olay-geneli ikinci geçişin şeması (Bengisu'nun öncesi-zirve-sonrası tasarımı)."""
-    schema = _inline_defs(IncidentReviewResult.model_json_schema())
+    schema = inline_defs(IncidentReviewResult.model_json_schema())
     schema.pop("title", None)
     evidence = schema.get("properties", {}).get("evidence")
     if evidence is not None:
@@ -382,28 +383,6 @@ async def review_incident(
     return review.model_dump(mode="json")
 
 
-def _inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
-    """`$ref`/`$defs` içeren Pydantic şemasını düz şemaya çevirir.
-
-    llama.cpp'nin GBNF dönüştürücüsüne referanssız, kendi kendine yeten bir
-    şema vermek en güvenlisi — böylece şema tek kaynaktan (WindowReport)
-    türetilirken dilbilgisi üretimi de sorunsuz olur.
-    """
-    defs = schema.pop("$defs", {})
-
-    def walk(node: Any) -> Any:
-        if isinstance(node, dict):
-            if "$ref" in node:
-                name = node["$ref"].rsplit("/", 1)[-1]
-                return walk(json.loads(json.dumps(defs[name])))
-            return {k: walk(v) for k, v in node.items()}
-        if isinstance(node, list):
-            return [walk(v) for v in node]
-        return node
-
-    return walk(schema)
-
-
 def report_schema(frame_ids: list[str] | None = None) -> dict[str, Any]:
     """WindowReport'tan modelin üreteceği alanların şemasını türetir.
 
@@ -414,7 +393,7 @@ def report_schema(frame_ids: list[str] | None = None) -> dict[str, Any]:
     var olmayan f_006) dilbilgisi düzeyinde imkânsızlaşır (2026-08-11 canlı
     bulgu: tek uydurma kimlik tüm 2. geçişi düşürüyordu).
     """
-    schema = _inline_defs(WindowReport.model_json_schema())
+    schema = inline_defs(WindowReport.model_json_schema())
     props = schema.get("properties", {})
     for field in ("type", "window_start", "window_end"):
         props.pop(field, None)

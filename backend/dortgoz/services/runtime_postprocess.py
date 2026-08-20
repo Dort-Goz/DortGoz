@@ -23,6 +23,7 @@ from ..domain.evidence import (
 )
 from ..domain.taxonomy import CanonicalEventType, requires_human_review
 from ..events import FrameReference, WindowReport
+from ..utils import file_sha256
 from .evidence_validator import VALIDATOR_VERSION, validate_runtime_evidence
 
 LOGGER = logging.getLogger(__name__)
@@ -364,7 +365,7 @@ def _publish_frame(
     target = window / f"{frame_id}-{digest[:32]}.jpg"
     _assert_safe_file_path(target, tracker.evidence_root.resolve())
     if target.exists():
-        if _file_hash(target) != digest:
+        if file_sha256(target) != digest:
             raise RuntimeEvidenceIdentityConflict(
                 "aynı content identity farklı evidence bytes içeriyor"
             )
@@ -377,7 +378,7 @@ def _publish_frame(
         try:
             os.link(temporary, target)
         except FileExistsError:
-            if _file_hash(target) != digest:
+            if file_sha256(target) != digest:
                 raise RuntimeEvidenceIdentityConflict(
                     "concurrent evidence publish farklı bytes üretti"
                 )
@@ -566,14 +567,6 @@ def _status_rank(status: RuntimeValidationStatus) -> int:
         RuntimeValidationStatus.INVALID_EVIDENCE: 2,
         RuntimeValidationStatus.UNDETERMINED: 3,
     }[status]
-
-
-def _file_hash(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        while chunk := handle.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 __all__ = [

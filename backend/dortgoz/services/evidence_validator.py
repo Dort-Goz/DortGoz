@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -19,6 +18,7 @@ from ..domain.evidence import (
     VerifiedEventType,
     VLMStatus,
 )
+from ..utils import file_sha256
 
 VALIDATOR_VERSION = "task-09-validator-v1"
 
@@ -407,7 +407,7 @@ def _artifact_matches(
             )
         )
         return False
-    if _file_hash(target) != expected_hash:
+    if file_sha256(target) != expected_hash:
         issues.append(
             ValidationIssue(
                 code=f"EVIDENCE_{artifact_kind.upper()}_HASH_MISMATCH",
@@ -447,11 +447,3 @@ def _has_unsupported_critical_claim(claim: str) -> bool:
         flags=re.IGNORECASE,
     )
     return allowed is None or forbidden.search(claim) is not None
-
-
-def _file_hash(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        while chunk := handle.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()

@@ -10,7 +10,6 @@ metin kulesi hiç koşmaz — çapa embeddingleri artifact yanında hazır durur
 
 from __future__ import annotations
 
-import hashlib
 import subprocess
 from pathlib import Path
 from typing import Literal
@@ -18,6 +17,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..domain.candidate import ScreeningSample
+from ..utils import file_sha256
 from .ingest import MotionSample
 
 _SIDE = 224
@@ -97,10 +97,6 @@ class CausalWelford:
 _RUNTIME_CACHE: dict[str, tuple[object, object, int]] = {}
 
 
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 class SemanticCandidateModel:
     """Kare akışı ister: runner ``score_video`` yolunu kullanır."""
 
@@ -121,9 +117,9 @@ class SemanticCandidateModel:
         import numpy as np
         import onnxruntime as ort
 
-        if _sha256(self._onnx_file) != self.artifact.onnx_sha256:
+        if file_sha256(self._onnx_file) != self.artifact.onnx_sha256:
             raise ValueError("semantic onnx SHA-256 artifact ile eşleşmiyor")
-        if _sha256(self._anchors_file) != self.artifact.anchors_sha256:
+        if file_sha256(self._anchors_file) != self.artifact.anchors_sha256:
             raise ValueError("semantic çapa SHA-256 artifact ile eşleşmiyor")
         data = np.load(self._anchors_file)
         anchors = data["anchors"].astype(np.float32)

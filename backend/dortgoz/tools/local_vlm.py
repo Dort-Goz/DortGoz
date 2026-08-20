@@ -14,6 +14,7 @@ from ..domain.candidate import CandidateEvent
 from ..domain.context import ContextClip, KeyframeRef
 from ..domain.evidence import EvidenceClaim, VerifiedEventType, VLMResult, VLMStatus
 from ..infrastructure.model_client import LocalModelClient, LocalModelClientError
+from ..utils import file_sha256, inline_defs
 from .protocols import ToolExecutionError, VlmSchemaError
 
 
@@ -125,7 +126,7 @@ class LocalVlmTool:
             target = (self.workspace_root / frame.frame_path).resolve()
             if not target.is_relative_to(self.workspace_root) or not target.is_file():
                 raise ToolExecutionError("VLM_FRAME_NOT_FOUND", "VLM keyframe dosyası bulunamadı.")
-            if _file_hash(target) != frame.hash_sha256:
+            if file_sha256(target) != frame.hash_sha256:
                 raise ToolExecutionError("VLM_FRAME_HASH_MISMATCH", "VLM keyframe bütünlüğü doğrulanamadı.")
             if not context.clip_start <= frame.timestamp <= context.clip_end:
                 raise ToolExecutionError("VLM_FRAME_RANGE_INVALID", "VLM keyframe context dışında.")
@@ -190,7 +191,7 @@ def load_local_vlm_manifest(path: Path) -> LocalVlmManifest:
         weights = (path.parent / weights).resolve()
     if not weights.is_file():
         raise ToolExecutionError("MODEL_ARTIFACT_MISSING", "Yerel VLM ağırlık dosyası bulunamadı.")
-    digest = _file_hash(weights)
+    digest = file_sha256(weights)
     if digest != manifest.artifact_sha256:
         raise ToolExecutionError("MODEL_HASH_MISMATCH", "Yerel VLM ağırlık hash'i manifest ile eşleşmiyor.")
     return manifest
@@ -199,35 +200,9 @@ def load_local_vlm_manifest(path: Path) -> LocalVlmManifest:
 def vlm_output_schema() -> dict[str, Any]:
     """llama.cpp GBNF için Pydantic referanslarını açılmış şema üretir."""
 
-    schema = _inline_defs(_VlmOutput.model_json_schema())
+    schema = inline_defs(_VlmOutput.model_json_schema())
     schema.pop("title", None)
     return schema
-
-
-def _inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
-    """Yerel GBNF dönüştürücüsüne `$ref` içermeyen kendine yeterli şema verir."""
-
-    definitions = schema.pop("$defs", {})
-
-    def walk(node: Any) -> Any:
-        if isinstance(node, dict):
-            if "$ref" in node:
-                name = node["$ref"].rsplit("/", 1)[-1]
-                return walk(json.loads(json.dumps(definitions[name])))
-            return {key: walk(value) for key, value in node.items()}
-        if isinstance(node, list):
-            return [walk(value) for value in node]
-        return node
-
-    return walk(schema)
-
-
-def _file_hash(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        while chunk := handle.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 __all__ = ["LocalVlmManifest", "LocalVlmTool", "load_local_vlm_manifest", "vlm_output_schema"]

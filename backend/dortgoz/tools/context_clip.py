@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from ..domain.candidate import CandidateEvent
 from ..domain.context import ContextClip
 from ..domain.video import VideoMetadata
+from ..utils import file_sha256
 from .protocols import ToolExecutionError
 
 ClipWriter = Callable[[Path, Path, float, float, float], Awaitable[None]]
@@ -71,7 +71,7 @@ class LocalContextClipTool:
             clip_path=target.relative_to(self.workspace_root).as_posix(),
             frame_count=max(1, round((end - start) * self.fps)),
             fps=self.fps,
-            hash_sha256=_file_hash(target),
+            hash_sha256=file_sha256(target),
             expanded=expanded,
         )
 
@@ -123,14 +123,6 @@ async def _write_clip(
         detail = stderr.decode("utf-8", "replace")[-200:]
         raise ToolExecutionError("CONTEXT_CLIP_FAILED", detail or "ffmpeg context clip başarısız")
     temporary.replace(target)
-
-
-def _file_hash(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        while chunk := handle.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 __all__ = ["LocalContextClipTool"]

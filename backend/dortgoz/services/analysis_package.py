@@ -17,33 +17,20 @@ LangGraph sohbeti içe aktarılan analiz üzerinde aynen çalışır.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import shutil
 import zipfile
 from pathlib import Path
 
+from .. import session
 from ..agent.memory import Incident, Ledger
 from ..config import settings
 from ..events import IncidentUpdate, WindowReport
 from ..pipeline.ingest import grab_frame
 from ..pipeline.runner import resolve_media
-from .. import session
+from ..utils import file_sha256, format_clock
 
 FORMAT_VERSION = 1
-_CLOCK = "%02d:%02d"
-
-
-def _clock(t: float) -> str:
-    return _CLOCK % (int(t) // 60, int(t) % 60)
-
-
-def _sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def _parse_stream(jsonl: Path) -> tuple[list[WindowReport], dict[str, IncidentUpdate], float]:
@@ -89,8 +76,8 @@ def export_analysis(run_id: str, *, include_video: bool = True) -> Path:
             f" · model: {meta.get('model', '?')}", "", "## Olaylar"]
     if incidents:
         for inc in incidents.values():
-            aralik = (f"{_clock(inc.olay_baslangic)}–{_clock(inc.olay_bitis)}"
-                      if inc.olay_baslangic is not None else f"~{_clock(inc.t)}")
+            aralik = (f"{format_clock(inc.olay_baslangic)}–{format_clock(inc.olay_bitis)}"
+                      if inc.olay_baslangic is not None else f"~{format_clock(inc.t)}")
             ozet.append(f"- [{aralik}] {inc.anomaly_type} · risk {inc.risk} · "
                         f"{inc.title}"
                         + (" · **insan incelemesi**" if inc.needs_review else ""))
@@ -100,7 +87,7 @@ def export_analysis(run_id: str, *, include_video: bool = True) -> Path:
     files: dict[str, str] = {}
     with zipfile.ZipFile(pkg, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.write(jsonl, "analiz.jsonl")
-        files["analiz.jsonl"] = _sha256(jsonl)
+        files["analiz.jsonl"] = file_sha256(jsonl)
         zf.writestr("meta.json", json.dumps(meta, ensure_ascii=False, indent=1))
         zf.writestr("ozet.md", "\n".join(ozet) + "\n")
         video_name = meta.get("video", "")
@@ -114,7 +101,7 @@ def export_analysis(run_id: str, *, include_video: bool = True) -> Path:
             if src is not None:
                 arc = f"video/{Path(video_name).name}"
                 zf.write(src, arc)
-                files[arc] = _sha256(src)
+                files[arc] = file_sha256(src)
         manifest = {"format": "dortgoz-analiz", "surum": FORMAT_VERSION,
                     "run_id": run_id, "video": Path(video_name).name,
                     "kanit_zamanlari": evidence_ts, "sha256": files}
@@ -194,7 +181,7 @@ def import_analysis(package: Path, feed: str = "") -> session.RunContext:
         jsonl_dst.parent.mkdir(parents=True, exist_ok=True)
         jsonl_dst.write_bytes(zf.read("analiz.jsonl"))
         if manifest["sha256"].get("analiz.jsonl") and \
-                _sha256(jsonl_dst) != manifest["sha256"]["analiz.jsonl"]:
+                file_sha256(jsonl_dst) != manifest["sha256"]["analiz.jsonl"]:
             jsonl_dst.unlink()
             raise ValueError("analiz.jsonl sağlama toplamı tutmuyor")
         if "meta.json" in names:

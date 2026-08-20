@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from .agent.memory import Incident, Ledger
 from .config import settings
 from .events import WindowReport
+from .utils import format_clock
 
 TYPE_TR: dict[str, str] = {
     "kavga": "kavga", "saldiri": "saldırı", "hirsizlik": "hırsızlık",
@@ -28,10 +29,6 @@ TYPE_TR: dict[str, str] = {
 RISK_TR: dict[str, str] = {
     "dusuk": "düşük", "orta": "orta", "yuksek": "yüksek", "kritik": "kritik",
 }
-
-
-def _clock(t: float) -> str:
-    return f"{int(t) // 60:02d}:{int(t) % 60:02d}"
 
 
 # 7/24 canlı akışta bağlam sınırsız büyür: 24 akış × 2 pencere/dk brifingi
@@ -87,7 +84,7 @@ class RunContext:
         worst = max(incidents, key=lambda i: ["dusuk", "orta", "yuksek", "kritik"].index(i.risk))
         kind = TYPE_TR.get(worst.anomaly_type, worst.anomaly_type)
         review = sum(1 for i in incidents if i.needs_review)
-        return (f"{len(incidents)} olay tespit edildi; en ciddisi {_clock(worst.first_seen)} "
+        return (f"{len(incidents)} olay tespit edildi; en ciddisi {format_clock(worst.first_seen)} "
                 f"itibarıyla {kind} ({RISK_TR.get(worst.risk, worst.risk)} risk)."
                 + (f" {review} olay insan incelemesi istiyor." if review else ""))
 
@@ -95,7 +92,7 @@ class RunContext:
         """Sistem istemine gömülen tam koşu bağlamı."""
         lines = [
             f"## Çözümlenen kayıt: {self.video}",
-            f"Süre: {_clock(self.duration)} · durum: "
+            f"Süre: {format_clock(self.duration)} · durum: "
             f"{'analiz tamamlandı' if self.finished else 'analiz sürüyor'}",
             "",
             f"### Karar: {self.verdict()}",
@@ -106,7 +103,7 @@ class RunContext:
             for inc in self.incidents:
                 kind = TYPE_TR.get(inc.anomaly_type, inc.anomaly_type)
                 lines.append(
-                    f"- [{inc.incident_id}] {_clock(inc.first_seen)}–{_clock(inc.last_seen)} · "
+                    f"- [{inc.incident_id}] {format_clock(inc.first_seen)}–{format_clock(inc.last_seen)} · "
                     f"{kind} · risk {inc.risk} · durum {inc.phase} — {inc.title}"
                 )
                 for note in inc.notes:
@@ -135,10 +132,10 @@ class RunContext:
     @staticmethod
     def _report_lines(r: WindowReport) -> list[str]:
         kind = TYPE_TR.get(r.anomaly_type, r.anomaly_type)
-        lines = [f"- {_clock(r.window_start)}–{_clock(r.window_end)} "
+        lines = [f"- {format_clock(r.window_start)}–{format_clock(r.window_end)} "
                  f"({kind}): {r.summary}"]
         for e in r.events:
-            lines.append(f"    · {_clock(e.t)} [{e.severity_hint}] {e.desc}")
+            lines.append(f"    · {format_clock(e.t)} [{e.severity_hint}] {e.desc}")
         for u in r.uncertainties:
             lines.append(f"    ? belirsiz: {u}")
         return lines
