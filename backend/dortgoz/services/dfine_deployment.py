@@ -19,6 +19,7 @@ from ..domain.model_lifecycle import (
     TrainingJob,
 )
 from ..repositories.protocols import EventRepository
+from .coco_export import CATEGORY_ID_BASE
 from .dataset_manifest import sha256_file
 from .dfine_training import (
     DfineTrainingError,
@@ -188,6 +189,7 @@ def execute_dfine_onnx_export(
         )
 
     workspace = workspace_root.resolve()
+    _verify_export_category_contract(workspace, training_job)
     checkpoint = _workspace_file(workspace, candidate.checkpoint_ref)
     if sha256_file(checkpoint) != candidate.checkpoint_sha256:
         raise EvaluationReportError(
@@ -322,7 +324,10 @@ def verify_dfine_deployment(*, candidate: ModelVersion, workspace_root: Path) ->
         raise EvaluationReportError(
             "MODEL_ONNX_CONFIG_INVALID", f"candidate ONNX config okunamadı: {exc}"
         ) from exc
-    expected_labels = {str(index): name for index, name in enumerate(deployment.category_names)}
+    expected_labels = {
+        str(index): name
+        for index, name in enumerate(deployment.category_names, CATEGORY_ID_BASE)
+    }
     if (
         payload.get("id2label") != expected_labels
         or payload.get("interest_labels") != deployment.category_names
@@ -335,10 +340,36 @@ def verify_dfine_deployment(*, candidate: ModelVersion, workspace_root: Path) ->
     return onnx
 
 
+def _verify_export_category_contract(workspace: Path, training_job: TrainingJob) -> None:
+    """COCO aktarımının kategori kimlik tabanını runtime eşlemesine kilitle."""
+
+    manifest = _workspace_file(workspace, f"{training_job.export_ref}/export_manifest.json")
+    try:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise EvaluationReportError(
+            "DFINE_EXPORT_MANIFEST_INVALID", f"COCO export manifest okunamadı: {exc}"
+        ) from exc
+    if payload.get("category_id_base") != CATEGORY_ID_BASE:
+        raise EvaluationReportError(
+            "DFINE_CATEGORY_BASE_MISMATCH",
+            "COCO kategori kimlik tabanı runtime id2label tabanıyla eşleşmiyor: "
+            f"{payload.get('category_id_base')} != {CATEGORY_ID_BASE}",
+        )
+    if payload.get("categories") != training_job.category_names:
+        raise EvaluationReportError(
+            "DFINE_CATEGORY_NAMES_MISMATCH",
+            "COCO kategori listesi training job kategorileriyle eşleşmiyor",
+        )
+
+
 def _write_runtime_config(path: Path, artifact: DfineDeploymentArtifact) -> None:
     payload = {
         "config_version": "1.0.0",
-        "id2label": {str(index): name for index, name in enumerate(artifact.category_names)},
+        "id2label": {
+            str(index): name
+            for index, name in enumerate(artifact.category_names, CATEGORY_ID_BASE)
+        },
         "interest_labels": artifact.category_names,
         "input_contract": artifact.input_names,
         "output_contract": artifact.output_names,

@@ -400,6 +400,90 @@ def test_decided_incident_does_not_requeue(store):
     assert store.snapshot()["pending"] == []
 
 
+def test_decided_card_returns_to_queue_when_it_escalates(store):
+    store.observe(_incident(anomaly_type="hirsizlik"))
+    store.decide("KAM-1:inc-1", "sorun_degil")
+    assert store.snapshot()["pending"] == []
+
+    store.observe(
+        _incident(anomaly_type="silahli_olay", risk="kritik", phase="gelisiyor")
+    )
+
+    pending = store.snapshot()["pending"]
+    assert len(pending) == 1
+    assert pending[0]["model_category"] == "silahli_olay"
+    assert pending[0]["risk"] == "kritik"
+    assert pending[0]["verdict"] == ""
+    assert pending[0]["needs_review"] is True
+    assert "silahli_olay/kritik" in pending[0]["review_reason"]
+
+    store.decide("KAM-1:inc-1", "sorun_degil")
+    store.observe(
+        _incident(anomaly_type="silahli_olay", risk="kritik", phase="sonuclandi")
+    )
+
+    assert store.snapshot()["pending"] == []
+
+
+def test_auto_dismissed_card_returns_to_queue_on_protected_escalation(store):
+    proposal = _propose(store)
+    store.approve_rule(proposal.proposal_id, "operator-1", 24)
+    store.observe(_incident(incident_id="yeni", risk="dusuk"))
+    assert store.snapshot()["pending"] == []
+    assert store.snapshot()["auto_dismissed"] == 1
+
+    store.observe(
+        _incident(incident_id="yeni", anomaly_type="silahli_olay", risk="kritik")
+    )
+
+    pending = store.snapshot()["pending"]
+    assert [item["incident_id"] for item in pending] == ["yeni"]
+    assert pending[0]["model_category"] == "silahli_olay"
+
+
+def test_dismissal_after_proposal_keeps_single_review_and_proposal(store):
+    proposal = _propose(store)
+    assert proposal.status == RuleProposalStatus.PROPOSED
+
+    _dismiss(store, "i3")
+
+    proposals = store.repo.list_rule_proposals()
+    assert len(proposals) == 1
+    assert proposals[0].revision == proposal.revision
+    assert proposals[0].status == RuleProposalStatus.PROPOSED
+    assert proposals[0].dismissal_count == proposal.dismissal_count
+    reviews = store.repo.list_reviews("event:KAM-1:i3")
+    assert len(reviews) == 1
+    assert reviews[0].decision == ReviewDecision.REJECT
+    assert store.snapshot()["dismissed_count"] == triage.RULE_THRESHOLD + 1
+
+
+def test_failed_proposal_write_leaves_no_orphan_dismissal_review(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository = SqliteEventRepository(tmp_path / "dismissal.sqlite3")
+    store = CanonicalTriageStore(repository=repository)
+    store.observe(_incident())
+
+    def fail_writer(saved: RuleProposal) -> None:
+        raise RuntimeError("fixture writer failure")
+
+    monkeypatch.setattr(repository, "_write_saved_rule_proposal", fail_writer)
+
+    with pytest.raises(RuntimeError, match="fixture writer failure"):
+        store.decide("KAM-1:inc-1", "sorun_degil")
+
+    assert repository.list_rule_proposals() == []
+    assert repository.list_reviews("event:KAM-1:inc-1") == []
+    assert len(store.snapshot()["pending"]) == 1
+
+    monkeypatch.undo()
+    item = store.decide("KAM-1:inc-1", "sorun_degil")
+
+    assert len(repository.list_reviews(item.event_id)) == 1
+    assert len(repository.list_rule_proposals()) == 1
+
+
 def test_invalid_decision_keeps_item_pending(store):
     store.observe(_incident())
     with pytest.raises(ValueError):

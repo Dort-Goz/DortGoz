@@ -139,7 +139,8 @@ class SemanticCandidateModel:
         _RUNTIME_CACHE[key] = runtime
         return runtime
 
-    def _event_sims(self, video: Path) -> list[tuple[float, float]]:
+    def _event_sims(self, video: Path,
+                    expected: int = 0) -> list[tuple[float, float]]:
         """0,5 fps akış çözümü → parti ONNX çıkarımı → (t, olay-benzerliği)."""
         import numpy as np
 
@@ -149,7 +150,7 @@ class SemanticCandidateModel:
             ["ffmpeg", "-nostdin", "-v", "error", "-i", str(video),
              "-vf", f"fps=1/{step},scale={_SIDE}:{_SIDE}:flags=bicubic",
              "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
-            stdout=subprocess.PIPE)
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         assert proc.stdout is not None
         nbytes = _SIDE * _SIDE * 3
         out: list[tuple[float, float]] = []
@@ -182,14 +183,31 @@ class SemanticCandidateModel:
             flush()
         finally:
             proc.stdout.close()
-            proc.wait()
+            tail = ""
+            if proc.stderr is not None:
+                tail = proc.stderr.read().decode("utf-8", "replace")[-300:].strip()
+                proc.stderr.close()
+            rc = proc.wait()
+        # ffmpeg videonun ORTASINDA ölürse kısa kare listesi sessiz kapsama
+        # kaybıdır: ekranlama kalan videoyu "olaysız" sayar, o bölüm VLM'e hiç
+        # gitmez. Çıkış kodu ve kare sayısı bu yüzden denetlenir.
+        if rc != 0:
+            raise ValueError(f"anlamsal scorer kare çekimi başarısız "
+                             f"(ffmpeg rc={rc}): {tail}")
+        if expected >= 4 and 2 * len(out) < expected:
+            raise ValueError(f"anlamsal scorer beklenen karelerin çok azını çözdü: "
+                             f"{len(out)}/{expected}")
         return out
 
     def score_video(self, profile: list[MotionSample],
                     video: Path) -> list[ScreeningSample]:
         art = self.artifact
         activity = {round(s.t): s.activity for s in profile}
-        sims = self._event_sims(video)
+        # Beklenen kare sayısı hareket profilinin süresinden gelir; yarım
+        # kalmış bir çekim burada hata olur, sessizce kısa liste olmaz.
+        span = profile[-1].t if profile else 0.0
+        expected = int(span / art.sample_step) + 1 if span > 0 else 0
+        sims = self._event_sims(video, expected)
         if not sims:
             raise ValueError(f"anlamsal scorer kare çözemedi: {video}")
         ev_base = CausalWelford(art.ev_prior, art.sd_floor_ev, art.warmup)

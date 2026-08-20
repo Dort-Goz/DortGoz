@@ -167,10 +167,59 @@ def test_validated_event_is_admitted_only_as_provisional_review() -> None:
 
     assert decision.admitted_event_indices == (0,)
     assert decision.held_event_indices == ()
-    assert updates[0].needs_review
+    # Rozet yalnız sorunlu gözlem varken yakılır; risk yine de otomatik
+    # doğrulamaya kapalı kalır.
+    assert decision.review_reason == ""
+    assert not updates[0].needs_review
     assert decision.risk is not None
     assert decision.risk.level == RiskLevel.REVIEW_REQUIRED
     assert decision.procedure is not None and decision.procedure.actions == []
+
+
+def test_review_reason_lists_only_flagged_observations() -> None:
+    report = _report(
+        _event(frame_id="f_000", event_type="possible_theft", severity="orta"),
+        _event(
+            frame_id="f_001",
+            event_type="fire_smoke",
+            severity="kritik",
+            timestamp=7,
+        ),
+    )
+    decision = decide_runtime_policy(
+        report,
+        _validation(
+            report,
+            RuntimeValidationStatus.VALIDATED,
+            RuntimeValidationStatus.HUMAN_REVIEW,
+        ),
+    )
+
+    assert decision.review_reason.count("event[") == 1
+    assert "event[1]=HUMAN_REVIEW" in decision.review_reason
+    assert "event[0]" not in decision.review_reason
+
+
+def test_fully_validated_window_leaves_open_incident_badge_untouched() -> None:
+    ledger = Ledger(grace_windows=1)
+    opened = ledger.ingest(_report(_event()), uncertain="ilk geçiş provisional")[0]
+    assert opened.needs_review
+
+    clean = _report(_event(timestamp=8), _event(frame_id="f_001", timestamp=9))
+    decision = decide_runtime_policy(
+        clean,
+        _validation(
+            clean,
+            RuntimeValidationStatus.VALIDATED,
+            RuntimeValidationStatus.VALIDATED,
+        ),
+    )
+    updates = _ingest(decision, ledger)
+
+    assert decision.review_reason == ""
+    # Sticky bayrak kaldırılmaz, fakat temiz pencere yeni gerekçe eklemez.
+    assert updates[0].needs_review
+    assert updates[0].review_reason == "ilk geçiş provisional"
 
 
 def test_human_review_is_admitted_and_second_pass_cannot_clear_sticky_flag() -> None:

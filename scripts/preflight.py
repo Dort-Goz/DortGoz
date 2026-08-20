@@ -25,6 +25,11 @@ REQUIRED_FILES = (
     "scripts/dev.sh",
 )
 FORBIDDEN_CLOUD_HOSTS = ("api.openai.com", "openai.azure.com", "api.anthropic.com")
+# langsmith langgraph/langchain zinciriyle gelir; bu değişkenler açıksa iz
+# kayıtları bulut uç noktasına gider. backend/dortgoz/config.py değerleri süreç
+# içinde zorlar, preflight ise ortamın ve .env'in açık bırakmadığını denetler.
+CLOUD_TELEMETRY_VARS = ("LANGSMITH_TRACING", "LANGCHAIN_TRACING_V2")
+DISABLED_VALUES = {"", "0", "false", "no", "off"}
 TRACKED_RUNTIME_PREFIXES = ("runs/", "cache/", "models/candidate/local/")
 TRACKED_MODEL_SUFFIXES = (".gguf", ".safetensors", ".bin")
 PORTABILITY_MARKERS = ("C:\\Users\\kullanici", "~/datasets/Dort_Goz")
@@ -88,6 +93,21 @@ def _verify_repository(root: Path, errors: list[str]) -> None:
             errors.append(f"video/medya Git tarafından izleniyor: {relative}")
         if relative == "models/vlm/manifest.local.json" or relative.endswith(TRACKED_MODEL_SUFFIXES):
             errors.append(f"yerel VLM manifesti/ağırlığı Git tarafından izleniyor: {relative}")
+
+
+def _verify_cloud_telemetry(root: Path, errors: list[str]) -> None:
+    """LangSmith/LangChain bulut izlemesinin kapalı olduğunu denetler."""
+    sources: list[tuple[str, dict[str, str]]] = [("ortam", dict(os.environ))]
+    env_path = root / ".env"
+    if env_path.is_file():
+        sources.append((".env", _read_env(env_path)))
+    for source, values in sources:
+        for name in CLOUD_TELEMETRY_VARS:
+            value = values.get(name)
+            if value is None:
+                continue
+            if value.strip().casefold() not in DISABLED_VALUES:
+                errors.append(f"{source}: {name}={value} bulut izlemesini açıyor; false olmalı")
 
 
 def _verify_tools(mode: str, errors: list[str]) -> None:
@@ -158,6 +178,7 @@ def main() -> None:
     root = args.root.resolve()
     errors: list[str] = []
     _verify_repository(root, errors)
+    _verify_cloud_telemetry(root, errors)
     if args.check_tools:
         _verify_tools(args.mode, errors)
     if args.mode == "real":

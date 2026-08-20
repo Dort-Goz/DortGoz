@@ -121,9 +121,24 @@ class ConnectionManager:
         conns = [ws for ws in self._connections if ws not in self._syncing]
         results = await asyncio.gather(*(send(ws) for ws in conns),
                                        return_exceptions=True)
-        for ws, ok in zip(conns, results):
-            if ok is not True:
-                self.disconnect(ws)
+        dropped = [ws for ws, ok in zip(conns, results) if ok is not True]
+        for ws in dropped:
+            self.disconnect(ws)
+        if dropped:
+            await asyncio.gather(*(self._close_dropped(ws) for ws in dropped))
+
+    async def _close_dropped(self, ws: WebSocket) -> None:
+        """Düşürülen soketi kapat.
+
+        Yönetici kümesinden çıkarmak yetmez: soket açık kalırsa istemcide
+        `onclose` tetiklenmez, arayüz yeniden bağlanmaz ve operatör bayat
+        veriye bakar. Kapatma da zaman aşımlıdır — tıkalı soket yayını
+        yeniden kilitlemesin.
+        """
+        try:
+            await asyncio.wait_for(ws.close(code=1011), timeout=self.SEND_TIMEOUT)
+        except Exception:
+            LOGGER.debug("düşürülen istemci soketi kapatılamadı", exc_info=True)
 
 
 async def replay_jsonl(manager: ConnectionManager, path: Path, speed: float = 1.0) -> None:

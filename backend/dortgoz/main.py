@@ -9,6 +9,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import tempfile
+import zipfile
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
 
@@ -48,7 +52,25 @@ from .services.run_identity import safe_run_file
 from .services.startup_reconciliation import StartupReconciliationService
 from .ws import ConnectionManager, replay_jsonl
 
-app = FastAPI(title="Dörtgöz", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Uygulama ömrü: açılışta kalıcı iş uzlaştırması, kapanışta temiz durdurma.
+
+    Gövdedeki adlar (uzlaştırma servisi, canlı kip servisi) modülün ilerisinde
+    kurulur; bu bağlam yöneticisi ancak uygulama ayağa kalkarken çalışır.
+    """
+
+    _reconcile_persistent_work_on_startup()
+    try:
+        yield
+    finally:
+        # 7/24 temiz kapanış: ffmpeg çekicileri süreçle birlikte ölsün.
+        if live_cctv.active:
+            await live_cctv.stop()
+
+
+app = FastAPI(title="Dörtgöz", version="0.1.0", lifespan=lifespan)
 manager = ConnectionManager()
 
 app.include_router(api_router)
@@ -109,9 +131,6 @@ def _reconcile_persistent_work_on_startup() -> None:
             report.training_conflicts,
             report.training_active_skipped,
         )
-
-
-app.router.add_event_handler("startup", _reconcile_persistent_work_on_startup)
 
 
 async def ensure_analysis_ready() -> None:
@@ -195,29 +214,44 @@ async def export_run(run_id: str) -> FileResponse:
     return FileResponse(pkg, filename=pkg.name, media_type="application/zip")
 
 
+# Paket = kaynak video + olay akışı + kanıt kareleri. Video sınırının üstüne
+# akış/kanıt payı bırakılır; daha büyük gövde belleğe alınmadan reddedilir.
+IMPORT_MAX_BYTES = settings.video_max_bytes + 256 * 1024 * 1024
+
+
+def _stage_import_package(data: bytes) -> Path:
+    """Yüklenen paketi geçici dosyaya yazar (bloklayan G/Ç; thread'de çağrılır)."""
+    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+        tmp.write(data)
+        return Path(tmp.name)
+
+
 @app.post("/api/runs/import")
 async def import_run(request: Request) -> dict:
     """Dışa aktarılmış paketi (zip, ham gövde) geri yükler.
 
     Gövde `application/zip` olarak POST edilir (multipart bağımlılığı yok).
     Başarıda oturum bağlamı kurulur — sohbet içe alınan analiz üzerinde çalışır.
+    Zip açma ve sağlama toplamı bloklayan iştir: ayrı thread'de koşar, yoksa tek
+    içe aktarma canlı ızgarayı on saniyelerce dondurur.
     """
-    import tempfile
-
     from .services.analysis_package import import_analysis
 
-    data = await request.body()
+    data = bytearray()
+    async for chunk in request.stream():
+        data.extend(chunk)
+        if len(data) > IMPORT_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="paket gövdesi çok büyük")
     if not data:
         raise HTTPException(status_code=400, detail="boş paket gövdesi")
-    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
-        tmp.write(data)
-        tmp_path = Path(tmp.name)
+    tmp_path = await asyncio.to_thread(_stage_import_package, bytes(data))
     try:
-        ctx = import_analysis(tmp_path)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+        ctx = await asyncio.to_thread(import_analysis, tmp_path)
+    except (ValueError, zipfile.BadZipFile, KeyError) as exc:
+        # Bozuk/eksik zip istemci hatasıdır; 500 değil 422 döner.
+        raise HTTPException(status_code=422, detail=f"geçersiz paket: {exc}")
     finally:
-        tmp_path.unlink(missing_ok=True)
+        await asyncio.to_thread(tmp_path.unlink, missing_ok=True)
     return {"run_id": ctx.run_id, "video": ctx.video, "verdict": ctx.verdict(),
             "incidents": len(ctx.incidents), "reports": len(ctx.reports)}
 
@@ -328,6 +362,9 @@ async def triage_decide(body: TriageDecisionInput) -> dict:
         raise HTTPException(status_code=422, detail=str(exc))
     except triage.TriagePersistenceError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    except RepositoryError as exc:
+        # Canonical kayıt yazılamadı: karar kaydedilmedi, operatör tekrar dener.
+        raise HTTPException(status_code=409, detail=str(exc))
     from dataclasses import asdict
     return asdict(item)
 
@@ -367,13 +404,6 @@ async def live_feed_list() -> list[dict]:
         return load_feeds()
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-
-
-@app.on_event("shutdown")
-async def _stop_live_on_shutdown() -> None:
-    """7/24 temiz kapanış: ffmpeg çekicileri süreçle birlikte ölsün."""
-    if live_cctv.active:
-        await live_cctv.stop()
 
 
 @app.get("/api/interpret_config")

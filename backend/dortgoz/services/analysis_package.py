@@ -19,9 +19,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import zipfile
 from pathlib import Path
+from uuid import uuid4
 
 from .. import session
 from ..agent.memory import Incident, Ledger
@@ -29,6 +31,7 @@ from ..config import settings
 from ..events import IncidentUpdate, WindowReport
 from ..pipeline.ingest import grab_frame
 from ..pipeline.runner import resolve_media
+from .analysis_job import iter_run_lines
 from .run_identity import require_safe_run_id, safe_run_file
 
 FORMAT_VERSION = 1
@@ -48,37 +51,45 @@ def _sha256(path: Path) -> str:
 
 
 def _parse_stream(jsonl: Path) -> tuple[list[WindowReport], dict[str, IncidentUpdate], float]:
-    """JSONL → raporlar + olay başına SON güncelleme + süre."""
+    """JSONL → raporlar + olay başına SON güncelleme + süre.
+
+    Yarım kalan son satır paketi erişilemez yapmaz; paylaşılan okuyucu bozuk
+    satırı atlar (bkz. `iter_run_lines`).
+    """
     reports: list[WindowReport] = []
     incidents: dict[str, IncidentUpdate] = {}
     duration = 0.0
-    for line in jsonl.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
+    for envelope in iter_run_lines(jsonl):
+        payload = envelope.get("payload", {})
+        if not isinstance(payload, dict):
             continue
-        payload = json.loads(line).get("payload", {})
         kind = payload.get("type")
         if kind == "window_report":
             report = WindowReport.model_validate(payload)
             reports.append(report)
             duration = max(duration, report.window_end)
-        elif kind == "incident_update":
+        elif kind == "incident_update" and payload.get("incident_id"):
             incidents[payload["incident_id"]] = IncidentUpdate.model_validate(payload)
     return reports, incidents, duration
 
 
-def export_analysis(run_id: str, *, include_video: bool = True) -> Path:
-    """Koşuyu zip paketine yazar; paket yolunu döndürür."""
+def _package_paths(run_id: str) -> tuple[Path, Path]:
+    """(hedef paket, benzersiz .part) — yazım her zaman .part üzerinde olur."""
     require_safe_run_id(run_id)
+    out_dir = settings.runs_dir / "paketler"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return (out_dir / f"{run_id}.dortgoz.zip",
+            out_dir / f"{run_id}.{uuid4().hex}.part")
+
+
+def _write_package(run_id: str, dest: Path, *, include_video: bool) -> None:
+    """Paketi `dest` yoluna yazar (bkz. `export_analysis` — atomik taşıma orada)."""
     jsonl = safe_run_file(settings.runs_dir, run_id, ".jsonl")
     if not jsonl.is_file():
         raise FileNotFoundError(f"koşu bulunamadı: {run_id}")
     meta_path = safe_run_file(settings.runs_dir, run_id, ".meta.json")
     meta = json.loads(meta_path.read_text()) if meta_path.is_file() else {}
     reports, incidents, _ = _parse_stream(jsonl)
-
-    out_dir = settings.runs_dir / "paketler"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    pkg = out_dir / f"{run_id}.dortgoz.zip"
 
     # Kanıt kareleri: akıştaki kanıt zamanlarından yeniden türet
     evidence_ts = sorted({
@@ -100,7 +111,7 @@ def export_analysis(run_id: str, *, include_video: bool = True) -> Path:
         ozet.append("- Olay tespit edilmedi.")
 
     files: dict[str, str] = {}
-    with zipfile.ZipFile(pkg, "w", zipfile.ZIP_DEFLATED) as zf:
+    with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.write(jsonl, "analiz.jsonl")
         files["analiz.jsonl"] = _sha256(jsonl)
         zf.writestr("meta.json", json.dumps(meta, ensure_ascii=False, indent=1))
@@ -121,28 +132,52 @@ def export_analysis(run_id: str, *, include_video: bool = True) -> Path:
                     "run_id": run_id, "video": Path(video_name).name,
                     "kanit_zamanlari": evidence_ts, "sha256": files}
         zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=1))
+
+
+def export_analysis(run_id: str, *, include_video: bool = True) -> Path:
+    """Koşuyu zip paketine yazar; paket yolunu döndürür.
+
+    Yazım benzersiz bir `.part` yoluna yapılır ve sonda `os.replace` ile hedefe
+    taşınır: eşzamanlı iki dışa aktarma birbirinin yarım zip'ini okuyamaz.
+    """
+    pkg, part = _package_paths(run_id)
+    try:
+        _write_package(run_id, part, include_video=include_video)
+        os.replace(part, pkg)
+    finally:
+        part.unlink(missing_ok=True)
     return pkg
 
 
 async def export_with_evidence(run_id: str, *, include_video: bool = True) -> Path:
-    """`export_analysis` + videodan kanıt karelerini pakete ekler (async ffmpeg)."""
-    pkg = export_analysis(run_id, include_video=include_video)
-    manifest = json.loads(zipfile.ZipFile(pkg).read("manifest.json"))
-    meta = json.loads(zipfile.ZipFile(pkg).read("meta.json"))
-    video_name = meta.get("video", "")
-    if not video_name or not manifest["kanit_zamanlari"]:
-        return pkg
+    """`export_analysis` + videodan kanıt karelerini pakete ekler (async ffmpeg).
+
+    Kanıt kareleri de `.part` üzerine eklenir; hedefe tek bir taşımayla iner.
+    """
+    pkg, part = _package_paths(run_id)
     try:
-        src = resolve_media(video_name)
-    except Exception:
-        return pkg
-    with zipfile.ZipFile(pkg, "a", zipfile.ZIP_DEFLATED) as zf:
-        for ts in manifest["kanit_zamanlari"]:
+        _write_package(run_id, part, include_video=include_video)
+        with zipfile.ZipFile(part) as zf:
+            manifest = json.loads(zf.read("manifest.json"))
+            meta = json.loads(zf.read("meta.json"))
+        video_name = meta.get("video", "")
+        src = None
+        if video_name and manifest["kanit_zamanlari"]:
             try:
-                jpeg = await grab_frame(src, float(ts))
-            except Exception:  # tek kare hatası paketi düşürmez
-                continue
-            zf.writestr(f"kanitlar/t_{ts:.3f}.jpg", jpeg)
+                src = resolve_media(video_name)
+            except Exception:
+                src = None
+        if src is not None:
+            with zipfile.ZipFile(part, "a", zipfile.ZIP_DEFLATED) as zf:
+                for ts in manifest["kanit_zamanlari"]:
+                    try:
+                        jpeg = await grab_frame(src, float(ts))
+                    except Exception:  # tek kare hatası paketi düşürmez
+                        continue
+                    zf.writestr(f"kanitlar/t_{ts:.3f}.jpg", jpeg)
+        os.replace(part, pkg)
+    finally:
+        part.unlink(missing_ok=True)
     return pkg
 
 

@@ -13,10 +13,24 @@ services:
       DORTGOZ_LLAMA_BASE_URL: "${DORTGOZ_LLAMA_BASE_URL:-http://host.docker.internal:8080/v1}"
       DORTGOZ_API_KEY: "${DORTGOZ_API_KEY:-local}"
       DORTGOZ_MAIN_MODEL: "${DORTGOZ_MAIN_MODEL:-qwen3.6-35b-a3b-vision}"
+      # Bulut izlemesi kapalı — yarışma bulut API'sine izin vermez. langsmith
+      # bağımlılık zinciriyle geliyor; bu iki değişken açıksa iz gönderir.
+      # (dortgoz/config.py aynı değerleri süreç içinde de zorlar.)
+      LANGSMITH_TRACING: "false"
+      LANGCHAIN_TRACING_V2: "false"
+      # ── Yerel model ağırlıkları (./models mount'u üzerinden) ────────────────
+      # Varsayılan KAPALI: imaj ayarsız haliyle yalnız mock kipte anlamlıdır.
+      # Ağırlıklar host'ta ./models altındaysa aşağıdaki satırları açın.
+      # DORTGOZ_DFINE_ONNX: /app/models/dfine/local/model.onnx
+      # DORTGOZ_CANDIDATE_MODEL_MANIFEST: models/semantic/manifest.json
       DORTGOZ_VLM_MANIFEST_PATH: "${DORTGOZ_VLM_MANIFEST_PATH:-}"
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
+      # Operatör gerçek canlı akış listesini dışarıdan verir (imajdaki örnek
+      # dosyanın üzerine biner).
+      - ./config:/app/config:ro
+      - ./models:/app/models:ro
       - dortgoz-media:/app/media
       - dortgoz-runs:/app/runs
       - dortgoz-cache:/app/cache

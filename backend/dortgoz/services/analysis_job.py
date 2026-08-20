@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -26,6 +26,41 @@ EnabledPredicate = Callable[[], bool]
 IdFactory = Callable[[], str]
 FinalizeRunCallable = Callable[[str], Awaitable[object]]
 PreStartCallable = Callable[[], Awaitable[None]]
+
+
+def iter_run_lines(path: Path, *, stats: dict | None = None) -> Iterator[dict]:
+    """Koşu JSONL'ini zarf zarf okur; bozuk satırı atlar ve sayısını bildirir.
+
+    Koşu yazılırken kesilirse SON satır yarım kalır. Katı okuyan taraf bu
+    yüzden tüm koşuyu erişilemez yapıyordu — burada bozuk satır atlanır,
+    atlanan sayısı log'a ve (verilirse) ``stats["atlanan"]``a yazılır. Koşu
+    JSONL'ini okuyan her taraf bu yardımcı üzerinden okur; tolerans tektir.
+
+    Bu yardımcı bilerek HAFİF modülde durur: durum çözümü ağır işleme hattını
+    içe aktarmadan da çalışabilmelidir.
+    """
+
+    skipped = 0
+    total = 0
+    with path.open("rb") as stream:
+        for line in stream:
+            if not line.strip():
+                continue
+            total += 1
+            try:
+                envelope = json.loads(line)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                skipped += 1
+                continue
+            if not isinstance(envelope, dict):
+                skipped += 1
+                continue
+            yield envelope
+    if skipped:
+        LOGGER.warning("koşu JSONL'inde %d/%d bozuk satır atlandı: %s", skipped, total, path)
+    if stats is not None:
+        stats["atlanan"] = skipped
+        stats["toplam"] = total
 
 
 class AnalysisJobStatus(StrEnum):
@@ -445,18 +480,12 @@ def resolve_jsonl_status(
 
     last_state: str | None = None
     try:
-        lines = path.read_bytes().splitlines()
+        envelopes = list(iter_run_lines(path))
     except OSError:
         return AnalysisJobStatus.RUNNING if active else AnalysisJobStatus.INTERRUPTED
 
-    for line in lines:
-        if not line.strip():
-            continue
-        try:
-            raw = json.loads(line)
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            continue
-        payload = raw.get("payload", raw) if isinstance(raw, dict) else None
+    for raw in envelopes:
+        payload = raw.get("payload", raw)
         if not isinstance(payload, dict) or payload.get("type") != "run_status":
             continue
         if payload.get("run_id") != analysis_id:
@@ -487,5 +516,6 @@ __all__ = [
     "AnalysisJobStatus",
     "CanonicalAnalysisJobService",
     "EffectiveRuntimeConfig",
+    "iter_run_lines",
     "resolve_jsonl_status",
 ]

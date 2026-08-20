@@ -1,9 +1,20 @@
 """Merkezî yapılandırma — tüm dış uçlar ve modlar tek yerden."""
 
+# Bulut telemetrisi kapalı. `langsmith` langgraph/langchain zinciriyle geliyor;
+# ortamda LANGSMITH_TRACING veya LANGCHAIN_TRACING_V2 açıksa kütüphane izleri
+# bulut uç noktasına gönderir ve yarışmanın "bulut API yok" kuralı çiğnenir.
+# Ortamı KASITLI olarak eziyoruz (setdefault değil) — dışarıdan gelen bir
+# "true" değeri de kapatılmalıdır. Blok, langchain/langgraph içe aktarılmadan
+# ÖNCE çalışsın diye dosyanın en üstündedir.
+import os
+
+os.environ["LANGSMITH_TRACING"] = "false"
+os.environ["LANGCHAIN_TRACING_V2"] = "false"
+
 from pathlib import Path
 from typing import Literal
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -175,8 +186,9 @@ class Settings(BaseSettings):
     live_feeds_path: Path = Path(__file__).resolve().parents[2] / "config" / "live_feeds.json"
     live_segment_seconds: int = 30  # segment süresi = anlık görüntü tazeliği
     live_max_backlog: int = 2  # işlenmemiş segment sınırı — fazlası ATILIR (canlıya yetişme)
-    live_keep_segments: int = 3  # işlenmiş segmentten saklanan son N (hata ayıklama)
-    live_keep_runs: int = 20  # akış başına saklanan son N segment koşu kaydı
+    # ge=1: 0 verilirse budama mantığı ters çalışır (son N dilimi boş kalır).
+    live_keep_segments: int = Field(default=3, ge=1)  # saklanan son N işlenmiş segment
+    live_keep_runs: int = Field(default=20, ge=1)  # akış başına saklanan son N koşu kaydı
     candidate_cache_dir: Path = Path(__file__).resolve().parents[2] / "cache" / "candidate"
     candidate_manifest_path: Path = (
         Path(__file__).resolve().parents[2] / "models" / "candidate" / "manifest.json"

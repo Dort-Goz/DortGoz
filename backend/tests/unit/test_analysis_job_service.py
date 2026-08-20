@@ -15,6 +15,7 @@ from dortgoz.services.analysis_job import (
     AnalysisJobStatus,
     CanonicalAnalysisJobService,
     EffectiveRuntimeConfig,
+    iter_run_lines,
     resolve_jsonl_status,
 )
 from dortgoz.services.execution_coordinator import (
@@ -483,3 +484,22 @@ async def test_mock_ws_start_never_launches_runner(monkeypatch, tmp_path: Path) 
     await asyncio.sleep(0)
 
     assert runner.calls == []
+
+
+def test_iter_run_lines_skips_broken_lines_and_reports_count(tmp_path: Path) -> None:
+    """Tek bozuk satır tüm koşuyu erişilemez yapmamalı; atlanan sayılmalı."""
+    path = tmp_path / "kirik.jsonl"
+    path.write_text(
+        '{"seq": 0, "payload": {"type": "agent_step"}}\n'
+        "\n"
+        "[1, 2, 3]\n"
+        '{"seq": 1, "payload": {"type": "agent_step"}}\n'
+        '{"seq": 2, "payload": {"type"',
+        encoding="utf-8",
+    )
+
+    stats: dict = {}
+    lines = list(iter_run_lines(path, stats=stats))
+
+    assert [item["seq"] for item in lines] == [0, 1]
+    assert stats == {"atlanan": 2, "toplam": 4}

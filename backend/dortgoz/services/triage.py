@@ -94,6 +94,7 @@ class TriageItem:
     intervention_band: str = "routine"
     intervention_reasons: list[str] = field(default_factory=list)
     priority_ruleset_version: str = RULESET_VERSION
+    escalation_scopes: list[str] = field(default_factory=list)
 
 
 class TriageStore:
@@ -150,7 +151,13 @@ class TriageStore:
             item.review_reason = payload.review_reason
             self._apply_priority(item, priority)
             return
-        if any(item.key == key for item in self._resolved):
+        resolved = next((item for item in self._resolved if item.key == key), None)
+        if resolved is not None:
+            item = self._reopen_escalated(resolved, payload, event_id, priority)
+            if item is None:
+                return
+            self._pending[key] = item
+            self._enforce_capacity()
             return
 
         rule = self._active_rule(event.feed, payload.anomaly_type)
@@ -267,21 +274,33 @@ class TriageStore:
             self._cancel_scope(item.feed, item.model_category, reviewer.strip())
         else:
             reason = false_alarm_reason or FalseAlarmReason.NORMAL_ACTIVITY
-            review = self._save_review(
-                event_id,
-                ReviewDecision.REJECT,
-                reviewer=reviewer.strip(),
-                note=note.strip() or "Operatör nöbet kuyruğunda sorun olmadığını belirtti.",
-                false_alarm_reason=reason,
-                intervention_required=required,
+            reject_note = (
+                note.strip() or "Operatör nöbet kuyruğunda sorun olmadığını belirtti."
             )
-            item.false_alarm_reason = reason.value
-            self.dismissed_count += 1
             if (
                 reason == FalseAlarmReason.NORMAL_ACTIVITY
                 and not self._scope_is_protected(item.model_category, item.risk)
             ):
-                self._record_dismissal(item, review.review_id, reviewer.strip())
+                # İnceleme ile kural önerisi tek yazımda gider: öneri
+                # yazılamazsa yinelenen REJECT kaydı geride kalmaz.
+                review = self._save_dismissal(
+                    item,
+                    reviewer=reviewer.strip(),
+                    note=reject_note,
+                    reason=reason,
+                    intervention_required=required,
+                )
+            else:
+                review = self._save_review(
+                    event_id,
+                    ReviewDecision.REJECT,
+                    reviewer=reviewer.strip(),
+                    note=reject_note,
+                    false_alarm_reason=reason,
+                    intervention_required=required,
+                )
+            item.false_alarm_reason = reason.value
+            self.dismissed_count += 1
 
         self._pending.pop(key)
         item.review_ids = [review.review_id]
@@ -446,6 +465,51 @@ class TriageStore:
         self._apply_priority(item, priority)
         return item
 
+    def _reopen_escalated(
+        self,
+        resolved: TriageItem,
+        payload: IncidentUpdate,
+        event_id: str | None,
+        priority: tuple[int, str, list[str], str],
+    ) -> TriageItem | None:
+        """Çözümlenmiş kartı yalnız yeni bir korumalı kapsama tırmandıysa geri al.
+
+        Aynı kapsam kartı ikinci kez açamaz; korumalı kapsam sayısı sonlu
+        olduğu için kart sonsuz döngüye giremez.
+        """
+
+        scope = self._escalation_scope(payload.anomaly_type, payload.risk)
+        seen = set(resolved.escalation_scopes)
+        decided = self._escalation_scope(resolved.model_category, resolved.risk)
+        if decided:
+            seen.add(decided)
+        if not scope or scope in seen:
+            return None
+        self._resolved.remove(resolved)
+        item = resolved
+        item.escalation_scopes = [*resolved.escalation_scopes, scope]
+        item.t, item.risk, item.phase = payload.t, payload.risk, payload.phase
+        item.title = payload.title
+        item.model_category = payload.anomaly_type
+        item.event_id = event_id or item.event_id
+        item.thumbnail = payload.thumbnail or item.thumbnail
+        item.verdict = ""
+        item.operator_category = ""
+        item.operator_risk = ""
+        item.false_alarm_reason = ""
+        item.intervention_required = None
+        item.decided_wall = None
+        item.review_start = item.review_peak = item.review_end = None
+        item.needs_review = True
+        item.review_reason = " · ".join(
+            filter(
+                None,
+                [payload.review_reason, f"karar sonrası {scope} kapsamına tırmandı"],
+            )
+        )
+        self._apply_priority(item, priority)
+        return item
+
     def _priority_values(
         self, payload: IncidentUpdate, event_id: str | None
     ) -> tuple[int, str, list[str], str]:
@@ -597,28 +661,61 @@ class TriageStore:
             raise TriagePersistenceError("canonical feedback servisi yapılandırılmadı")
         return self.event_service.review_event(event_id, decision, **kwargs)
 
-    def _record_dismissal(
-        self, item: TriageItem, review_id: str, reviewer: str
-    ) -> RuleProposal:
+    def _save_dismissal(
+        self,
+        item: TriageItem,
+        *,
+        reviewer: str,
+        note: str,
+        reason: FalseAlarmReason,
+        intervention_required: bool,
+    ) -> HumanReview:
+        """Ret incelemesini ve kural önerisini tek atomik sınırda yaz."""
+
         assert self.repository is not None
+        assert item.event_id is not None
+        review = HumanReview(
+            review_id=str(uuid4()),
+            event_id=item.event_id,
+            decision=ReviewDecision.REJECT,
+            false_alarm_reason=reason,
+            intervention_required=intervention_required,
+            note=note,
+            reviewer=reviewer,
+            revision=1,
+        )
+        proposal = self._prepare_dismissal(item, review.review_id, reviewer)
+        saved = self.repository.save_feedback_bundle(
+            FeedbackWriteBundle(
+                reviews=(review,),
+                rule_proposals=(proposal,) if proposal is not None else (),
+            )
+        )
+        return saved.reviews[0]
+
+    def _prepare_dismissal(
+        self, item: TriageItem, review_id: str, reviewer: str
+    ) -> RuleProposal | None:
+        """Bu retten sonra yazılacak kural önerisini hazırla; gerekmezse None."""
+
         active = self._scope_proposal(item.feed, item.model_category)
         now = self._clock()
         if active is None:
-            return self.repository.create_rule_proposal(
-                RuleProposal(
-                    proposal_id=str(uuid4()),
-                    feed=item.feed,
-                    category=item.model_category,
-                    source_event_ids=[item.event_id],
-                    source_review_ids=[review_id],
-                    reason="Aynı kapsam için operatör retleri toplanıyor.",
-                    proposed_by=reviewer,
-                    created_at=now,
-                    updated_at=now,
-                )
+            return RuleProposal(
+                proposal_id=str(uuid4()),
+                feed=item.feed,
+                category=item.model_category,
+                source_event_ids=[item.event_id],
+                source_review_ids=[review_id],
+                reason="Aynı kapsam için operatör retleri toplanıyor.",
+                proposed_by=reviewer,
+                created_at=now,
+                updated_at=now,
             )
-        if active.status == RuleProposalStatus.APPROVED:
-            return active
+        if active.status in {RuleProposalStatus.PROPOSED, RuleProposalStatus.APPROVED}:
+            # Öneri operatör kararını bekliyor. Repository proposed durumunda
+            # yeni bir geçiş kabul etmez; ret sayımı olduğu yerde kalır.
+            return None
         count = active.dismissal_count + 1
         status = (
             RuleProposalStatus.PROPOSED
@@ -630,14 +727,17 @@ class TriageStore:
             if status == RuleProposalStatus.PROPOSED
             else "Aynı kapsam için operatör retleri toplanıyor."
         )
-        return self._update_proposal(
-            active,
-            status=status,
-            dismissal_count=count,
-            source_review_ids=[*active.source_review_ids, review_id],
-            source_event_ids=[*active.source_event_ids, item.event_id],
-            reason=reason,
-            updated_at=now,
+        return RuleProposal.model_validate(
+            {
+                **active.model_dump(),
+                "status": status,
+                "dismissal_count": count,
+                "source_review_ids": [*active.source_review_ids, review_id],
+                "source_event_ids": [*active.source_event_ids, item.event_id],
+                "reason": reason,
+                "updated_at": now,
+                "revision": active.revision + 1,
+            }
         )
 
     def _cancel_scope(self, feed: str, category: str, reviewer: str) -> None:
@@ -811,6 +911,19 @@ class TriageStore:
     @staticmethod
     def _scope_is_protected(category: str, risk: str) -> bool:
         return category in PROTECTED_CATEGORIES or risk in PROTECTED_RISKS
+
+    @staticmethod
+    def _escalation_scope(category: str, risk: str) -> str:
+        """Korumalı kapsamın kimliği; korumasız kart için boş string."""
+
+        return "/".join(
+            part
+            for part in (
+                category if category in PROTECTED_CATEGORIES else "",
+                risk if risk in PROTECTED_RISKS else "",
+            )
+            if part
+        )
 
     def _append_resolved(self, item: TriageItem) -> None:
         self._resolved.append(item)

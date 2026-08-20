@@ -18,15 +18,18 @@ from dortgoz.domain.dataset import (
     OfflineDatasetManifest,
     calculate_dataset_fingerprint,
 )
+from dortgoz.domain.model_lifecycle import DfineDeploymentArtifact
 from dortgoz.domain.training import (
     FrameReviewResult,
     TrainingFrameReview,
     VerifiedBoundingBox,
 )
 from dortgoz.services.coco_export import (
+    CATEGORY_ID_BASE,
     export_verified_frames_to_coco,
     load_training_frame_reviews,
 )
+from dortgoz.services.dfine_deployment import _write_runtime_config
 
 
 def _sha(payload: bytes) -> str:
@@ -163,13 +166,13 @@ def test_export_writes_deterministic_coco_without_copying_media(tmp_path: Path) 
         {
             "id": 1,
             "image_id": 1,
-            "category_id": 1,
+            "category_id": 0,
             "bbox": [10.0, 20.0, 30.0, 40.0],
             "area": 1200.0,
             "iscrowd": 0,
         }
     ]
-    assert train["categories"] == [{"id": 1, "name": "person", "supercategory": "dortgoz"}]
+    assert train["categories"] == [{"id": 0, "name": "person", "supercategory": "dortgoz"}]
     assert validation["annotations"] == []
     assert first.export_fingerprint == second.export_fingerprint
     assert first.train_annotations.read_bytes() == second.train_annotations.read_bytes()
@@ -181,8 +184,74 @@ def test_export_writes_deterministic_coco_without_copying_media(tmp_path: Path) 
         "train_frames": 1,
         "validation_frames": 1,
     }
+    assert export_manifest["category_id_base"] == CATEGORY_ID_BASE
     assert str(tmp_path) not in first.export_manifest.read_text(encoding="utf-8")
     assert not (first.output_dir / "train" / "frame-001.jpg").exists()
+
+
+def test_coco_category_ids_share_the_runtime_id2label_base(tmp_path: Path) -> None:
+    manifest = _manifest()
+    frame_root = tmp_path / "frames"
+    (frame_root / "train").mkdir(parents=True)
+    (frame_root / "validation").mkdir(parents=True)
+    train_payload = b"multi-class-train"
+    validation_payload = b"multi-class-validation"
+    (frame_root / "train" / "frame.jpg").write_bytes(train_payload)
+    (frame_root / "validation" / "frame.jpg").write_bytes(validation_payload)
+    reviews = [
+        _review(
+            manifest,
+            annotation_id="ann-train",
+            split=DatasetSplit.TRAIN,
+            frame_ref="train/frame.jpg",
+            frame_payload=train_payload,
+            boxes=[
+                VerifiedBoundingBox(category_name="weapon", x=0, y=0, width=10, height=10),
+                VerifiedBoundingBox(category_name="person", x=20, y=20, width=10, height=10),
+                VerifiedBoundingBox(category_name="fire", x=40, y=40, width=10, height=10),
+            ],
+        ),
+        _review(
+            manifest,
+            annotation_id="ann-validation",
+            split=DatasetSplit.VALIDATION,
+            frame_ref="validation/frame.jpg",
+            frame_payload=validation_payload,
+            boxes=[VerifiedBoundingBox(category_name="person", x=0, y=0, width=10, height=10)],
+        ),
+    ]
+
+    result = export_verified_frames_to_coco(
+        dataset_manifest=manifest,
+        reviews=reviews,
+        frame_root=frame_root,
+        output_dir=tmp_path / "coco",
+    )
+
+    train = json.loads(result.train_annotations.read_text(encoding="utf-8"))
+    export_manifest = json.loads(result.export_manifest.read_text(encoding="utf-8"))
+    categories = export_manifest["categories"]
+    coco_ids = {entry["name"]: entry["id"] for entry in train["categories"]}
+    config_path = tmp_path / "config.json"
+    _write_runtime_config(
+        config_path,
+        DfineDeploymentArtifact.model_construct(
+            category_names=categories,
+            input_names=["images", "orig_target_sizes"],
+            output_names=["labels", "boxes", "scores"],
+            onnx_sha256="a" * 64,
+            artifact_fingerprint="b" * 64,
+        ),
+    )
+    id2label = json.loads(config_path.read_text(encoding="utf-8"))["id2label"]
+
+    # Eğitimin gördüğü kimlik ile canlı analizin okuduğu kimlik aynı ismi vermelidir.
+    assert coco_ids == {name: int(key) for key, name in id2label.items()}
+    assert sorted(coco_ids.values()) == list(
+        range(CATEGORY_ID_BASE, CATEGORY_ID_BASE + len(categories))
+    )
+    # num_classes uzunluk olarak verilir; en büyük kimlik sınır dışına çıkamaz.
+    assert max(coco_ids.values()) < len(categories)
 
 
 def test_loader_reads_one_strict_review_per_json(tmp_path: Path) -> None:

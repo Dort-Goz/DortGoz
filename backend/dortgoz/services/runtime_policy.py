@@ -110,9 +110,16 @@ def decide_runtime_policy(
 
 
 def _review_reason(statuses: dict[int, RuntimeValidationStatus]) -> str:
-    details = ", ".join(
-        f"event[{index}]={status.value}" for index, status in sorted(statuses.items())
+    """Yalnız validated olmayan gözlemler için insan incelemesi gerekçesi üret."""
+
+    flagged = sorted(
+        (index, status)
+        for index, status in statuses.items()
+        if status != RuntimeValidationStatus.VALIDATED
     )
+    if not flagged:
+        return ""
+    details = ", ".join(f"event[{index}]={status.value}" for index, status in flagged)
     return (
         "Runtime evidence yalnız provisional kullanıma izin veriyor; "
         f"automatic confirmation kapalı ({details})."

@@ -25,6 +25,7 @@ from dortgoz.pipeline.perception import (
     set_detector_override,
 )
 from dortgoz.repositories.memory import InMemoryEventRepository
+from dortgoz.services.coco_export import CATEGORY_ID_BASE
 from dortgoz.services.dataset_manifest import sha256_file
 from dortgoz.services.dfine_deployment import (
     DfineOnnxContract,
@@ -73,12 +74,29 @@ def _dfine_repository(root: Path) -> tuple[Path, str]:
     return repository, revision
 
 
+def _write_export_manifest(workspace: Path, *, category_id_base: int = CATEGORY_ID_BASE) -> Path:
+    manifest = workspace / "runs" / "training" / "dataset" / "export_manifest.json"
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text(
+        json.dumps(
+            {
+                "export_version": "1.0.0",
+                "categories": ["person", "weapon"],
+                "category_id_base": category_id_base,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return manifest
+
+
 def _candidate_fixture(tmp_path: Path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     checkpoint = workspace / "runs" / "training" / "best.pth"
     checkpoint.parent.mkdir(parents=True)
     checkpoint.write_bytes(b"candidate-checkpoint")
+    _write_export_manifest(workspace)
     dfine_repository, revision = _dfine_repository(tmp_path)
     now = datetime(2026, 8, 16, 12, 0, tzinfo=UTC)
     job = TrainingJob(
@@ -193,6 +211,32 @@ def test_export_attaches_hash_bound_production_onnx(tmp_path: Path) -> None:
     config = json.loads((onnx.parent / "config.json").read_text(encoding="utf-8"))
     assert config["id2label"] == {"0": "person", "1": "weapon"}
     assert config["interest_labels"] == ["person", "weapon"]
+    assert min(int(key) for key in config["id2label"]) == CATEGORY_ID_BASE
+
+
+def test_export_rejects_a_shifted_coco_category_id_base(tmp_path: Path) -> None:
+    workspace, repository, job, candidate, dfine_repository = _candidate_fixture(tmp_path)
+    _write_export_manifest(workspace, category_id_base=CATEGORY_ID_BASE + 1)
+
+    with pytest.raises(EvaluationReportError) as rejected:
+        execute_dfine_onnx_export(
+            repository=repository,
+            candidate=candidate,
+            training_job=job,
+            workspace_root=workspace,
+            dfine_repository=dfine_repository,
+            python_executable=Path(sys.executable),
+            runs_root=workspace / "runs",
+            registry_root=workspace / "models" / "dfine" / "candidates",
+            process_runner=_Exporter(),
+            onnx_inspector=lambda _path, **_kwargs: DfineOnnxContract(
+                input_names=["images", "orig_target_sizes"],
+                output_names=["labels", "boxes", "scores"],
+            ),
+        )
+
+    assert rejected.value.code == "DFINE_CATEGORY_BASE_MISMATCH"
+    assert repository.get_model_version(candidate.model_version_id).deployment is None
 
 
 def test_deployment_verifier_rejects_changed_onnx(tmp_path: Path) -> None:

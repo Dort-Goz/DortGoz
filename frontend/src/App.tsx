@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { Event, Payload } from "./types/events";
-import { DortgozSocket } from "./lib/ws";
+import { DortgozSocket, type ConnectionState } from "./lib/ws";
 import VideoPanel from "./components/VideoPanel";
 import Timeline from "./components/Timeline";
 import AgentTrace from "./components/AgentTrace";
@@ -15,6 +15,21 @@ import { includeUploadedVideo, startCanonicalRun } from "./lib/canonicalRun";
 import { consoleReducer, emptyFeed, initialState } from "./state";
 
 const EXPERIMENT_KEY = "dortgoz.experiment";
+
+// Bağlantı rozeti: kopukken operatör BAYAT veriye baktığını görmelidir.
+const CONNECTION_TR: Record<ConnectionState, string> = {
+  connecting: "bağlanıyor…",
+  open: "bağlı",
+  reconnecting: "bağlantı koptu — yeniden deneniyor",
+  closed: "bağlantı kapalı",
+};
+
+const CONNECTION_CLS: Record<ConnectionState, string> = {
+  connecting: "border-amber-700 text-amber-300 bg-amber-950/40",
+  open: "border-emerald-800 text-emerald-300 bg-emerald-950/30",
+  reconnecting: "border-red-600 text-red-100 bg-red-900/70 animate-pulse",
+  closed: "border-red-700 text-red-200 bg-red-950/60",
+};
 
 export default function App() {
   const [state, dispatch] = useReducer(consoleReducer, initialState);
@@ -38,11 +53,14 @@ export default function App() {
   // Canlı CCTV ızgarası (5×5) — panel yerleşiminin yerine geçer
   const [liveView, setLiveView] = useState(false);
   const [trainingEventId, setTrainingEventId] = useState("");
+  // Sunucu bağlantısı — üst çubuktaki kalıcı rozet
+  const [connection, setConnection] = useState<ConnectionState>("connecting");
 
   useEffect(() => {
     const socket = new DortgozSocket(
       (e: Event) => dispatch({ kind: "event", event: e }),
       () => dispatch({ kind: "sync_reset" }),
+      { onState: setConnection },
     );
     socketRef.current = socket;
     return () => socket.close();
@@ -176,6 +194,16 @@ export default function App() {
       <header className="flex items-center flex-wrap gap-x-3 gap-y-1.5 px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-900/60 shrink-0">
         <span className="text-lg font-bold tracking-tight">
           DÖRTGÖZ <span className="text-zinc-500 font-normal text-sm">operatör konsolu</span>
+        </span>
+        {/* Bağlantı rozeti HER kipte görünür (canlı ızgarada da): kopuk
+            bağlantıda ekrandaki her şey bayattır, bunu gizlemek yanıltır. */}
+        <span
+          title={connection === "open"
+            ? "Sunucu bağlantısı açık — olaylar canlı akıyor"
+            : "Sunucu bağlantısı yok — ekrandaki veri BAYAT olabilir"}
+          className={`rounded px-2 py-1 border text-xs font-medium ${CONNECTION_CLS[connection]}`}
+        >
+          {connection === "open" ? "●" : "○"} {CONNECTION_TR[connection]}
         </span>
         <div className="ml-auto flex items-center flex-wrap gap-x-3 gap-y-1.5 text-xs text-zinc-400">
           <button

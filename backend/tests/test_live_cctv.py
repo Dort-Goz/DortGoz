@@ -61,6 +61,13 @@ def test_plan_drops_oldest_beyond_backlog(tmp_path):
     assert pending == segs[3:]         # işleme zaman sırasında sürer
 
 
+def test_plan_with_zero_backlog_drops_everything(tmp_path):
+    """Sınır 0 iken `[:-0]` BOŞ liste verir; kural tersine dönerdi."""
+    segs = [tmp_path / f"seg_{i}.mp4" for i in range(3)]
+    drop, pending = plan_segments(segs, max_backlog=0)
+    assert drop == segs and pending == []
+
+
 # ---- işleyici adımı (sahte run_video ile) ----
 
 @pytest.fixture
@@ -179,6 +186,11 @@ async def test_segment_failure_does_not_stop_feed(worker, monkeypatch):
     assert await worker._step() is True                # adım tamamlandı
     assert "model koptu" in worker.status.last_error
     assert "seg_1000.mp4" in worker._done              # tekrar denenmez
+    assert worker.segments_failed == 1
+    assert worker.status.segments_done == 0
+    # gecikme demiri ilerlemedi: işlenmemiş segment "yetiştik" göstermez
+    assert worker._last_seg_mtime is None
+    assert worker.status.lag_s is None
 
 
 @pytest.mark.asyncio
@@ -199,6 +211,23 @@ async def test_prune_keeps_recent_segments_and_runs(worker, monkeypatch):
     assert len(kept) <= 3              # son N işlenmiş + yazılan
     runs = list(settings.runs_dir.glob("canli-kavsak1-*.jsonl"))
     assert len(runs) <= settings.live_keep_runs
+
+
+@pytest.mark.asyncio
+async def test_prune_with_zero_keep_deletes_everything_processed(worker, monkeypatch):
+    """Saklama sınırı 0 iken `[:-0]` HİÇBİR şeyi silmez — disk 7/24 dolardı."""
+    async def fake_run_video(*a, **kw): ...
+    monkeypatch.setattr("dortgoz.pipeline.runner.run_video", fake_run_video)
+    monkeypatch.setattr(settings, "live_keep_segments", 0)
+    monkeypatch.setattr(settings, "live_keep_runs", 0)
+    (settings.runs_dir / "canli-kavsak1-1000.jsonl").write_text("{}")
+
+    _seg(worker, 1000)
+    _seg(worker, 1030)
+    await worker._step()
+
+    assert not (worker.dir / "seg_1000.mp4").exists()
+    assert list(settings.runs_dir.glob("canli-kavsak1-*.jsonl")) == []
 
 
 @pytest.mark.asyncio

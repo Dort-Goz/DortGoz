@@ -17,6 +17,12 @@ from ..domain.training import TrainingFrameReview, TrainingSample, TrainingSampl
 from .dataset_manifest import sha256_file
 from .training_selection import TrainingSelectionReport
 
+# D-FINE eğitim ve export komutları `remap_mscoco_category=False` kullanır. Bu modda
+# D-FINE COCO yükleyicisi `category_id` değerini doğrudan sınıf indeksi kabul eder ve
+# komut `num_classes=len(category_names)` verir. Bu yüzden kategori kimlikleri sıfır
+# tabanlıdır; deployment tarafındaki runtime `id2label` eşlemesi de aynı tabanı kullanır.
+CATEGORY_ID_BASE = 0
+
 
 @dataclass(frozen=True)
 class CocoExportResult:
@@ -138,7 +144,7 @@ def export_verified_frames_to_coco(
     categories = sorted({box.category_name for review in validated for box in review.boxes})
     if not categories:
         raise ValueError("D-FINE aktarımı en az bir doğrulanmış hedef sınıfı gerektirir")
-    category_ids = {name: index for index, name in enumerate(categories, 1)}
+    category_ids = {name: index for index, name in enumerate(categories, CATEGORY_ID_BASE)}
 
     payloads: dict[DatasetSplit, dict[str, Any]] = {}
     for split in (DatasetSplit.TRAIN, DatasetSplit.VALIDATION):
@@ -178,6 +184,7 @@ def export_verified_frames_to_coco(
             "validation": validation_sha,
         },
         "categories": categories,
+        "category_id_base": CATEGORY_ID_BASE,
     }
     if selection_report is not None:
         fingerprint_payload["selection"] = {

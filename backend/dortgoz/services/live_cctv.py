@@ -96,10 +96,16 @@ def plan_segments(pending: list[Path], max_backlog: int) -> tuple[list[Path], li
 
     En yenisi hariç kapanmış segmentlerden fazlası birikirse en eskiler atılır;
     işleme her zaman kalan EN ESKİ segmentten sürer (zaman sırası korunur).
+    Kesim noktası açık hesaplanır: `[:-max_backlog]` sınır 0 olduğunda BOŞ liste
+    verir ve hiçbir şey atılmaz — tam ters davranış.
     """
-    if len(pending) <= max_backlog:
-        return [], pending
-    return pending[:-max_backlog], pending[-max_backlog:]
+    cut = max(0, len(pending) - max(0, max_backlog))
+    return pending[:cut], pending[cut:]
+
+
+def _drop_count(items: list, keep: int) -> int:
+    """Silinecek eleman sayısı; `[:-keep]` sıfır sınırda TERS çalışır."""
+    return max(0, len(items) - max(0, keep))
 
 
 class LiveFeedWorker:
@@ -120,6 +126,7 @@ class LiveFeedWorker:
         self._proc: asyncio.subprocess.Process | None = None
         self._tasks: list[asyncio.Task] = []
         self._last_seg_mtime: float | None = None
+        self.segments_failed = 0
 
     # ---- yaşam döngüsü ----
 
@@ -258,14 +265,19 @@ class LiveFeedWorker:
                 await self.finalize_run(run_id)
             self.status.segments_done += 1
             self.status.last_error = ""
+            self._last_seg_mtime = seg_mtime
         except Exception as exc:   # tek segmentin hatası akışı durdurmaz (7/24)
+            # Gecikme demiri İLERLEMEZ: bu segment işlenmedi, rozet "yetişiyor"
+            # göstermemeli. Segment yine işlendi sayılır (aynı bozuk dosyada
+            # sonsuz döngü olmasın), başarısızlık sayaçta durur.
+            self.segments_failed += 1
             self.status.last_error = f"{type(exc).__name__}: {exc}"[:200]
-            log.exception("canlı %s: segment işlenemedi: %s", self.status.name, seg.name)
+            log.exception("canlı %s: segment işlenemedi (%d başarısız): %s",
+                          self.status.name, self.segments_failed, seg.name)
         finally:
             if live_lease is not None:
                 await live_lease.release_async()
         self._done.add(seg.name)
-        self._last_seg_mtime = seg_mtime
         self._refresh_lag()
         await self._snapshot(seg)
         self._prune(seg)
@@ -292,10 +304,10 @@ class LiveFeedWorker:
         """Disk 7/24 dolamaz: eski segmentler ve eski segment koşu kayıtları gider."""
         processed = sorted(p for p in self.dir.glob(SEGMENT_GLOB)
                            if p.name in self._done)
-        for old in processed[:-settings.live_keep_segments]:
+        for old in processed[:_drop_count(processed, settings.live_keep_segments)]:
             old.unlink(missing_ok=True)
         runs = sorted(settings.runs_dir.glob(f"canli-{self.status.name}-*.jsonl"))
-        for old in runs[:-settings.live_keep_runs]:
+        for old in runs[:_drop_count(runs, settings.live_keep_runs)]:
             old.unlink(missing_ok=True)
             old.with_name(old.stem + ".meta.json").unlink(missing_ok=True)
         # _done kümesi de sınırlı kalsın (adlar diskten silindi)

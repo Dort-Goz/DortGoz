@@ -28,6 +28,7 @@ from ..domain.taxonomy import (
     legacy_ws_label_from_canonical,
 )
 from ..events import AgentStep, Event, RunStatus, WindowEvent, WindowReport
+from ..services.analysis_job import iter_run_lines
 from ..services.run_identity import require_safe_run_id, safe_run_file
 from ..services.runtime_metrics import CanonicalRunMetrics
 from ..services.runtime_policy import decide_runtime_policy
@@ -309,6 +310,96 @@ def _mode_flags(mode: str) -> tuple[bool, bool, bool]:
     return settings.dual_read, False, settings.final_sweep
 
 
+async def screening_spans(
+    rec: RunRecorder,
+    profile: list[ingest.MotionSample],
+    path: Path,
+    *,
+    run_id: str,
+    video: str,
+    duration: float,
+    metrics: CanonicalRunMetrics,
+    stop_probe: StopProbe = lambda: False,
+) -> list[tuple[float, float]] | None:
+    """Hibrit ön-kapının aday aralıklarını kurar; `None` = ekranlama kapalı.
+
+    EMNİYET VALFİ: kurulum bir istisna atarsa ya da hiç aday aralık çıkmazsa
+    ekranlama kapanır (tüm pencereler derin okunur) ve operatöre GÖRÜNÜR bir
+    uyarı gider. Sessiz kapsama kaybı — tüm videonun VLM'siz geçmesi — bu
+    yolun en pahalı hatasıdır. Eşik değerleri burada değişmez; ölçüme dayanır.
+    """
+    try:
+        scorer = MotionBaselineModel()
+        if settings.candidate_model_manifest:
+            try:
+                from .candidate_model import load_candidate_scorer
+                scorer = load_candidate_scorer(Path(settings.candidate_model_manifest))
+            except Exception as exc:   # hatalı manifest koşuyu düşürmez — tabana dön
+                await rec.emit(AgentStep(
+                    node="perceive", status="error",
+                    detail=f"aday model yüklenemedi, baseline'a dönüldü: {str(exc)[:80]}"))
+        # Anlamsal scorer kare akışı ister; hata koşuyu düşürmez, tabana döner
+        if hasattr(scorer, "score_video"):
+            try:
+                with metrics.siglip_call():
+                    screen_samples = await asyncio.to_thread(
+                        scorer.score_video, profile, path)
+            except Exception as exc:
+                await rec.emit(AgentStep(
+                    node="perceive", status="error",
+                    detail=f"anlamsal screening düştü, baseline'a dönüldü: "
+                           f"{str(exc)[:80]}"))
+                scorer = MotionBaselineModel()
+                screen_samples = scorer.score(profile)
+            _raise_if_stop_requested(stop_probe)
+        else:
+            screen_samples = scorer.score(profile)
+        if settings.candidate_adaptive_threshold:
+            from .candidate_intervals import adaptive_saturation_shift
+            screen_samples = adaptive_saturation_shift(
+                screen_samples,
+                start_threshold=settings.candidate_start_threshold,
+                saturation=settings.candidate_adaptive_saturation,
+                raised_threshold=settings.candidate_adaptive_raised)
+        ivs = build_candidate_intervals(
+            screen_samples, analysis_id=run_id, video_id=video,
+            duration_seconds=duration,
+            model_id=getattr(scorer, "model_id",
+                             getattr(getattr(scorer, "artifact", None), "model_id", "?")),
+            config=IntervalConfig(
+                start_threshold=settings.candidate_start_threshold,
+                continue_threshold=settings.candidate_continue_threshold,
+                end_patience=settings.candidate_end_patience,
+                merge_gap_seconds=settings.candidate_merge_gap_seconds,
+                min_duration_seconds=settings.candidate_min_duration_seconds,
+                threshold_version=settings.candidate_threshold_version,
+            ))
+        cand_spans = [(iv.start_time, iv.end_time) for iv in ivs]
+    except PipelineStopRequested:
+        raise
+    except Exception as exc:
+        await rec.emit(AgentStep(
+            node="perceive", status="error",
+            detail=f"aday aralık kurulumu başarısız, EKRANLAMA KAPATILDI "
+                   f"(tüm pencereler derin okunacak): {str(exc)[:100]}"))
+        return None
+    if not cand_spans:
+        await rec.emit(AgentStep(
+            node="perceive", status="error",
+            detail="aday aralık bulunamadı, EKRANLAMA KAPATILDI "
+                   "(tüm pencereler derin okunacak)"))
+        return None
+    cov = sum(b - a for a, b in cand_spans)
+    scorer_id = getattr(scorer, "model_id",
+                        getattr(getattr(scorer, "artifact", None), "model_id", "?"))
+    await rec.emit(AgentStep(
+        node="perceive", status="end",
+        detail=f"aday screening ({scorer_id}): {len(cand_spans)} aralık, "
+               f"kapsama %{100 * cov / max(duration, 1e-9):.0f} — aday dışı "
+               f"pencereler dedektör kurtarması hariç atlanacak"))
+    return cand_spans
+
+
 async def run_video(
     manager: ConnectionManager,
     video: str,
@@ -398,60 +489,10 @@ async def run_video(
         # ölü bölge atladığı için o kipte screening uygulanmaz.
         cand_spans: list[tuple[float, float]] | None = None
         if settings.candidate_screening and not settings.dynamic_windows:
-            scorer = MotionBaselineModel()
-            if settings.candidate_model_manifest:
-                try:
-                    from .candidate_model import load_candidate_scorer
-                    scorer = load_candidate_scorer(Path(settings.candidate_model_manifest))
-                except Exception as exc:   # hatalı manifest koşuyu düşürmez — tabana dön
-                    await rec.emit(AgentStep(
-                        node="perceive", status="error",
-                        detail=f"aday model yüklenemedi, baseline'a dönüldü: {str(exc)[:80]}"))
-            # Anlamsal scorer kare akışı ister; hata koşuyu düşürmez, tabana döner
-            if hasattr(scorer, "score_video"):
-                try:
-                    with metrics.siglip_call():
-                        screen_samples = await asyncio.to_thread(
-                            scorer.score_video, profile, path)
-                except Exception as exc:
-                    await rec.emit(AgentStep(
-                        node="perceive", status="error",
-                        detail=f"anlamsal screening düştü, baseline'a dönüldü: "
-                               f"{str(exc)[:80]}"))
-                    scorer = MotionBaselineModel()
-                    screen_samples = scorer.score(profile)
-                _raise_if_stop_requested(stop_probe)
-            else:
-                screen_samples = scorer.score(profile)
-            if settings.candidate_adaptive_threshold:
-                from .candidate_intervals import adaptive_saturation_shift
-                screen_samples = adaptive_saturation_shift(
-                    screen_samples,
-                    start_threshold=settings.candidate_start_threshold,
-                    saturation=settings.candidate_adaptive_saturation,
-                    raised_threshold=settings.candidate_adaptive_raised)
-            ivs = build_candidate_intervals(
-                screen_samples, analysis_id=run_id, video_id=video,
-                duration_seconds=duration,
-                model_id=getattr(scorer, "model_id",
-                                 getattr(getattr(scorer, "artifact", None), "model_id", "?")),
-                config=IntervalConfig(
-                    start_threshold=settings.candidate_start_threshold,
-                    continue_threshold=settings.candidate_continue_threshold,
-                    end_patience=settings.candidate_end_patience,
-                    merge_gap_seconds=settings.candidate_merge_gap_seconds,
-                    min_duration_seconds=settings.candidate_min_duration_seconds,
-                    threshold_version=settings.candidate_threshold_version,
-                ))
-            cand_spans = [(iv.start_time, iv.end_time) for iv in ivs]
-            cov = sum(b - a for a, b in cand_spans)
-            scorer_id = getattr(scorer, "model_id",
-                                getattr(getattr(scorer, "artifact", None), "model_id", "?"))
-            await rec.emit(AgentStep(
-                node="perceive", status="end",
-                detail=f"aday screening ({scorer_id}): {len(cand_spans)} aralık, "
-                       f"kapsama %{100 * cov / max(duration, 1e-9):.0f} — aday dışı "
-                       f"pencereler dedektör kurtarması hariç atlanacak"))
+            cand_spans = await screening_spans(
+                rec, profile, path,
+                run_id=run_id, video=video, duration=duration,
+                metrics=metrics, stop_probe=stop_probe)
 
         n_ctx = await context_size(effective_model)   # bağlam doluluğu için (bir kez)
         _raise_if_stop_requested(stop_probe)
@@ -956,16 +997,22 @@ async def run_video(
 
 
 def load_run(run_id: str) -> list[dict]:
-    """Kayıtlı koşuyu JSONL'den okur (`/api/runs/{run_id}`)."""
+    """Kayıtlı koşuyu JSONL'den okur (`/api/runs/{run_id}`).
+
+    Yarım kalan son satır koşunun tamamını erişilemez yapmaz — paylaşılan
+    okuyucu bozuk satırı atlar (bkz. `iter_run_lines`).
+    """
     path = safe_run_file(settings.runs_dir, run_id, ".jsonl")
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return list(iter_run_lines(path))
 
 
 __all__ = [
     "PipelineStopRequested",
     "RunRecorder",
     "WindowReport",
+    "iter_run_lines",
     "load_run",
     "resolve_media",
     "run_video",
+    "screening_spans",
 ]

@@ -22,6 +22,10 @@ COPY backend/dortgoz ./dortgoz
 RUN uv sync --frozen --no-dev
 
 COPY configs /app/configs
+# services/live_cctv canlı akış listesini /app/config altından okur; bu dizin
+# olmadan /api/live/start konteynerde FileNotFoundError verir. Gerçek liste
+# çalışma anında compose bind mount'u ile üzerine bindirilir.
+COPY config /app/config
 COPY data/procedures /app/data/procedures
 COPY models /app/models
 RUN mkdir -p /app/media /app/runs /app/cache/candidate \

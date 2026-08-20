@@ -10,6 +10,7 @@ __pycache__/
 # Node
 node_modules/
 frontend/dist/
+*.tsbuildinfo
 
 # Data & runs — clips never enter the repo (see datasets policy)
 media/*

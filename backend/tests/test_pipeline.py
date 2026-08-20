@@ -258,3 +258,135 @@ def test_dedup_survives_missing_grids():
     times = [2.0, 7.0, 12.0]
     # grid yoksa tekilleştirme yapılamaz → hepsi korunur (güvenli taraf)
     assert _dedup(times, samples, threshold=0.006) == times
+
+
+# ---- koşu JSONL'i: yarım satır tüm koşuyu erişilemez yapmamalı ----
+
+def test_load_run_skips_partial_final_line(tmp_path, monkeypatch):
+    """Koşu yazarken kesilirse son satır yarım kalır — koşu yine okunmalı."""
+    from dortgoz.pipeline.runner import load_run
+
+    monkeypatch.setattr(settings, "runs_dir", tmp_path)
+    good = json.dumps({"seq": 0, "ts": 0.0, "feed": "", "payload": {"type": "agent_step"}})
+    (tmp_path / "kosu1.jsonl").write_text(
+        good + "\n" + good + "\n" + '{"seq": 2, "payload": {"type"',
+        encoding="utf-8")
+
+    lines = load_run("kosu1")
+    assert len(lines) == 2
+    assert all(item["payload"]["type"] == "agent_step" for item in lines)
+
+
+# ---- ekranlama emniyet valfi (aday ön-kapı) ----
+
+class _Recorder:
+    """`RunRecorder.emit` sözleşmesinin test için gereken en küçük şekli."""
+
+    def __init__(self):
+        self.emitted = []
+
+    async def emit(self, payload):
+        self.emitted.append(payload)
+
+
+def _metrics():
+    from dortgoz.services.runtime_metrics import CanonicalRunMetrics
+
+    return CanonicalRunMetrics("test-run")
+
+
+@pytest.mark.asyncio
+async def test_screening_disables_itself_when_no_candidate_span(tmp_path, monkeypatch):
+    """Aday aralık çıkmazsa TÜM video VLM'siz geçerdi — sessiz kapsama kaybı."""
+    from dortgoz.pipeline.runner import screening_spans
+
+    monkeypatch.setattr(settings, "candidate_model_manifest", "")
+    monkeypatch.setattr(settings, "candidate_adaptive_threshold", False)
+    profile = [_sample(float(t), 0.0) for t in range(30)]
+
+    rec = _Recorder()
+    spans = await screening_spans(rec, profile, tmp_path / "yok.mp4",
+                                  run_id="r1", video="v.mp4", duration=30.0,
+                                  metrics=_metrics())
+
+    assert spans is None                       # ekranlama kapandı → hepsi derin okunur
+    assert any("EKRANLAMA KAPATILDI" in step.detail for step in rec.emitted)
+
+
+@pytest.mark.asyncio
+async def test_screening_setup_failure_does_not_kill_run(tmp_path, monkeypatch):
+    """Aralık kurulumu patlarsa koşu düşmemeli; ekranlama kapanıp uyarı çıkmalı."""
+    from dortgoz.pipeline.runner import screening_spans
+
+    monkeypatch.setattr(settings, "candidate_model_manifest", "")
+    monkeypatch.setattr(settings, "candidate_adaptive_threshold", False)
+    profile = [_sample(float(t), 0.5) for t in range(30)]
+
+    rec = _Recorder()
+    # duration_seconds <= 0 → build_candidate_intervals ValueError yükseltir
+    spans = await screening_spans(rec, profile, tmp_path / "yok.mp4",
+                                  run_id="r1", video="v.mp4", duration=0.0,
+                                  metrics=_metrics())
+
+    assert spans is None
+    assert any(step.status == "error" and "EKRANLAMA KAPATILDI" in step.detail
+               for step in rec.emitted)
+
+
+# ---- anlamsal scorer: ffmpeg yarım kare üretimi sessiz kalmamalı ----
+
+class _FakeProc:
+    def __init__(self, stdout: bytes, stderr: bytes, rc: int):
+        import io
+
+        self.stdout = io.BytesIO(stdout)
+        self.stderr = io.BytesIO(stderr)
+        self._rc = rc
+
+    def wait(self) -> int:
+        return self._rc
+
+
+def _semantic_model(monkeypatch, stdout: bytes, stderr: bytes, rc: int):
+    np = pytest.importorskip("numpy")
+    from dortgoz.pipeline import semantic
+
+    artifact = semantic.SemanticArtifact(
+        model_id="siglip-test", version="1", license="Apache-2.0",
+        onnx_path="x.onnx", onnx_sha256="0" * 64,
+        anchors_path="a.npz", anchors_sha256="0" * 64)
+    model = semantic.SemanticCandidateModel(
+        artifact, onnx_file=Path("x.onnx"), anchors_file=Path("a.npz"))
+
+    class _Session:
+        def run(self, _outputs, feeds):
+            return [np.zeros((len(feeds["pixel_values"]), 4), dtype=np.float32)]
+
+    monkeypatch.setattr(model, "_runtime",
+                        lambda: (_Session(), np.zeros((2, 4), dtype=np.float32), 2))
+    monkeypatch.setattr(semantic.subprocess, "Popen",
+                        lambda *a, **kw: _FakeProc(stdout, stderr, rc))
+    return model
+
+
+def test_semantic_raises_when_ffmpeg_dies(monkeypatch):
+    """ffmpeg ortada ölürse kısa liste dönmemeli — o bölüm VLM'e hiç gitmezdi."""
+    model = _semantic_model(monkeypatch, b"", b"moov atom not found", rc=1)
+    with pytest.raises(ValueError, match="ffmpeg rc=1"):
+        model._event_sims(Path("v.mp4"))
+
+
+def test_semantic_raises_on_short_frame_yield(monkeypatch):
+    """Çıkış kodu 0 olsa da beklenenin çok altında kare = kapsama kaybı."""
+    frame = b"\x00" * (224 * 224 * 3)
+    model = _semantic_model(monkeypatch, frame * 2, b"", rc=0)
+    with pytest.raises(ValueError, match="çok azını"):
+        model._event_sims(Path("v.mp4"), expected=10)
+
+
+def test_semantic_accepts_complete_frame_yield(monkeypatch):
+    """Sağlam çekim hata vermemeli (valf yanlış alarm üretmesin)."""
+    frame = b"\x00" * (224 * 224 * 3)
+    model = _semantic_model(monkeypatch, frame * 2, b"", rc=0)
+    sims = model._event_sims(Path("v.mp4"), expected=2)
+    assert [t for t, _ in sims] == [0.0, 2.0]

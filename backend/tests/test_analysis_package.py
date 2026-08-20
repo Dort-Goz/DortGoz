@@ -143,3 +143,35 @@ def test_import_rejects_manifest_run_id_traversal(run_fixture, tmp_path, run_id)
 def test_export_rejects_run_id_traversal(run_fixture):
     with pytest.raises(ValueError, match="koşu kimliği"):
         ap.export_analysis(r"..\..\secret")
+
+
+def test_export_survives_partial_final_jsonl_line(run_fixture):
+    """Koşu yazarken kesilmişse yarım son satır paketi engellememeli."""
+    jsonl = settings.runs_dir / "test1.jsonl"
+    with jsonl.open("a", encoding="utf-8") as stream:
+        stream.write('{"seq": 2, "ts": 0.0, "payload": {"type": "window_re')
+
+    pkg = ap.export_analysis(run_fixture)
+    ctx = ap.import_analysis(pkg)
+
+    assert len(ctx.reports) == 1
+    assert len(ctx.incidents) == 1
+
+
+def test_export_leaves_no_part_file_behind(run_fixture):
+    """Paket .part üzerine yazılıp atomik taşınır; artık dosya kalmamalı."""
+    pkg = ap.export_analysis(run_fixture)
+
+    assert pkg.is_file()
+    assert list(pkg.parent.glob("*.part")) == []
+
+
+def test_failed_export_writes_no_target_package(run_fixture):
+    """Yarım kalan yazım hedef yolu kirletmemeli (eşzamanlı okuyucu korunur)."""
+    (settings.runs_dir / "test1.jsonl").unlink()
+
+    with pytest.raises(FileNotFoundError):
+        ap.export_analysis(run_fixture)
+
+    paketler = settings.runs_dir / "paketler"
+    assert list(paketler.glob("*")) == []

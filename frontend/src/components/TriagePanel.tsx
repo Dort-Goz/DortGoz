@@ -160,6 +160,7 @@ function PendingCard({ item, categories, feedLabel, onDecide }: {
   const [intervention, setIntervention] = useState<"" | "yes" | "no">("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   const validTimes = start >= 0 && start <= peak && peak <= end;
   const canSubmit = intervention !== ""
@@ -168,26 +169,35 @@ function PendingCard({ item, categories, feedLabel, onDecide }: {
       : Boolean(falseAlarmReason)
         && (falseAlarmReason !== "other" || Boolean(note.trim())));
 
+  // Gönderim düşerse kart KİLİTLENMEMELİ: busy her yolda temizlenir, form
+  // açık kalır ve operatör aynı olayı yeniden karara bağlayabilir.
   const submit = async () => {
     if (!verdict || !canSubmit) return;
     setBusy(true);
-    const saved = await onDecide({
-      key: item.key,
-      verdict,
-      ...(verdict === "anomali" ? {
-        category: cat,
-        risk_level: risk,
-        start_time: start,
-        peak_time: peak,
-        end_time: end,
-      } : {
-        false_alarm_reason: falseAlarmReason,
-      }),
-      intervention_required: intervention === "yes",
-      note: note.trim(),
-    });
-    setBusy(false);
-    if (saved) setVerdict("");
+    setFailed(false);
+    try {
+      const saved = await onDecide({
+        key: item.key,
+        verdict,
+        ...(verdict === "anomali" ? {
+          category: cat,
+          risk_level: risk,
+          start_time: start,
+          peak_time: peak,
+          end_time: end,
+        } : {
+          false_alarm_reason: falseAlarmReason,
+        }),
+        intervention_required: intervention === "yes",
+        note: note.trim(),
+      });
+      if (saved) setVerdict("");
+      else setFailed(true);
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -361,6 +371,11 @@ function PendingCard({ item, categories, feedLabel, onDecide }: {
               placeholder="Kararı açıklayan kısa not"
             />
           </label>
+          {failed && (
+            <div className="rounded border border-red-900 bg-red-950/50 px-1.5 py-1 text-red-200">
+              Karar kaydedilemedi. Bağlantıyı denetleyin ve yeniden deneyin.
+            </div>
+          )}
           <button
             disabled={busy || !canSubmit}
             onClick={submit}
@@ -412,20 +427,30 @@ export default function TriagePanel({ onSelectFeed, onOpenTraining, feedNames = 
       setError("İnceleyen adı boş olamaz.");
       return false;
     }
-    const response = await fetch("/api/triage/decide", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...decision, reviewer: reviewer.trim() }),
-    });
+    let response: Response;
+    try {
+      response = await fetch("/api/triage/decide", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...decision, reviewer: reviewer.trim() }),
+      });
+    } catch {
+      // İstek hiç ulaşmadı — kart açık kalır, operatör yeniden dener.
+      setError("Karar sunucuya iletilemedi. Bağlantıyı denetleyip yeniden deneyin.");
+      return false;
+    }
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       setError(body.detail || body.error?.message || "Karar kalıcı kayda yazılamadı.");
       return false;
     }
     setError("");
-    // Kuyruğu hemen tazele (sonraki poll'u bekletme)
-    const r = await fetch("/api/triage");
-    setSnap(await r.json());
+    // Kuyruğu hemen tazele (sonraki poll'u bekletme). Tazeleme hatası kararı
+    // geçersiz kılmaz; sonraki poll kuyruğu düzeltir.
+    try {
+      const r = await fetch("/api/triage");
+      setSnap(await r.json());
+    } catch { /* geçici kopukluk */ }
     return true;
   };
 
@@ -433,15 +458,21 @@ export default function TriagePanel({ onSelectFeed, onOpenTraining, feedNames = 
     proposal: RuleProposal,
     action: "approve" | "reject" | "revoke",
   ) => {
-    const response = await fetch(`/api/triage/rules/${proposal.proposal_id}/${action}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(
-        action === "approve"
-          ? { duration_hours: 24, revision: proposal.revision }
-          : {},
-      ),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`/api/triage/rules/${proposal.proposal_id}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          action === "approve"
+            ? { duration_hours: 24, revision: proposal.revision }
+            : {},
+        ),
+      });
+    } catch {
+      setError("Kural kararı sunucuya iletilemedi. Yeniden deneyin.");
+      return;
+    }
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
       setError(body.detail || "Kural kararı kaydedilemedi.");

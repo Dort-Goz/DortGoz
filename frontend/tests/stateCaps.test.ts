@@ -95,3 +95,36 @@ describe("7/24 dayanıklılık: state sınırları", () => {
     expect(state).toEqual(initialState);
   });
 });
+
+// Konsol kabuğunun dayanıklılık kuralları — DOM koşucusu olmadığı için
+// kaynak üzerinden kilitlenir (bkz. canonicalRun.test.ts aynı desen).
+describe("operatör konsolu dayanıklılığı", () => {
+  test("bağlantı durumu üst çubukta kalıcı rozetle gösterilir", async () => {
+    const appSource = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+
+    expect(appSource).toContain("{ onState: setConnection }");
+    expect(appSource).toContain("CONNECTION_CLS[connection]");
+    expect(appSource).toContain("CONNECTION_TR[connection]");
+    for (const state of ["connecting", "open", "reconnecting", "closed"]) {
+      expect(appSource).toContain(`${state}:`);
+    }
+    // Rozet header içinde ve liveView koşulunun DIŞINDA durur.
+    const header = appSource.slice(
+      appSource.indexOf("<header"),
+      appSource.indexOf('className="ml-auto'),
+    );
+    expect(header).toContain("CONNECTION_TR[connection]");
+  });
+
+  test("karar gönderimi düşerse kart kilitlenmez", async () => {
+    const triageSource = await Bun.file(
+      new URL("../src/components/TriagePanel.tsx", import.meta.url)).text();
+
+    // busy bayrağı YALNIZ finally içinde temizlenir → hiçbir hata yolu kartı asmaz.
+    expect(triageSource.match(/setBusy\(false\)/g)).toHaveLength(1);
+    expect(triageSource).toMatch(/\}\s*finally\s*\{\s*setBusy\(false\);\s*\}/);
+    // Operatör hatayı görür ve yeniden dener.
+    expect(triageSource).toContain("Karar kaydedilemedi.");
+    expect(triageSource).toContain("Karar sunucuya iletilemedi.");
+  });
+});

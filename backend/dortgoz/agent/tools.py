@@ -165,6 +165,12 @@ async def _dispatch(name: str, args: dict[str, Any], manager: ConnectionManager)
         if act not in ACTUATORS:
             return f"HATA: bilinmeyen aktüatör '{act}'"
         iid = str(args.get("incident_id", "")) or None
+        # Halüsinasyonlu kimlikle kritik aktüatör isteği açılmaz: uydurma
+        # bir olay operatörün onay kuyruğuna düşemez.
+        if iid and ctx and iid not in ctx.ledger.incidents:
+            known = ", ".join(ctx.ledger.incidents) or "—"
+            return (f"HATA: '{iid}' defterde yok; {act} isteği açılmadı. "
+                    f"Mevcut kimlikler: {known}")
         request = actuator_registry.request(
             actuator=act,
             reason=str(args.get("gerekce", "")),
@@ -207,6 +213,15 @@ async def _evidence_clip(ctx, start: float, end: float) -> str:
 
     if end <= start:
         return "HATA: bitiş başlangıçtan önce."
+    # İstenen aralık kaydı aşabilir; ffmpeg sessizce kısa klip üretir. Sonuçta
+    # istenen değil GERÇEK aralık raporlanır — süre uydurulmaz.
+    limit = ctx.duration or 0.0
+    start = max(0.0, start)
+    end = max(0.0, end)
+    if limit > 0:
+        start, end = min(start, limit), min(end, limit)
+    if end <= start:
+        return f"HATA: aralık kayıt dışında (kayıt {limit:.0f} sn)."
     video = resolve_media(ctx.video)
     out_dir = settings.media_dir / EVIDENCE_DIR / ctx.run_id
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -221,7 +236,8 @@ async def _evidence_clip(ctx, start: float, end: float) -> str:
     if proc.returncode != 0 or not out.is_file():
         return f"HATA: klip kesilemedi: {err.decode()[-200:]}"
     url = f"/media/{EVIDENCE_DIR}/{ctx.run_id}/{name}"
-    return f"Kanıt klibi hazır: {url} ({end - start:.0f} sn)."
+    return (f"Kanıt klibi hazır: {url} "
+            f"({start:.0f}-{end:.0f} sn, {end - start:.0f} sn).")
 
 
 def tool_names() -> list[str]:
