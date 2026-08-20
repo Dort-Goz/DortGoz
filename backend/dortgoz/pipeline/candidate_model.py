@@ -122,36 +122,6 @@ class MotionBaselineArtifact(BaseModel):
     license: Literal["Apache-2.0", "MIT"]
 
 
-class CandidatePipeline:
-    """Profile → score → hysteresis candidate pipeline."""
-
-    def __init__(
-        self,
-        scorer: CandidateScorer | None = None,
-        interval_config: IntervalConfig | None = None,
-    ) -> None:
-        self.scorer = scorer or MotionBaselineModel()
-        self.interval_config = interval_config or IntervalConfig()
-
-    def run(
-        self,
-        profile: list[MotionSample],
-        *,
-        analysis_id: str,
-        video_id: str,
-        duration_seconds: float,
-    ) -> list[CandidateEvent]:
-        samples = self.scorer.score(profile)
-        return build_candidate_intervals(
-            samples,
-            analysis_id=analysis_id,
-            video_id=video_id,
-            duration_seconds=duration_seconds,
-            model_id=self.scorer.model_id,
-            config=self.interval_config,
-        )
-
-
 def load_manifest(path: Path, *, verify_artifact: bool = True) -> CandidateModelManifest:
     """Model manifest'i strict yükler ve varsayılan olarak artifact hash doğrular."""
 
@@ -265,7 +235,6 @@ def _clamp(value: float) -> float:
 
 __all__ = [
     "CandidateModelManifest",
-    "CandidatePipeline",
     "CandidateScorer",
     "MotionBaselineArtifact",
     "MotionBaselineModel",
