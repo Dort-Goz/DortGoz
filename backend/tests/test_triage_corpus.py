@@ -183,3 +183,45 @@ def test_auto_dismissed_by_rule_still_records_signals(tmp_path):
     auto = [line for line in ledger_lines(tmp_path) if "otomatik" in line["note"]]
     assert auto and auto[-1]["signals"]["durum_p"] == pytest.approx(0.33)
     assert auto[-1]["run_id"] == "canli-kamera1-0001"
+
+
+def test_decide_endpoint_carries_operator_correction_to_the_ledger(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from dortgoz.main import app
+
+    triage.store.observe(run_started())
+    triage.store.observe(incident(sig=signals()))
+
+    with TestClient(app) as client:
+        r = client.post("/api/triage/decide", json={
+            "key": "kamera1:INC-1", "verdict": "anomali", "category": "kavga",
+            "reviewer": "bengisu", "operator_start": 10.0, "operator_end": 18.5,
+        })
+    assert r.status_code == 200
+
+    line = ledger_lines(tmp_path)[-1]
+    assert line["reviewer"] == "bengisu"
+    assert line["operator_start"] == 10.0
+    assert line["operator_end"] == 18.5
+    assert line["verdict"] == "anomali"
+
+
+def test_model_bounds_are_kept_next_to_the_operator_correction(tmp_path):
+    from dortgoz.events import Event, IncidentUpdate
+
+    triage.store.observe(run_started())
+    triage.store.observe(Event.wrap(
+        IncidentUpdate(
+            incident_id="INC-1", t=12.0, phase="sonuclandi", title="t",
+            anomaly_type="kavga", risk="orta",
+            olay_baslangic=11.0, olay_bitis=20.0,
+        ),
+        feed="kamera1",
+    ))
+    item = triage.store.decide(
+        "kamera1:INC-1", "anomali", category="kavga",
+        operator_start=9.5, operator_end=19.0)
+
+    assert (item.model_start, item.model_end) == (11.0, 20.0)
+    assert (item.operator_start, item.operator_end) == (9.5, 19.0)

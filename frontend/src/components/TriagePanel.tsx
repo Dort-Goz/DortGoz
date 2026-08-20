@@ -18,6 +18,19 @@ interface TriageItem {
   note: string;
   decided_wall: number | null;
   tekrar: number;
+  model_start: number | null;
+  model_end: number | null;
+  operator_start: number | null;
+  operator_end: number | null;
+}
+
+export interface Decision {
+  key: string;
+  verdict: string;
+  category?: string;
+  reviewer?: string;
+  operator_start?: number | null;
+  operator_end?: number | null;
 }
 
 interface Snapshot {
@@ -56,6 +69,19 @@ const RISK_CLS: Record<string, string> = {
 
 const clock = (t: number) =>
   `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+
+export function parseClock(text: string): number | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split(":");
+  if (parts.length > 2) return null;
+  const nums = parts.map((p) => Number(p));
+  if (nums.some((n) => !Number.isFinite(n) || n < 0)) return null;
+  const seconds = nums.length === 2 ? nums[0] * 60 + nums[1] : nums[0];
+  return Number.isFinite(seconds) ? seconds : null;
+}
+
+const REVIEWER_KEY = "dortgoz.operator";
 const wallClock = (epoch: number) =>
   new Date(epoch * 1000).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
 
@@ -63,10 +89,27 @@ function PendingCard({ item, categories, feedLabel, onDecide }: {
   item: TriageItem;
   categories: string[];
   feedLabel: string;
-  onDecide: (key: string, verdict: string, category?: string) => void;
+  onDecide: (d: Decision) => void;
 }) {
   const [cat, setCat] = useState(
     categories.includes(item.model_category) ? item.model_category : "bilinmeyen");
+  const [editTimes, setEditTimes] = useState(false);
+  const [startText, setStartText] = useState(clock(item.model_start ?? item.t));
+  const [endText, setEndText] = useState(clock(item.model_end ?? item.t));
+
+  const start = parseClock(startText);
+  const end = parseClock(endText);
+  const timesValid = !editTimes || (start !== null && end !== null && start <= end);
+
+  const confirm = () =>
+    onDecide({
+      key: item.key,
+      verdict: "anomali",
+      category: cat,
+      operator_start: editTimes ? start : null,
+      operator_end: editTimes ? end : null,
+    });
+
   return (
     <div className="rounded border border-zinc-700 bg-zinc-900/70 p-2 space-y-1.5 text-xs">
       <div className="flex items-center gap-2">
@@ -99,6 +142,50 @@ function PendingCard({ item, categories, feedLabel, onDecide }: {
           ? {humanizeReason(item.review_reason)}
         </div>
       )}
+      <div className="flex items-center gap-1 text-[10px]">
+        <button
+          onClick={() => setEditTimes((v) => !v)}
+          className={`rounded px-1 py-0.5 border ${
+            editTimes
+              ? "border-sky-700 text-sky-300 bg-sky-950/40"
+              : "border-zinc-700 text-zinc-400 hover:border-zinc-500"
+          }`}
+          title="Olayın gerçek başlangıç/bitiş anını düzelt — zamansal doğruluk ölçümünün referansı olur"
+        >
+          ⏱ süre düzelt
+        </button>
+        {!editTimes && (item.model_start !== null || item.model_end !== null) && (
+          <span className="text-zinc-500">
+            model: {clock(item.model_start ?? item.t)}–{clock(item.model_end ?? item.t)}
+          </span>
+        )}
+      </div>
+      {editTimes && (
+        <div className="flex items-center gap-1 text-[10px]">
+          <input
+            value={startText}
+            onChange={(e) => setStartText(e.target.value)}
+            placeholder="dd:ss"
+            aria-label="Olay başlangıcı"
+            className={`w-14 bg-zinc-800 border rounded px-1 py-0.5 ${
+              start === null ? "border-red-700" : "border-zinc-700"
+            }`}
+          />
+          <span className="text-zinc-500">→</span>
+          <input
+            value={endText}
+            onChange={(e) => setEndText(e.target.value)}
+            placeholder="dd:ss"
+            aria-label="Olay bitişi"
+            className={`w-14 bg-zinc-800 border rounded px-1 py-0.5 ${
+              end === null ? "border-red-700" : "border-zinc-700"
+            }`}
+          />
+          {!timesValid && (
+            <span className="text-red-300">başlangıç bitişten sonra olamaz</span>
+          )}
+        </div>
+      )}
       <div className="flex items-center gap-1">
         <select
           value={cat}
@@ -111,14 +198,15 @@ function PendingCard({ item, categories, feedLabel, onDecide }: {
           ))}
         </select>
         <button
-          onClick={() => onDecide(item.key, "anomali", cat)}
-          className="rounded px-2 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white"
+          onClick={confirm}
+          disabled={!timesValid}
+          className="rounded px-2 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white disabled:opacity-40"
           title="Gerçek anomali olarak doğrula ve oturum listesine geçir"
         >
           ✔ Anomali
         </button>
         <button
-          onClick={() => onDecide(item.key, "sorun_degil")}
+          onClick={() => onDecide({ key: item.key, verdict: "sorun_degil" })}
           className="rounded px-2 py-0.5 bg-zinc-700 hover:bg-zinc-600"
           title="Yanlış/önemsiz — kuyruktan düş"
         >
@@ -134,6 +222,12 @@ export default function TriagePanel({ onSelectFeed, feedNames = {} }: {
   feedNames?: Record<string, string>;
 }) {
   const [snap, setSnap] = useState<Snapshot | null>(null);
+  const [reviewer, setReviewer] = useState(
+    () => localStorage.getItem(REVIEWER_KEY) ?? "");
+
+  useEffect(() => {
+    localStorage.setItem(REVIEWER_KEY, reviewer);
+  }, [reviewer]);
 
   useEffect(() => {
     let alive = true;
@@ -149,11 +243,11 @@ export default function TriagePanel({ onSelectFeed, feedNames = {} }: {
     return () => { alive = false; clearInterval(id); };
   }, []);
 
-  const decide = async (key: string, verdict: string, category?: string) => {
+  const decide = async (d: Decision) => {
     await fetch("/api/triage/decide", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key, verdict, category }),
+      body: JSON.stringify({ ...d, reviewer }),
     });
     const r = await fetch("/api/triage");
     setSnap(await r.json());
@@ -163,13 +257,21 @@ export default function TriagePanel({ onSelectFeed, feedNames = {} }: {
   return (
     <div className="w-72 shrink-0 flex flex-col gap-2 min-h-0 text-sm">
       <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-2 flex-1 min-h-0 flex flex-col">
-        <div className="font-bold mb-1.5">
-          ⚑ Nöbet kuyruğu
+        <div className="font-bold mb-1.5 flex items-center gap-1">
+          <span>⚑ Nöbet kuyruğu</span>
           {snap.pending.length > 0 && (
-            <span className="ml-1 rounded-full bg-amber-700 text-white px-1.5 text-xs">
+            <span className="rounded-full bg-amber-700 text-white px-1.5 text-xs">
               {snap.pending.length}
             </span>
           )}
+          <input
+            value={reviewer}
+            onChange={(e) => setReviewer(e.target.value)}
+            placeholder="operatör"
+            aria-label="Operatör adı"
+            title="Kararları kimin verdiği nöbet defterine yazılır"
+            className="ml-auto w-20 bg-zinc-800 border border-zinc-700 rounded px-1 py-0.5 text-[10px] font-normal"
+          />
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5">
           {snap.pending.length === 0 && (

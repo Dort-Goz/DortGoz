@@ -73,6 +73,8 @@ class TriageItem:
     review_reason: str = ""
     run_id: str = ""
     video: str = ""
+    model_start: float | None = None
+    model_end: float | None = None
     signals: dict[str, Any] = field(default_factory=dict)
     verdict: str = ""
     operator_category: str = ""
@@ -136,6 +138,10 @@ class TriageStore:
             item.thumbnail = p.thumbnail or item.thumbnail
             item.needs_review = p.needs_review
             item.review_reason = p.review_reason
+            if p.olay_baslangic is not None:
+                item.model_start = p.olay_baslangic
+            if p.olay_bitis is not None:
+                item.model_end = p.olay_bitis
             self._merge_signals(item, p)
             return
         if any(r.key == key for r in self._resolved):
@@ -149,6 +155,7 @@ class TriageStore:
                 t=p.t, wall=time.time(), title=p.title,
                 model_category=p.anomaly_type, risk=p.risk, phase=p.phase,
                 run_id=run_id, video=video, signals=self._signal_dict(p),
+                model_start=p.olay_baslangic, model_end=p.olay_bitis,
                 verdict="sorun_degil", decided_wall=time.time(),
                 note=f"otomatik: operatör kuralı ({self._dismissals.get(pair, 0)}× sorun değil)"))
             return
@@ -167,7 +174,8 @@ class TriageStore:
             model_category=p.anomaly_type, risk=p.risk, phase=p.phase,
             thumbnail=p.thumbnail, needs_review=p.needs_review,
             review_reason=p.review_reason,
-            run_id=run_id, video=video, signals=self._signal_dict(p))
+            run_id=run_id, video=video, signals=self._signal_dict(p),
+            model_start=p.olay_baslangic, model_end=p.olay_bitis)
         while len(self._pending) > MAX_PENDING:
             dropped = self._pending.pop(next(iter(self._pending)))
             dropped.verdict = "expired"
