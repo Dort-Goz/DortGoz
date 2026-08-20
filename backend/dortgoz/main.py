@@ -26,6 +26,7 @@ from .api.router import runtime as api_runtime
 from .config import settings
 from .domain.video import VideoIngestError
 from .events import ActuatorResult, ChatMessage, Event, OperatorMessage, RunStatus
+from .infrastructure import vlm_manifest
 from .repositories.errors import (
     RepositoryConflictError,
     RepositoryDuplicateError,
@@ -104,20 +105,8 @@ async def readiness() -> JSONResponse:
     }
     if settings.mock:
         model = {"ready": True, "mode": "mock", "endpoint_checked": False}
-    elif settings.vlm_manifest_path is None:
-        model = {
-            "ready": False,
-            "mode": "local_vlm",
-            "detail": "DORTGOZ_VLM_MANIFEST_PATH ayarlanmadı",
-            "endpoint_checked": False,
-        }
     else:
-        model = {
-            "ready": settings.vlm_manifest_path.is_file(),
-            "mode": "local_vlm",
-            "manifest_path": str(settings.vlm_manifest_path),
-            "endpoint_checked": False,
-        }
+        model = vlm_manifest.readiness(settings.vlm_manifest_path)
     components = {
         "storage": {"ready": storage_ready, "detail": storage_detail},
         "event_store": event_store,

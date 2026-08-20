@@ -181,8 +181,6 @@ async def test_deprecated_profiles_never_invoke_legacy_execution(
         calls["event_orchestrator"] += 1
         raise AssertionError("legacy orchestrator çağrılmamalı")
 
-    # LocalVlmAgentTools / LocalCandidateScreeningTool artık router'a hiç import
-    # edilmiyor: legacy çalıştırma yardımcısı silindi, yol çağrılamaz durumda.
     monkeypatch.setattr(MockVerticalAnalysisService, "analyze", forbidden_vertical)
     monkeypatch.setattr(EventOrchestrator, "run", forbidden_orchestrator)
 

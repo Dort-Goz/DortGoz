@@ -1,9 +1,3 @@
-"""Alan bilgisi taşımayan ortak yardımcılar.
-
-Buradaki üç işlev pipeline/, services/ ve tools/ altında ayrı ayrı yazılmıştı.
-Tek kaynak, kopyaların birbirinden ayrışmasını önler.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -15,10 +9,6 @@ _CHUNK = 1024 * 1024
 
 
 def file_sha256(path: Path) -> str:
-    """Dosyanın SHA-256 özetini parça parça okuyarak hesaplar.
-
-    Model artifact'leri büyüktür: tüm dosyayı belleğe almayız.
-    """
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         while chunk := handle.read(_CHUNK):
@@ -27,14 +17,6 @@ def file_sha256(path: Path) -> str:
 
 
 def inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
-    """`$ref`/`$defs` içeren Pydantic şemasını düz şemaya çevirir.
-
-    llama.cpp'nin GBNF dönüştürücüsüne referanssız, kendi kendine yeten bir
-    şema vermek en güvenlisi — böylece şema tek kaynaktan türetilirken
-    dilbilgisi üretimi de sorunsuz olur.
-
-    Girdi sözlüğünü değiştirir: `$defs` anahtarı çıkarılır.
-    """
     defs = schema.pop("$defs", {})
 
     def walk(node: Any) -> Any:
@@ -51,7 +33,6 @@ def inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
 
 
 def format_clock(t: float) -> str:
-    """Saniyeyi operatörün gördüğü `dd:ss` biçimine çevirir."""
     return f"{int(t) // 60:02d}:{int(t) % 60:02d}"
 
 
@@ -63,7 +44,7 @@ def _demo() -> None:
 
     with tempfile.TemporaryDirectory() as tmp:
         p = Path(tmp) / "x.bin"
-        p.write_bytes(b"a" * (_CHUNK * 2 + 7))  # parçalı okuma yolunu zorlar
+        p.write_bytes(b"a" * (_CHUNK * 2 + 7))
         assert file_sha256(p) == hashlib.sha256(p.read_bytes()).hexdigest()
 
     nested = {
