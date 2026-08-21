@@ -65,12 +65,14 @@ def test_score_video_combines_semantic_and_activity(monkeypatch, tmp_path: Path)
     model = SemanticCandidateModel(art, onnx_file=tmp_path / "x.onnx",
                                    anchors_file=tmp_path / "a.npz")
     sims = [(t, 0.10 if 20 <= t < 24 else 0.03) for t in range(0, 30, 2)]
-    monkeypatch.setattr(model, "_event_sims", lambda video: [(float(t), s) for t, s in sims])
+    monkeypatch.setattr(model, "_event_sims",
+                        lambda video: [(float(t), s, [s, 1.0 - s]) for t, s in sims])
     profile = [MotionSample(t=float(t), changed=0.6 if 20 <= t < 24 else 0.05,
                             fg=0.0, mad=0.0)
                for t in range(30)]
     samples = model.score_video(profile, tmp_path / "video.mp4")
     assert all(isinstance(s, ScreeningSample) for s in samples)
+    assert all(s.embedding for s in samples)
     quiet = [s.anomaly_score for s in samples if s.timestamp < 20]
     spike = [s.anomaly_score for s in samples if 20 <= s.timestamp < 24]
     assert max(quiet) < 0.65 < min(spike)

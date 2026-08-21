@@ -111,7 +111,7 @@ class SemanticCandidateModel:
         _RUNTIME_CACHE[key] = runtime
         return runtime
 
-    def _event_sims(self, video: Path) -> list[tuple[float, float]]:
+    def _event_sims(self, video: Path) -> list[tuple[float, float, list[float]]]:
         import numpy as np
 
         session, event_anchors, _ = self._runtime()
@@ -123,7 +123,7 @@ class SemanticCandidateModel:
             stdout=subprocess.PIPE)
         assert proc.stdout is not None
         nbytes = _SIDE * _SIDE * 3
-        out: list[tuple[float, float]] = []
+        out: list[tuple[float, float, list[float]]] = []
         batch: list[bytes] = []
         base = 0
 
@@ -138,7 +138,8 @@ class SemanticCandidateModel:
             emb = session.run(None, {"pixel_values": x})[0]
             sims = emb @ event_anchors.T
             for j, s in enumerate(sims):
-                out.append(((base + j) * step, float(s.max())))
+                out.append(((base + j) * step, float(s.max()),
+                            emb[j].astype(np.float32).tolist()))
             base += len(batch)
             batch.clear()
 
@@ -166,7 +167,7 @@ class SemanticCandidateModel:
         ev_base = CausalWelford(art.ev_prior, art.sd_floor_ev, art.warmup)
         act_base = CausalWelford(art.act_prior, art.sd_floor_act, art.warmup)
         samples: list[ScreeningSample] = []
-        for i, (t, ev) in enumerate(sims):
+        for i, (t, ev, emb) in enumerate(sims):
             act = activity.get(round(t), activity.get(round(t) - 1, 0.0))
             z = (art.ev_weight * ev_base.push(ev)
                  + (1 - art.ev_weight) * act_base.push(act)) / art.z_scale
@@ -178,6 +179,7 @@ class SemanticCandidateModel:
                 image_quality=1.0,
                 source_model=self.model_id,
                 feature_ref=f"sem:{i}",
+                embedding=emb,
             ))
         return samples
 

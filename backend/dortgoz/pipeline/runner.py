@@ -27,7 +27,7 @@ from ..events import (
     WindowReport,
     WindowSignals,
 )
-from ..services import escalation_policy
+from ..services import escalation_policy, exemplar_bank
 from ..services.runtime_metrics import CanonicalRunMetrics
 from ..services.runtime_policy import decide_runtime_policy
 from ..services.runtime_postprocess import RuntimeEvidenceScope, postprocess_finalized_report
@@ -53,6 +53,16 @@ async def save_thumbnail(video: Path, t: float, run_id: str, name: str) -> str |
     out.mkdir(parents=True, exist_ok=True)
     (out / f"{name}.jpg").write_bytes(jpeg)
     return f"/media/{THUMB_DIR}/{run_id}/{name}.jpg"
+
+
+def peak_embedding(start: float, end: float,
+                   screen_samples: list) -> list[float] | None:
+    peak = None
+    for sample in screen_samples:
+        if start <= sample.timestamp < end:
+            if peak is None or sample.anomaly_score > peak.anomaly_score:
+                peak = sample
+    return getattr(peak, "embedding", None) if peak else None
 
 
 def _sample_this_window() -> bool:
@@ -746,6 +756,10 @@ async def run_video(
                                                  f"{int(start)}")
                     kanit = await save_evidence_clip(path, start, end, run_id,
                                                      f"{int(start)}")
+                    exemplar_bank.append(
+                        settings.runs_dir,
+                        exemplar_bank.key_for(run_id, f"{int(start)}"),
+                        rec.feed, peak_embedding(start, end, screen_samples))
                 if ledger_report is None:
                     ledger.require_review(policy.review_reason)
                     updates = []
@@ -769,6 +783,10 @@ async def run_video(
                         evidence=await save_evidence_clip(path, start, end, run_id,
                                                          f"ornek_{int(start)}"),
                     ))
+                    exemplar_bank.append(
+                        settings.runs_dir,
+                        exemplar_bank.key_for(run_id, f"ornek_{int(start)}"),
+                        rec.feed, peak_embedding(start, end, screen_samples))
                 for update in updates:
                     update = update.model_copy(update={"signals": sig})
                     await rec.emit(update)
