@@ -1,42 +1,73 @@
 from __future__ import annotations
 
+import pytest
+
 from dortgoz.pipeline import onnx_ep
 
+CPU = "CPUExecutionProvider"
+CUDA = "CUDAExecutionProvider"
 
-def test_default_is_cpu_only(monkeypatch):
+
+@pytest.fixture(autouse=True)
+def _reset(monkeypatch):
+    monkeypatch.setattr(onnx_ep.settings, "onnx_device", "cpu")
     monkeypatch.setattr(onnx_ep.settings, "onnx_providers", "")
-
-    assert onnx_ep.providers() == ["CPUExecutionProvider"]
-
-
-def test_requested_provider_is_used_when_available(monkeypatch):
-    monkeypatch.setattr(onnx_ep.settings, "onnx_providers",
-                        "CUDAExecutionProvider")
-    monkeypatch.setattr(
-        "onnxruntime.get_available_providers",
-        lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"])
-
-    assert onnx_ep.providers() == ["CUDAExecutionProvider",
-                                   "CPUExecutionProvider"]
-
-
-def test_unavailable_provider_falls_back_to_cpu_instead_of_crashing(monkeypatch):
-    """Masaustu AMD: CUDA istense bile calismali."""
-    monkeypatch.setattr(onnx_ep.settings, "onnx_providers",
-                        "CUDAExecutionProvider")
-    monkeypatch.setattr("onnxruntime.get_available_providers",
-                        lambda: ["CPUExecutionProvider"])
+    monkeypatch.setattr(onnx_ep, "_preloaded", True)  # gercek dlopen yapma
     onnx_ep._warned.clear()
 
-    assert onnx_ep.providers() == ["CPUExecutionProvider"]
+
+def _available(monkeypatch, providers: list[str]) -> None:
+    monkeypatch.setattr("onnxruntime.get_available_providers", lambda: providers)
 
 
-def test_cpu_is_always_appended_as_last_resort(monkeypatch):
+def test_default_is_cpu(monkeypatch):
+    assert onnx_ep.providers() == [CPU]
+
+
+@pytest.mark.parametrize("value", ["gpu", "GPU", "cuda", " gpu "])
+def test_device_gpu_selects_cuda(monkeypatch, value):
+    monkeypatch.setattr(onnx_ep.settings, "onnx_device", value)
+    _available(monkeypatch, [CUDA, CPU])
+
+    assert onnx_ep.providers() == [CUDA, CPU]
+
+
+def test_gpu_falls_back_to_cpu_when_cuda_missing(monkeypatch):
+    """Masaustu AMD: gpu istense bile calismali."""
+    monkeypatch.setattr(onnx_ep.settings, "onnx_device", "gpu")
+    _available(monkeypatch, [CPU])
+
+    assert onnx_ep.providers() == [CPU]
+
+
+def test_auto_uses_gpu_when_present(monkeypatch):
+    monkeypatch.setattr(onnx_ep.settings, "onnx_device", "auto")
+    _available(monkeypatch, [CUDA, CPU])
+
+    assert onnx_ep.providers() == [CUDA, CPU]
+
+
+def test_auto_is_silent_when_gpu_absent(monkeypatch, caplog):
+    monkeypatch.setattr(onnx_ep.settings, "onnx_device", "auto")
+    _available(monkeypatch, [CPU])
+
+    with caplog.at_level("WARNING"):
+        assert onnx_ep.providers() == [CPU]
+
+    assert not [r for r in caplog.records if r.levelname == "WARNING"]
+
+
+def test_explicit_providers_override_device(monkeypatch):
+    monkeypatch.setattr(onnx_ep.settings, "onnx_device", "cpu")
     monkeypatch.setattr(onnx_ep.settings, "onnx_providers",
-                        "TensorrtExecutionProvider,CUDAExecutionProvider")
-    monkeypatch.setattr(
-        "onnxruntime.get_available_providers",
-        lambda: ["TensorrtExecutionProvider", "CUDAExecutionProvider",
-                 "CPUExecutionProvider"])
+                        "TensorrtExecutionProvider")
+    _available(monkeypatch, ["TensorrtExecutionProvider", CPU])
 
-    assert onnx_ep.providers()[-1] == "CPUExecutionProvider"
+    assert onnx_ep.providers() == ["TensorrtExecutionProvider", CPU]
+
+
+def test_cpu_is_always_the_last_resort(monkeypatch):
+    monkeypatch.setattr(onnx_ep.settings, "onnx_providers", f"{CUDA}")
+    _available(monkeypatch, [CUDA, CPU])
+
+    assert onnx_ep.providers()[-1] == CPU
