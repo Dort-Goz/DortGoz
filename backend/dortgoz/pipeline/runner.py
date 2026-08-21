@@ -28,6 +28,8 @@ from .candidate_model import MotionBaselineModel
 from .interpret import SYSTEM_TR, SYSTEM_TR_IKINCI, TASK_TR, interpret_window
 
 THUMB_DIR = "_thumbs"
+EVIDENCE_DIR = "_evidence"
+EVIDENCE_PAD = 4.0
 LOGGER = logging.getLogger(__name__)
 
 
@@ -40,6 +42,26 @@ async def save_thumbnail(video: Path, t: float, run_id: str, name: str) -> str |
     out.mkdir(parents=True, exist_ok=True)
     (out / f"{name}.jpg").write_bytes(jpeg)
     return f"/media/{THUMB_DIR}/{run_id}/{name}.jpg"
+
+
+async def save_evidence_clip(video: Path, start: float, end: float,
+                            run_id: str, name: str) -> str | None:
+    if end <= start:
+        return None
+    out = settings.media_dir / EVIDENCE_DIR / run_id
+    out.mkdir(parents=True, exist_ok=True)
+    clip = out / f"{name}.mp4"
+    begin = max(0.0, start - EVIDENCE_PAD)
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg", "-v", "error", "-ss", f"{begin:.2f}", "-to", f"{end + EVIDENCE_PAD:.2f}",
+        "-i", str(video), "-c", "copy", "-y", str(clip),
+        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
+    )
+    _, err = await proc.communicate()
+    if proc.returncode != 0 or not clip.is_file():
+        LOGGER.warning("kanıt klibi kesilemedi (%s): %s", run_id, err.decode()[-200:])
+        return None
+    return f"/media/{EVIDENCE_DIR}/{run_id}/{name}.mp4"
 
 
 def resolve_media(video: str) -> Path:
@@ -692,10 +714,13 @@ async def run_video(
                 serious = ledger.serious(ledger_report) if ledger_report is not None else []
                 was_open = ledger.open_incident
                 thumb = None
+                kanit = None
                 if serious and was_open is None:
                     peak = max(serious, key=lambda e: RISK_ORDER.index(e.severity_hint))
                     thumb = await save_thumbnail(path, peak.t, run_id,
                                                  f"{int(start)}")
+                    kanit = await save_evidence_clip(path, start, end, run_id,
+                                                     f"{int(start)}")
                 if ledger_report is None:
                     ledger.require_review(policy.review_reason)
                     updates = []
@@ -705,6 +730,7 @@ async def run_video(
                         ledger_report,
                         thumb,
                         uncertain=" · ".join(review_reasons),
+                        evidence=kanit,
                     )
                 sig = window_signals(start, end, screen_samples, profile, call)
                 for update in updates:

@@ -75,6 +75,7 @@ class TriageItem:
     risk: str
     phase: str
     thumbnail: str | None = None
+    evidence: str | None = None
     needs_review: bool = False
     review_reason: str = ""
     run_id: str = ""
@@ -142,6 +143,7 @@ class TriageStore:
             item.title = p.title
             item.model_category = p.anomaly_type
             item.thumbnail = p.thumbnail or item.thumbnail
+            item.evidence = p.evidence or item.evidence
             item.needs_review = p.needs_review
             item.review_reason = p.review_reason
             if p.olay_baslangic is not None:
@@ -162,6 +164,7 @@ class TriageStore:
                 model_category=p.anomaly_type, risk=p.risk, phase=p.phase,
                 run_id=run_id, video=video, signals=self._signal_dict(p),
                 model_start=p.olay_baslangic, model_end=p.olay_bitis,
+                evidence=p.evidence,
                 verdict="sorun_degil", decided_wall=time.time(),
                 note=f"otomatik: operatör kuralı ({self._dismissals.get(pair, 0)}× sorun değil)"))
             return
@@ -178,7 +181,8 @@ class TriageStore:
             key=key, feed=event.feed, incident_id=p.incident_id,
             t=p.t, wall=time.time(), title=p.title,
             model_category=p.anomaly_type, risk=p.risk, phase=p.phase,
-            thumbnail=p.thumbnail, needs_review=p.needs_review,
+            thumbnail=p.thumbnail, evidence=p.evidence,
+            needs_review=p.needs_review,
             review_reason=p.review_reason,
             run_id=run_id, video=video, signals=self._signal_dict(p),
             model_start=p.olay_baslangic, model_end=p.olay_bitis)

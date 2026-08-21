@@ -25,6 +25,7 @@ class Incident:
     risk: Risk = "dusuk"
     notes: list[str] = field(default_factory=list)
     thumbnail: str | None = None
+    evidence: str | None = None
     needs_review: bool = False
     review_reason: str = ""
     olay_baslangic: float | None = None
@@ -139,7 +140,7 @@ class Ledger:
 
 
     def ingest(self, report: WindowReport, thumbnail: str | None = None,
-               uncertain: str = "") -> list[IncidentUpdate]:
+               uncertain: str = "", evidence: str | None = None) -> list[IncidentUpdate]:
         events = self.serious(report)
         if not events:
             if not self._open_id:
@@ -153,7 +154,7 @@ class Ledger:
         peak = max(events, key=lambda e: _rank(e.severity_hint))
         current = self.open_incident
         if current is None:
-            upd = self._open(peak, events, report, thumbnail)
+            upd = self._open(peak, events, report, thumbnail, evidence)
         else:
             upd = self._extend(current, peak, events, report)
         inc = self.incidents[upd.incident_id]
@@ -181,7 +182,8 @@ class Ledger:
 
 
     def _open(self, peak: WindowEvent, events: list[WindowEvent],
-              report: WindowReport, thumbnail: str | None) -> IncidentUpdate:
+              report: WindowReport, thumbnail: str | None,
+              evidence: str | None = None) -> IncidentUpdate:
         inc = Incident(
             incident_id=uuid.uuid4().hex[:8],
             title=_title(peak),
@@ -192,6 +194,7 @@ class Ledger:
             risk=peak.severity_hint,
             notes=[e.desc for e in events],
             thumbnail=thumbnail,
+            evidence=evidence,
         )
         inc.not_evidence(events)
         self.incidents[inc.incident_id] = inc
@@ -266,6 +269,7 @@ def _update(inc: Incident, t: float, detail: str) -> IncidentUpdate:
         risk=inc.risk,
         detail=detail,
         thumbnail=inc.thumbnail,
+        evidence=inc.evidence,
         needs_review=inc.needs_review,
         review_reason=inc.review_reason,
         olay_baslangic=inc.olay_baslangic,

@@ -11,6 +11,7 @@ interface TriageItem {
   risk: string;
   phase: string;
   thumbnail: string | null;
+  evidence: string | null;
   needs_review: boolean;
   review_reason: string;
   verdict: string;
@@ -113,9 +114,17 @@ function PendingCard({ item, categories, feedLabel, onDecide }: {
   return (
     <div className="rounded border border-zinc-700 bg-zinc-900/70 p-2 space-y-1.5 text-xs">
       <div className="flex items-center gap-2">
-        {item.thumbnail && (
+        {item.evidence ? (
+          <video
+            src={item.evidence}
+            controls
+            preload="metadata"
+            className="w-40 rounded bg-black"
+            title="kanıt klibi — olay penceresi"
+          />
+        ) : item.thumbnail ? (
           <img src={item.thumbnail} alt="" className="w-14 h-10 object-cover rounded" />
-        )}
+        ) : null}
         <div className="min-w-0">
           <div className="font-medium truncate">{item.title}</div>
           <div className="text-zinc-400">

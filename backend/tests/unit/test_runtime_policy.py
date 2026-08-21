@@ -426,6 +426,7 @@ def test_incident_update_wire_contract_is_unchanged() -> None:
         "risk",
         "detail",
         "thumbnail",
+        "evidence",
         "boxes",
         "needs_review",
         "review_reason",

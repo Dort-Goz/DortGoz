@@ -25,11 +25,12 @@ def signals(durum_p: float = 0.42, anomaly: float = 0.7) -> WindowSignals:
     )
 
 
-def incident(iid: str = "INC-1", risk: str = "orta", sig: WindowSignals | None = None) -> Event:
+def incident(iid: str = "INC-1", risk: str = "orta", sig: WindowSignals | None = None,
+             evidence: str | None = None) -> Event:
     return Event.wrap(
         IncidentUpdate(
             incident_id=iid, t=12.0, phase="basladi", title="test olayı",
-            anomaly_type="kavga", risk=risk, signals=sig,
+            anomaly_type="kavga", risk=risk, signals=sig, evidence=evidence,
         ),
         feed="kamera1",
     )
@@ -67,6 +68,17 @@ def test_signals_reach_the_ledger_line(tmp_path):
     assert line["signals"]["anomaly_score"] == pytest.approx(0.7)
     assert line["signals"]["changed"] == pytest.approx(0.31)
     assert line["signals"]["screening_model"] == "siglip2-semantic-v1"
+
+
+def test_evidence_clip_url_reaches_the_queue_and_the_ledger(tmp_path):
+    url = "/media/_evidence/canli-kamera1-0001/30.mp4"
+    triage.store.observe(run_started())
+    triage.store.observe(incident(evidence=url))
+
+    assert triage.store.snapshot()["pending"][0]["evidence"] == url
+
+    triage.store.decide("kamera1:INC-1", "sorun_degil")
+    assert ledger_lines(tmp_path)[-1]["evidence"] == url
 
 
 def test_calibration_pairs_are_reconstructable(tmp_path):
