@@ -209,6 +209,7 @@ def test_frontend_ws_mirror_contains_evidence_contract():
     ).read_text(encoding="utf-8")
     assert "interface EventEvidenceRef" in source
     assert "evidence?: EventEvidenceRef[]" in source
+    assert source.count("evidence?: EventEvidenceRef[]") == 2
     assert "event_type?: CanonicalEventType | null" in source
 
 

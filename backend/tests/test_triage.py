@@ -5,7 +5,7 @@ import json
 import pytest
 
 from dortgoz.config import settings
-from dortgoz.events import Event, IncidentUpdate
+from dortgoz.events import Event, EventEvidenceRef, IncidentUpdate
 from dortgoz.services import triage
 
 
@@ -39,6 +39,24 @@ def test_lifecycle_update_refreshes_not_duplicates(store):
     assert len(snap["pending"]) == 1
     assert snap["pending"][0]["risk"] == "kritik"
     assert snap["pending"][0]["phase"] == "sonuclandi"
+
+
+def test_grounded_evidence_reaches_review_card(store):
+    event = _incident()
+    event.payload.evidence = [EventEvidenceRef(
+        frame_id="f_004",
+        timestamp=41.5,
+        claim="İki kişi arasında kuvvetli fiziksel temas görülüyor.",
+    )]
+
+    store.observe(event)
+
+    evidence = store.snapshot()["pending"][0]["evidence"]
+    assert evidence == [{
+        "frame_id": "f_004",
+        "timestamp": 41.5,
+        "claim": "İki kişi arasında kuvvetli fiziksel temas görülüyor.",
+    }]
 
 
 def test_non_incident_events_ignored(store):

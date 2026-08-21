@@ -4,7 +4,14 @@ import re
 import uuid
 from dataclasses import dataclass, field
 
-from ..events import AnomalyType, IncidentUpdate, Risk, WindowEvent, WindowReport
+from ..events import (
+    AnomalyType,
+    EventEvidenceRef,
+    IncidentUpdate,
+    Risk,
+    WindowEvent,
+    WindowReport,
+)
 
 RISK_ORDER: list[Risk] = ["dusuk", "orta", "yuksek", "kritik"]
 ALARM_FLOOR = 1
@@ -30,13 +37,23 @@ class Incident:
     olay_baslangic: float | None = None
     olay_bitis: float | None = None
     evidence_ts: list[float] = field(default_factory=list)
+    evidence: list[EventEvidenceRef] = field(default_factory=list)
 
     def not_evidence(self, events: list) -> None:
+        known = {
+            (ref.frame_id, round(ref.timestamp, 3), ref.claim)
+            for ref in self.evidence
+        }
         for e in events:
             for ref in getattr(e, "evidence", []) or []:
                 ts = getattr(ref, "timestamp", None)
                 if isinstance(ts, int | float):
                     self.evidence_ts.append(float(ts))
+                    key = (ref.frame_id, round(float(ts), 3), ref.claim)
+                    if key not in known:
+                        self.evidence.append(ref.model_copy(deep=True))
+                        known.add(key)
+        self.evidence_ts = sorted(set(self.evidence_ts))
         if self.evidence_ts:
             self.olay_baslangic = max(0.0, min(self.evidence_ts) - 1.0)
             self.olay_bitis = max(self.evidence_ts) + 1.0
@@ -266,6 +283,7 @@ def _update(inc: Incident, t: float, detail: str) -> IncidentUpdate:
         risk=inc.risk,
         detail=detail,
         thumbnail=inc.thumbnail,
+        evidence=[ref.model_copy(deep=True) for ref in inc.evidence],
         needs_review=inc.needs_review,
         review_reason=inc.review_reason,
         olay_baslangic=inc.olay_baslangic,

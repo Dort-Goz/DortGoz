@@ -82,6 +82,7 @@ export interface IncidentUpdate {
   risk: Risk;
   detail: string;
   thumbnail?: string | null;
+  evidence?: EventEvidenceRef[];
   boxes: BoundingBox[];
   needs_review?: boolean;
   review_reason?: string;

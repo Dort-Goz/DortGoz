@@ -75,6 +75,7 @@ class TriageItem:
     risk: str
     phase: str
     thumbnail: str | None = None
+    evidence: list[dict[str, Any]] = field(default_factory=list)
     needs_review: bool = False
     review_reason: str = ""
     run_id: str = ""
@@ -142,6 +143,7 @@ class TriageStore:
             item.title = p.title
             item.model_category = p.anomaly_type
             item.thumbnail = p.thumbnail or item.thumbnail
+            self._merge_evidence(item, p)
             item.needs_review = p.needs_review
             item.review_reason = p.review_reason
             if p.olay_baslangic is not None:
@@ -161,6 +163,7 @@ class TriageStore:
                 t=p.t, wall=time.time(), title=p.title,
                 model_category=p.anomaly_type, risk=p.risk, phase=p.phase,
                 run_id=run_id, video=video, signals=self._signal_dict(p),
+                evidence=self._evidence_dicts(p),
                 model_start=p.olay_baslangic, model_end=p.olay_bitis,
                 verdict="sorun_degil", decided_wall=time.time(),
                 note=f"otomatik: operatör kuralı ({self._dismissals.get(pair, 0)}× sorun değil)"))
@@ -173,6 +176,7 @@ class TriageStore:
                     item.risk = p.risk
                 item.thumbnail = p.thumbnail or item.thumbnail
                 self._merge_signals(item, p)
+                self._merge_evidence(item, p)
                 return
         self._pending[key] = TriageItem(
             key=key, feed=event.feed, incident_id=p.incident_id,
@@ -180,6 +184,7 @@ class TriageStore:
             model_category=p.anomaly_type, risk=p.risk, phase=p.phase,
             thumbnail=p.thumbnail, needs_review=p.needs_review,
             review_reason=p.review_reason,
+            evidence=self._evidence_dicts(p),
             run_id=run_id, video=video, signals=self._signal_dict(p),
             model_start=p.olay_baslangic, model_end=p.olay_bitis)
         while len(self._pending) > MAX_PENDING:
@@ -189,6 +194,28 @@ class TriageStore:
             dropped.note = "kuyruk taştı: operatör karar veremeden düştü"
             self.expired_count += 1
             self._stamp_and_log(dropped)
+
+    @staticmethod
+    def _evidence_dicts(payload: Any) -> list[dict[str, Any]]:
+        return [item.model_dump(mode="json") for item in getattr(payload, "evidence", [])]
+
+    def _merge_evidence(self, item: TriageItem, payload: Any) -> None:
+        known = {
+            (entry.get("frame_id"), entry.get("timestamp"), entry.get("claim"))
+            for entry in item.evidence
+        }
+        for entry in self._evidence_dicts(payload):
+            key = (entry.get("frame_id"), entry.get("timestamp"), entry.get("claim"))
+            if key not in known:
+                item.evidence.append(entry)
+                known.add(key)
+        item.evidence.sort(key=lambda entry: float(entry.get("timestamp", 0.0)))
+
+    def get_item(self, key: str) -> TriageItem | None:
+        item = self._pending.get(key)
+        if item is not None:
+            return item
+        return next((entry for entry in reversed(self._resolved) if entry.key == key), None)
 
 
     def decide(self, key: str, verdict: str, category: str = "",

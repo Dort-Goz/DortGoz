@@ -415,7 +415,7 @@ def test_runtime_policy_does_not_fabricate_confidence_or_event_bounds() -> None:
     assert '"end_time"' not in payload
 
 
-def test_incident_update_wire_contract_is_unchanged() -> None:
+def test_incident_update_wire_contract_carries_only_grounded_evidence() -> None:
     assert set(IncidentUpdate.model_fields) == {
         "type",
         "incident_id",
@@ -426,6 +426,7 @@ def test_incident_update_wire_contract_is_unchanged() -> None:
         "risk",
         "detail",
         "thumbnail",
+        "evidence",
         "boxes",
         "needs_review",
         "review_reason",

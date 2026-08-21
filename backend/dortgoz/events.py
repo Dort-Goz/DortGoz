@@ -112,6 +112,7 @@ class IncidentUpdate(BaseModel):
     risk: Risk
     detail: str = ""
     thumbnail: str | None = None
+    evidence: list[EventEvidenceRef] = Field(default_factory=list)
     boxes: list[BoundingBox] = []
     needs_review: bool = False
     review_reason: str = ""

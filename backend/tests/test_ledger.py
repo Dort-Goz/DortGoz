@@ -1,5 +1,5 @@
 from dortgoz.agent.memory import Ledger
-from dortgoz.events import WindowEvent, WindowReport
+from dortgoz.events import EventEvidenceRef, WindowEvent, WindowReport
 
 
 def report(start: float, *events: tuple[float, str, str], summary: str = "özet") -> WindowReport:
@@ -59,6 +59,34 @@ def test_finalize_closes_incident_open_at_video_end():
     closing = led.finalize()
     assert [u.phase for u in closing] == ["sonuclandi"]
     assert led.finalize() == []
+
+
+def test_incident_update_carries_deduplicated_grounded_evidence():
+    led = Ledger()
+    evidence = EventEvidenceRef(
+        frame_id="f_001",
+        timestamp=8.5,
+        claim="Bir kişi diğer kişiyi kuvvetle itiyor.",
+    )
+    first = WindowReport(
+        window_start=0,
+        window_end=30,
+        anomaly_type="kavga",
+        summary="Fiziksel temas var.",
+        events=[WindowEvent(
+            t=8.5,
+            desc="İtişme görülüyor.",
+            severity_hint="orta",
+            evidence=[evidence],
+        )],
+    )
+
+    opened = led.ingest(first)[0]
+    developed = led.ingest(first.model_copy(update={"window_start": 30, "window_end": 60}))[0]
+
+    assert opened.evidence == [evidence]
+    assert developed.evidence == [evidence]
+    assert led.open_incident.evidence_ts == [8.5]
 
 
 def test_empty_report_without_open_incident_is_noop():

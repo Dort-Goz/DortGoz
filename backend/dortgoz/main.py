@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import time
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -269,7 +270,48 @@ manager.observers.append(triage.store.observe)
 
 @app.get("/api/triage")
 async def triage_snapshot() -> dict:
-    return triage.store.snapshot()
+    snapshot = triage.store.snapshot()
+    for item in snapshot["confirmed"]:
+        try:
+            item["suggested_actions"] = action_dispatcher.suggestions(
+                item["feed"], item["incident_id"]
+            )
+        except ValueError:
+            item["suggested_actions"] = []
+    return snapshot
+
+
+@app.get("/api/triage/evidence-frame")
+async def triage_evidence_frame(key: str, timestamp: float) -> Response:
+    item = triage.store.get_item(key)
+    if item is None:
+        raise HTTPException(status_code=404, detail="inceleme kaydı bulunamadı")
+    if not math.isfinite(timestamp):
+        raise HTTPException(status_code=422, detail="kanıt zamanı geçersiz")
+    matched = next(
+        (
+            evidence
+            for evidence in item.evidence
+            if abs(float(evidence.get("timestamp", -1.0)) - timestamp) <= 0.001
+        ),
+        None,
+    )
+    if matched is None:
+        raise HTTPException(status_code=404, detail="olaya bağlı kanıt karesi bulunamadı")
+    if not item.video:
+        raise HTTPException(status_code=404, detail="kanıt videosu bulunamadı")
+    from .pipeline import ingest
+    from .pipeline.runner import resolve_media
+
+    try:
+        jpeg = await ingest.grab_frame(resolve_media(item.video), timestamp, width=480)
+    except (FileNotFoundError, ValueError, ingest.FFmpegError) as exc:
+        raise HTTPException(status_code=422, detail=f"kanıt karesi üretilemedi: {exc}")
+    return Response(
+        content=jpeg,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
 
 
 @app.post("/api/triage/rule_sil")
@@ -391,6 +433,22 @@ async def list_videos() -> list[str]:
 @app.get("/api/actions")
 async def action_snapshot() -> dict:
     return action_dispatcher.snapshot(fixture_only=settings.mock)
+
+
+@app.post("/api/actions/request")
+async def request_action(body: dict) -> dict:
+    try:
+        request, created = action_dispatcher.request(
+            str(body.get("action", "")),
+            str(body.get("incident_id", "")),
+            str(body.get("feed", "")),
+            "Operatör olay inceleme merkezinden yerel taslak istedi.",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    if created:
+        await manager.broadcast(Event.wrap(request, feed=request.feed))
+    return {"created": created, "request": request.model_dump(mode="json")}
 
 
 @app.get("/api/actions/{request_id}/artifact")

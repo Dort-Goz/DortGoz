@@ -243,6 +243,26 @@ def test_review_required_incident_needs_operator_confirmation(tmp_path):
     assert request.incident_id == "inc-1"
 
 
+def test_confirmed_incident_exposes_only_eligible_local_draft_suggestions(tmp_path):
+    _, incident = incident_context(
+        risk="yuksek",
+        anomaly_type="hirsizlik",
+        needs_review=True,
+    )
+    confirm_incident(incident)
+    service = ActionDispatcher(tmp_path)
+
+    suggestions = service.suggestions("KAM-1", "inc-1")
+
+    assert {item["action"] for item in suggestions} == {
+        "emniyet_bildirimi_hazirla",
+        "guvenlik_uyarisi_hazirla",
+        "alan_guvenligi_iste",
+    }
+    assert all(item["status"] == "available" for item in suggestions)
+    assert all(item["request_id"] is None for item in suggestions)
+
+
 def test_wrong_feed_and_unknown_request_are_rejected(tmp_path):
     incident_context()
     service = ActionDispatcher(tmp_path)

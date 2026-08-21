@@ -63,6 +63,7 @@ export type Action =
   | { kind: "hydrate_actions"; requests: ActuatorRequest[]; results: ActuatorResult[] }
   | { kind: "run_started"; video: string; feed: string }
   | { kind: "select_incident"; incident: IncidentUpdate }
+  | { kind: "seek"; feed: string; timestamp: number; video?: string }
   | { kind: "select_feed"; feed: string };
 
 function withFeed(state: ConsoleState, feed: string,
@@ -88,6 +89,16 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
     return withFeed(state, state.active, (f) => ({
       ...f, highlight: action.incident, seekTo: action.incident.t,
     }));
+  }
+  if (action.kind === "seek") {
+    return {
+      ...withFeed(state, action.feed, (f) => ({
+        ...f,
+        seekTo: action.timestamp,
+        video: f.video ?? action.video ?? null,
+      })),
+      active: action.feed,
+    };
   }
   if (action.kind === "run_started") {
     return {

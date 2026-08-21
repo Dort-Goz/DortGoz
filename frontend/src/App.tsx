@@ -10,6 +10,7 @@ import ExperimentPanel, { type InterpretConfig } from "./components/ExperimentPa
 import FeedStrip from "./components/FeedStrip";
 import LiveGrid from "./components/LiveGrid";
 import UploadPanel from "./components/UploadPanel";
+import TriagePanel from "./components/TriagePanel";
 import { includeUploadedVideo, startCanonicalRun } from "./lib/canonicalRun";
 import { consoleReducer, emptyFeed, initialState } from "./state";
 
@@ -375,38 +376,56 @@ export default function App() {
       )}
 
       {!liveView && (
-      <div className="flex-1 grid grid-cols-6 grid-rows-2 gap-2 min-h-0">
-        <div className="col-span-2 row-span-1 min-h-0">
-          <VideoPanel
-            highlight={feed.highlight}
-            seekTo={feed.seekTo}
-            video={feed.video}
-            feed={Object.keys(state.feeds).filter((k) => k !== "").length >= 2
-              ? state.active : null}
-          />
+        <div className="flex-1 flex gap-2 min-h-0">
+          <div className="flex-1 grid grid-cols-6 grid-rows-2 gap-2 min-h-0">
+            <div className="col-span-2 row-span-1 min-h-0">
+              <VideoPanel
+                highlight={feed.highlight}
+                seekTo={feed.seekTo}
+                video={feed.video}
+                feed={Object.keys(state.feeds).filter((k) => k !== "").length >= 2
+                  ? state.active : null}
+              />
+            </div>
+            <div className="col-span-4 min-h-0">
+              <Timeline
+                incidents={feed.incidents}
+                reports={feed.reports}
+                highlightId={feed.highlight?.incident_id}
+                onSelect={(incident) =>
+                  dispatch({ kind: "select_incident", incident })}
+              />
+            </div>
+            <div className="col-span-2 min-h-0">
+              <AgentTrace entries={feed.trace} />
+            </div>
+            <div className="col-span-2 min-h-0">
+              <ChatPanel messages={state.chat} onSend={send.chat} />
+            </div>
+            <div className="col-span-2 min-h-0">
+              <ActionLog
+                requests={state.actuatorRequests}
+                results={state.actuatorResults}
+                onRespond={send.actuator}
+              />
+            </div>
+          </div>
+          {!fixtureMode && (
+            <TriagePanel
+              title="Olay İnceleme Merkezi"
+              scopeFeed={state.active}
+              onSelectFeed={(selectedFeed) =>
+                dispatch({ kind: "select_feed", feed: selectedFeed })}
+              onSeek={(selectedFeed, timestamp, reviewVideo) =>
+                dispatch({
+                  kind: "seek",
+                  feed: selectedFeed,
+                  timestamp,
+                  video: reviewVideo,
+                })}
+            />
+          )}
         </div>
-        <div className="col-span-4 min-h-0">
-          <Timeline
-            incidents={feed.incidents}
-            reports={feed.reports}
-            highlightId={feed.highlight?.incident_id}
-            onSelect={(incident) => dispatch({ kind: "select_incident", incident })}
-          />
-        </div>
-        <div className="col-span-2 min-h-0">
-          <AgentTrace entries={feed.trace} />
-        </div>
-        <div className="col-span-2 min-h-0">
-          <ChatPanel messages={state.chat} onSend={send.chat} />
-        </div>
-        <div className="col-span-2 min-h-0">
-          <ActionLog
-            requests={state.actuatorRequests}
-            results={state.actuatorResults}
-            onRespond={send.actuator}
-          />
-        </div>
-      </div>
       )}
     </div>
   );

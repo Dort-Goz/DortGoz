@@ -249,6 +249,44 @@ class ActionDispatcher:
                 )
             return record.result.detail
 
+    def suggestions(self, feed: str, incident_id: str) -> list[dict[str, str | None]]:
+        with self._lock:
+            self._ensure_loaded()
+            ctx, incident = self._incident(feed, incident_id)
+            decision = triage.store.decision_for(ctx.feed, incident_id)
+            if decision is None or decision.verdict != "anomali":
+                return []
+            anomaly_type = decision.operator_category or incident.anomaly_type
+            if not incident.evidence_ts:
+                return []
+            suggestions: list[dict[str, str | None]] = []
+            for spec in ACTION_SPECS.values():
+                if anomaly_type not in spec.allowed_types:
+                    continue
+                if RISK_ORDER.index(incident.risk) < RISK_ORDER.index(spec.min_risk):
+                    continue
+                matching = next(
+                    (
+                        record
+                        for record in reversed(list(self._records.values()))
+                        if record.request.actuator == spec.name
+                        and record.request.run_id == ctx.run_id
+                        and record.request.incident_id == incident_id
+                    ),
+                    None,
+                )
+                suggestions.append({
+                    "action": spec.name,
+                    "label": spec.label,
+                    "status": (
+                        matching.result.status
+                        if matching is not None and matching.result is not None
+                        else "pending" if matching is not None else "available"
+                    ),
+                    "request_id": matching.request.request_id if matching is not None else None,
+                })
+            return suggestions
+
     async def create_report(self, feed: str, incident_id: str) -> tuple[Path, str]:
         ctx, incident = self._incident(feed, incident_id)
         decision = triage.store.decision_for(ctx.feed, incident_id)
