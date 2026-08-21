@@ -5,7 +5,8 @@ __pycache__/
 .pytest_cache/
 .pytest-tmp*/
 .pytest-all/
-/.tmp/
+.tmp/
+tmp/
 .ruff_cache/
 
 # Node
