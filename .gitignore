@@ -24,7 +24,7 @@ models/**/*.gguf
 models/**/*.safetensors
 models/**/*.bin
 *.jsonl
-!backend/dortgoz/mock/sample_events.jsonl
+!backend/dortgoz/fixtures/ui_replay_events.jsonl
 !bench/results/**/*.jsonl
 
 # Local

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { Event, Payload } from "./types/events";
+import type { ActuatorRequest, ActuatorResult, Event, Payload } from "./types/events";
 import { DortgozSocket } from "./lib/ws";
 import VideoPanel from "./components/VideoPanel";
 import Timeline from "./components/Timeline";
@@ -32,6 +32,7 @@ export default function App() {
   const [importNote, setImportNote] = useState("");
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [liveView, setLiveView] = useState(false);
+  const [fixtureMode, setFixtureMode] = useState(false);
 
   useEffect(() => {
     const socket = new DortgozSocket((e: Event) => dispatch({ kind: "event", event: e }));
@@ -52,6 +53,28 @@ export default function App() {
         setSelected((s) => s || list[0] || "");
       })
       .catch(() => setVideos([]));
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/actions")
+      .then((r) => r.json())
+      .then((body: { requests: ActuatorRequest[]; results: ActuatorResult[] }) => {
+        dispatch({
+          kind: "hydrate_actions",
+          requests: body.requests ?? [],
+          results: body.results ?? [],
+        });
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    fetch("/health")
+      .then((r) => r.json())
+      .then((body: { analysis_mode?: string }) => {
+        setFixtureMode(body.analysis_mode === "ui_fixture_replay");
+      })
+      .catch(() => setFixtureMode(false));
   }, []);
 
   useEffect(() => {
@@ -81,7 +104,12 @@ export default function App() {
   const send = useMemo(() => ({
     chat: (text: string) => socketRef.current?.send({ kind: "chat", text }),
     actuator: (request_id: string, approved: boolean) =>
-      socketRef.current?.send({ kind: "actuator_response", request_id, approved }),
+      socketRef.current?.send({
+        kind: "actuator_response",
+        request_id,
+        approved,
+        operator: localStorage.getItem("dortgoz.operator") ?? "",
+      }),
   }), []);
 
   const feed = state.feeds[state.active] ?? emptyFeed;
@@ -147,6 +175,11 @@ export default function App() {
 
   return (
     <div className="h-screen flex flex-col gap-2 p-2">
+      {fixtureMode && (
+        <div className="rounded border border-amber-700 bg-amber-950/50 px-3 py-1.5 text-center text-xs font-bold text-amber-200">
+          ARAYÜZ TEST AKIŞI · VİDEO ANALİZİ ÇALIŞTIRILMADI
+        </div>
+      )}
       <header className="flex items-center flex-wrap gap-x-3 gap-y-1.5 px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-900/60 shrink-0">
         <span className="text-lg font-bold tracking-tight">
           DÖRTGÖZ <span className="text-zinc-500 font-normal text-sm">operatör konsolu</span>
@@ -371,6 +404,7 @@ export default function App() {
             requests={state.actuatorRequests}
             results={state.actuatorResults}
             onRespond={send.actuator}
+            readOnly={fixtureMode}
           />
         </div>
       </div>

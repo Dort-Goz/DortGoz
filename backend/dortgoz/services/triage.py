@@ -263,7 +263,9 @@ class TriageStore:
             item.run_meta = _run_meta(item.run_id)
         try:
             settings.runs_dir.mkdir(parents=True, exist_ok=True)
-            with (settings.runs_dir / "nobet_defteri.jsonl").open("a") as fh:
+            with (settings.runs_dir / "nobet_defteri.jsonl").open(
+                "a", encoding="utf-8", newline="\n"
+            ) as fh:
                 fh.write(json.dumps(asdict(item), ensure_ascii=False) + "\n")
         except OSError:
             pass
@@ -280,6 +282,10 @@ class TriageStore:
         return ("\n\n## Bu kameraya özgü OLAĞAN durumlar (operatör geri bildirimi)\n"
                 + "".join(f"- {p} bu kamerada olağandır; tek başına alarm üretme.\n"
                           for p in parts))
+
+    def decision_for(self, feed: str, incident_id: str) -> TriageItem | None:
+        key = f"{feed}:{incident_id}"
+        return next((item for item in reversed(self._resolved) if item.key == key), None)
 
 
     def snapshot(self) -> dict:

@@ -16,5 +16,5 @@ bengisu
 *.db
 *.sqlite3
 *.jsonl
-!backend/dortgoz/mock/sample_events.jsonl
+!backend/dortgoz/fixtures/ui_replay_events.jsonl
 !bench/results/*.jsonl

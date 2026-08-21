@@ -57,8 +57,13 @@ async def test_heal_unloads_and_drops_pages(guard, tmp_path, monkeypatch):
 
     dropped = []
     monkeypatch.setattr(wg.httpx, "AsyncClient", FakeClient)
-    monkeypatch.setattr(wg.os, "posix_fadvise",
-                        lambda fd, off, ln, advice: dropped.append(advice))
+    monkeypatch.setattr(wg.os, "POSIX_FADV_DONTNEED", 4, raising=False)
+    monkeypatch.setattr(
+        wg.os,
+        "posix_fadvise",
+        lambda fd, off, ln, advice: dropped.append(advice),
+        raising=False,
+    )
 
     guard.record("或")
     guard.record("用")

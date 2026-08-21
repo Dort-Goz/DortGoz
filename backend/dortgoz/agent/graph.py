@@ -19,8 +19,10 @@ SYSTEM_TR = (
     "`videoya_git` + `olayi_vurgula` ile operatöre GÖSTER; defterde olmayan "
     "ayrıntı sorulursa uydurmak yerine `pencere_sorgula` ile ham raporu getir; "
     "rapor yetersizse `yeniden_incele` ile kaydı derinlemesine yeniden oku; "
-    "kanıt istenirse `kanit_klibi_olustur`. Aksiyon gerekiyorsa "
-    "`aktuator_calistir` öner — kritik olanlar operatör onayına düşer. "
+    "kanıt istenirse `kanit_klibi_olustur`; rapor istenirse "
+    "`olay_raporu_olustur`. Dış kurum veya saha aksiyonu gerekiyorsa yalnız uygun "
+    "hazırlama aracını öner. Bu araçlar operatör onayı olmadan çıktı üretmez ve "
+    "hiçbir dış kuruma gönderim ya da fiziksel işlem yapmaz. "
     "Araçları gerçekten katkı sağlayacaklarında kullan; her yanıt araç "
     "gerektirmez."
 )

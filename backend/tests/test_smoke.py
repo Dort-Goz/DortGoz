@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from dortgoz.events import Event
 from dortgoz.main import app
 
-MOCK = Path(__file__).parents[1] / "dortgoz" / "mock" / "sample_events.jsonl"
+UI_REPLAY = Path(__file__).parents[1] / "dortgoz" / "fixtures" / "ui_replay_events.jsonl"
 
 
 def test_health():
@@ -27,13 +27,19 @@ def test_readiness_separates_local_components():
     assert body["components"]["model"]["mode"] == "local_vlm"
 
 
-def test_mock_events_validate_against_contract():
+def test_ui_replay_events_validate_against_contract():
     lines = [
         line
-        for line in MOCK.read_text(encoding="utf-8").splitlines()
+        for line in UI_REPLAY.read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.startswith("#")
     ]
     assert len(lines) >= 10
+    joined = "\n".join(lines)
+    assert "forklift" not in joined.casefold()
+    assert "RTMPose" not in joined
+    assert "MiniCPM" not in joined
+    assert "VİDEO ANALİZİ ÇALIŞTIRILMADI" in joined
+    assert '"delivered":false' in joined
     for line in lines:
         raw = json.loads(line)
         raw.pop("delay", None)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -24,8 +25,9 @@ from .errors import (
     RepositoryError,
     RepositoryNotFoundError,
 )
-from .events import ActuatorResult, ChatMessage, Event, OperatorMessage, RunStatus
+from .events import ChatMessage, Event, OperatorMessage, RunStatus
 from .infrastructure import vlm_manifest
+from .services.action_dispatcher import dispatcher as action_dispatcher
 from .services.analysis_job import (
     AnalysisJobExecutionDisabled,
     AnalysisJobStartError,
@@ -49,7 +51,20 @@ for _error_type in (
     app.add_exception_handler(_error_type, domain_exception_handler)
 app.add_exception_handler(Exception, domain_exception_handler)
 
-MOCK_EVENTS = Path(__file__).parent / "mock" / "sample_events.jsonl"
+UI_REPLAY_EVENTS = Path(__file__).parent / "fixtures" / "ui_replay_events.jsonl"
+_ui_replay_task: asyncio.Task[None] | None = None
+LOGGER = logging.getLogger(__name__)
+
+
+def _observe_ui_replay(task: asyncio.Task[None]) -> None:
+    global _ui_replay_task
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        _ui_replay_task = None
+    except Exception:
+        LOGGER.exception("UI replay akışı başarısız oldu")
+        _ui_replay_task = None
 
 analysis_jobs = CanonicalAnalysisJobService(
     manager,
@@ -62,7 +77,12 @@ app.state.analysis_jobs = analysis_jobs
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "mock": settings.mock}
+    return {
+        "status": "ok",
+        "mock": settings.mock,
+        "analysis_mode": "ui_fixture_replay" if settings.mock else "real_local_analysis",
+        "external_delivery": False,
+    }
 
 
 @app.get("/ready")
@@ -84,7 +104,11 @@ async def readiness() -> JSONResponse:
         "path": str(video_store_path) if video_store_path is not None else None,
     }
     if settings.mock:
-        model = {"ready": True, "mode": "mock", "endpoint_checked": False}
+        model = {
+            "ready": True,
+            "mode": "ui_fixture_replay",
+            "endpoint_checked": False,
+        }
     else:
         model = vlm_manifest.readiness(settings.vlm_manifest_path)
     components = {
@@ -208,7 +232,10 @@ async def triage_revise(body: dict) -> dict:
 @app.post("/api/live/start")
 async def live_start(body: dict | None = None) -> list[dict]:
     if settings.mock:
-        raise HTTPException(status_code=409, detail="mock kipte canlı akış çekilmez")
+        raise HTTPException(
+            status_code=409,
+            detail="arayüz test akışı açıkken canlı akış çekilmez",
+        )
     try:
         statuses = await live_cctv.start(mode=(body or {}).get("mode", ""))
     except (RuntimeError, FileNotFoundError, ValueError) as exc:
@@ -276,12 +303,30 @@ async def list_videos() -> list[str]:
     )
 
 
+@app.get("/api/actions")
+async def action_snapshot() -> dict:
+    return action_dispatcher.snapshot()
+
+
+@app.get("/api/actions/{request_id}/artifact")
+async def action_artifact(request_id: str) -> FileResponse:
+    try:
+        path = action_dispatcher.artifact(request_id)
+    except (KeyError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return FileResponse(path, filename=path.name, media_type="text/markdown; charset=utf-8")
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket) -> None:
+    global _ui_replay_task
     await manager.connect(ws)
-    replay_task: asyncio.Task | None = None
-    if settings.mock:
-        replay_task = asyncio.create_task(replay_jsonl(manager, MOCK_EVENTS, settings.mock_speed))
+    if settings.mock and _ui_replay_task is None:
+        _ui_replay_task = asyncio.create_task(
+            replay_jsonl(manager, UI_REPLAY_EVENTS, settings.mock_speed),
+            name="dortgoz-ui-replay",
+        )
+        _ui_replay_task.add_done_callback(_observe_ui_replay)
     try:
         while True:
             raw = await ws.receive_text()
@@ -289,9 +334,6 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             await handle_operator_message(msg)
     except WebSocketDisconnect:
         manager.disconnect(ws)
-    finally:
-        if replay_task and not replay_task.done():
-            replay_task.cancel()
 
 
 async def handle_operator_message(msg: OperatorMessage) -> None:
@@ -302,8 +344,8 @@ async def handle_operator_message(msg: OperatorMessage) -> None:
                 Event.wrap(
                     ChatMessage(
                         role="agent",
-                        text=f"(mock) Sorunuz alındı: '{msg.text}'. Gerçek modda bu yanıt "
-                        f"ajan grafiğinden gelir.",
+                        text=f"Arayüz test akışında sorunuz alındı: '{msg.text}'. "
+                        "Video analizi ve gerçek ajan bu akışta çalışmaz.",
                     )
                 )
             )
@@ -312,16 +354,16 @@ async def handle_operator_message(msg: OperatorMessage) -> None:
 
             await run_chat(msg.text, manager)
     elif msg.kind == "actuator_response":
-        await manager.broadcast(
-            Event.wrap(
-                ActuatorResult(
-                    request_id=msg.request_id,
-                    actuator="?",
-                    approved=msg.approved,
-                    detail="Operatör kararı",
-                )
+        try:
+            result = action_dispatcher.resolve(
+                msg.request_id, msg.approved, msg.operator
             )
-        )
+        except (KeyError, ValueError) as exc:
+            await manager.broadcast(Event.wrap(
+                ChatMessage(role="agent", text=f"Aksiyon kararı reddedildi: {exc}")
+            ))
+        else:
+            await manager.broadcast(Event.wrap(result, feed=result.feed))
     elif msg.kind == "start_run":
         await start_run(msg)
     elif msg.kind == "stop_run":
@@ -343,7 +385,7 @@ async def start_run(msg: OperatorMessage) -> None:
         await manager.broadcast(
             Event.wrap(
                 RunStatus(run_id="-", state="idle",
-                          detail="Mock kipte gerçek analiz başlatılmaz — kayıt zaten oynuyor."),
+                          detail="Arayüz test akışında gerçek analiz başlatılmaz."),
                 feed=msg.feed,
             )
         )

@@ -59,7 +59,10 @@ class WeightGuard:
             try:
                 fd = os.open(p, os.O_RDONLY)
                 try:
-                    os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+                    advise = getattr(os, "posix_fadvise", None)
+                    dontneed = getattr(os, "POSIX_FADV_DONTNEED", None)
+                    if advise is not None and dontneed is not None:
+                        advise(fd, 0, 0, dontneed)
                 finally:
                     os.close(fd)
             except OSError as exc:

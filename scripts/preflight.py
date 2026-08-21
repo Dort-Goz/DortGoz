@@ -58,7 +58,7 @@ def _verify_repository(root: Path, errors: list[str]) -> None:
 
     template = root / ".env.example"
     if template.is_file() and "DORTGOZ_MOCK=1" not in template.read_text(encoding="utf-8"):
-        errors.append(".env.example yeni klon için DORTGOZ_MOCK=1 varsayılanını içermiyor")
+        errors.append(".env.example yeni klon için arayüz test akışı varsayılanını içermiyor")
     for relative in PORTABILITY_FILES:
         path = root / relative
         if not path.is_file():
@@ -104,7 +104,7 @@ def _verify_real_config(root: Path, errors: list[str]) -> None:
         return
     values = _read_env(env_path)
     if values.get("DORTGOZ_MOCK", "").casefold() in {"1", "true", "yes", "on"}:
-        errors.append("gerçek modda DORTGOZ_MOCK=0 olmalı")
+        errors.append("gerçek analiz kipinde DORTGOZ_MOCK=0 olmalı")
     base_url = values.get("DORTGOZ_LLAMA_BASE_URL", "")
     if not base_url or "<" in base_url or any(host in base_url.casefold() for host in FORBIDDEN_CLOUD_HOSTS):
         errors.append("DORTGOZ_LLAMA_BASE_URL yerel/özel ağ OpenAI-uyumlu endpoint'i olmalı")

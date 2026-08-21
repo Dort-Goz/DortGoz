@@ -2,15 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-import uuid
 from typing import Any
 
 from ..config import settings
-from ..events import ActuatorRequest, Event, ToolCall, UICommand
+from ..events import Event, ToolCall, UICommand
+from ..services.action_dispatcher import ACTION_SPECS
+from ..services.action_dispatcher import dispatcher as action_dispatcher
 from ..ws import ConnectionManager
-
-CRITICAL = {"alarm_ver", "alan_kapat"}
-ACTUATORS = ["saglik_ekibi_cagir", "alarm_ver", "alan_kapat", "kayit_baslat"]
 
 EVIDENCE_DIR = "_evidence"
 
@@ -64,12 +62,38 @@ TOOLS: list[dict] = [
           {"start": {"type": "number", "description": "başlangıç (saniye)"},
            "end": {"type": "number", "description": "bitiş (saniye)"},
            "gerekce": _GEREKCE}),
-    _tool("aktuator_calistir",
-          "Saha aktüatörünü tetikler (mock). Kritik olanlar operatör onayına "
-          "düşer. Yalnız defterdeki somut bir duruma dayanarak öner.",
-          {"actuator": {"type": "string", "enum": ACTUATORS},
-           "incident_id": {"type": "string",
-                           "description": "ilgili olay kimliği; yoksa boş dize"},
+    _tool("olay_raporu_olustur",
+          "Tamamlanmış gerçek analizden yerel olay raporu ve kanıt paketi oluşturur.",
+          {"incident_id": {"type": "string", "description": "olay kimliği"},
+           "feed": {"type": "string", "description": "kamera adı; ana kayıt için boş dize"},
+           "gerekce": _GEREKCE}),
+    _tool("emniyet_bildirimi_hazirla",
+          "Kanıtlı suç olayı için emniyet bildirimi taslağını operatör onayına sunar. "
+          "Dış kuruma gönderim yapmaz.",
+          {"incident_id": {"type": "string", "description": "olay kimliği"},
+           "feed": {"type": "string", "description": "kamera adı; ana kayıt için boş dize"},
+           "gerekce": _GEREKCE}),
+    _tool("acil_saglik_bildirimi_hazirla",
+          "Kanıtlı yüksek riskli olay için acil sağlık bildirimi taslağını operatör "
+          "onayına sunar. Dış kuruma gönderim yapmaz.",
+          {"incident_id": {"type": "string", "description": "olay kimliği"},
+           "feed": {"type": "string", "description": "kamera adı; ana kayıt için boş dize"},
+           "gerekce": _GEREKCE}),
+    _tool("guvenlik_uyarisi_hazirla",
+          "Kanıtlı olay için yerel güvenlik uyarısı taslağını operatör onayına sunar. "
+          "Fiziksel alarm çalıştırmaz.",
+          {"incident_id": {"type": "string", "description": "olay kimliği"},
+           "feed": {"type": "string", "description": "kamera adı; ana kayıt için boş dize"},
+           "gerekce": _GEREKCE}),
+    _tool("alan_guvenligi_iste",
+          "Kanıtlı yüksek riskli olay için alan güvenliği talebini operatör onayına "
+          "sunar. Fiziksel saha işlemi yapmaz.",
+          {"incident_id": {"type": "string", "description": "olay kimliği"},
+           "feed": {"type": "string", "description": "kamera adı; ana kayıt için boş dize"},
+           "gerekce": _GEREKCE}),
+    _tool("aksiyon_durumunu_sorgula",
+          "Daha önce operatör onayına sunulan aksiyon taslağının durumunu getirir.",
+          {"request_id": {"type": "string", "description": "aksiyon istek kimliği"},
            "gerekce": _GEREKCE}),
 ]
 
@@ -133,19 +157,33 @@ async def _dispatch(name: str, args: dict[str, Any], manager: ConnectionManager)
             return "HATA: çözümlenmiş kayıt yok."
         return await _evidence_clip(ctx, float(args["start"]), float(args["end"]))
 
-    if name == "aktuator_calistir":
-        act = str(args["actuator"])
-        if act not in ACTUATORS:
-            return f"HATA: bilinmeyen aktüatör '{act}'"
-        iid = str(args.get("incident_id", "")) or None
-        if act in CRITICAL:
-            await manager.broadcast(Event.wrap(ActuatorRequest(
-                request_id=uuid.uuid4().hex[:8], actuator=act,
-                reason=str(args.get("gerekce", "")), incident_id=iid,
-            )))
-            return (f"{act} KRİTİK aktüatördür — operatör onayına sunuldu, "
-                    "onay gelmeden çalışmaz.")
-        return f"{act} tetiklendi (mock)."
+    if name == "olay_raporu_olustur":
+        _, url = await action_dispatcher.create_report(
+            str(args.get("feed", "")), str(args["incident_id"])
+        )
+        return f"Gerçek analiz raporu hazır: {url}"
+
+    if name in ACTION_SPECS:
+        request, created = action_dispatcher.request(
+            name,
+            str(args["incident_id"]),
+            str(args.get("feed", "")),
+            str(args.get("gerekce", "")),
+        )
+        if created:
+            await manager.broadcast(Event.wrap(request, feed=request.feed))
+            return (
+                f"{request.action_label} operatöre sunuldu "
+                f"(request_id={request.request_id}). Henüz hazırlanmadı ve dış kuruma "
+                "gönderilmedi."
+            )
+        return (
+            f"{request.action_label} zaten operatör kararı bekliyor "
+            f"(request_id={request.request_id})."
+        )
+
+    if name == "aksiyon_durumunu_sorgula":
+        return action_dispatcher.status_text(str(args["request_id"]))
 
     return f"HATA: bilinmeyen araç '{name}'"
 

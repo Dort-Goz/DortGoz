@@ -129,16 +129,37 @@ class ActuatorRequest(BaseModel):
     type: Literal["actuator_request"] = "actuator_request"
     request_id: str
     actuator: str
+    action_label: str = ""
     reason: str
     incident_id: str | None = None
+    incident_title: str = ""
+    run_id: str = ""
+    feed: str = ""
+    anomaly_type: AnomalyType = "bilinmeyen"
+    risk: Risk | None = None
+    evidence_timestamps: list[float] = Field(default_factory=list)
+    mode: Literal["preview"] = "preview"
+    status: Literal["pending"] = "pending"
+    requested_at: float = 0.0
 
 
 class ActuatorResult(BaseModel):
     type: Literal["actuator_result"] = "actuator_result"
     request_id: str
     actuator: str
+    action_label: str = ""
     approved: bool
+    status: Literal["prepared", "rejected", "failed"] = "prepared"
     detail: str = ""
+    incident_id: str | None = None
+    run_id: str = ""
+    feed: str = ""
+    mode: Literal["preview"] = "preview"
+    delivered: bool = False
+    external_side_effect: bool = False
+    artifact_url: str | None = None
+    operator: str = ""
+    resolved_at: float = 0.0
 
 
 class ChatMessage(BaseModel):
@@ -196,6 +217,7 @@ class OperatorMessage(BaseModel):
     text: str = ""
     request_id: str = ""
     approved: bool = False
+    operator: str = ""
     video: str = ""
     model: str = ""
     system_prompt: str = ""

@@ -166,7 +166,9 @@ class CanonicalAnalysisJobService:
     ) -> AnalysisJobSnapshot:
 
         if not self._enabled():
-            raise AnalysisJobExecutionDisabled("mock fixture etkin; gerçek runner başlatılmadı")
+            raise AnalysisJobExecutionDisabled(
+                "Arayüz test akışı etkin; gerçek video analizi başlatılmadı"
+            )
 
         defaults = self._defaults()
         effective = EffectiveRuntimeConfig(

@@ -20,7 +20,7 @@ if ($Mock -and $Real) {
     throw "-Mock ve -Real birlikte kullanılamaz."
 }
 
-# Yeni klonda model/FFmpeg olmadan ilk açılışın çalışması için varsayılan mock'tur.
+# Yeni klonda model/FFmpeg olmadan ilk açılış için varsayılan arayüz test akışıdır.
 $UseMock = -not $Real.IsPresent
 
 function Resolve-Executable {
@@ -150,7 +150,7 @@ $frontendJob = Start-Job -Name "dortgoz-frontend" -ArgumentList $FrontendDir, $b
 
 $jobs = @($backendJob, $frontendJob)
 
-Write-Host "Dörtgöz geliştirme sunucuları başlatıldı ($(if ($UseMock) { 'mock' } else { 'gerçek' }) mod)." -ForegroundColor Green
+Write-Host "Dörtgöz geliştirme sunucuları başlatıldı ($(if ($UseMock) { 'arayüz test akışı' } else { 'gerçek yerel analiz' }))." -ForegroundColor Green
 Write-Host "Backend:  http://localhost:8000/health"
 Write-Host "Frontend: http://localhost:5173"
 Write-Host "Durdurmak için Ctrl+C kullanın."

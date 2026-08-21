@@ -5,7 +5,9 @@ import pytest
 from dortgoz import session
 from dortgoz.agent import tools
 from dortgoz.agent.memory import Incident
+from dortgoz.config import settings
 from dortgoz.events import WindowEvent, WindowReport
+from dortgoz.services.action_dispatcher import dispatcher
 
 
 class FakeManager:
@@ -21,7 +23,9 @@ class FakeManager:
 
 
 @pytest.fixture()
-def ctx():
+def ctx(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "runs_dir", tmp_path / "runs")
+    dispatcher.reset_memory()
     c = session.start("test-run", "clip.mp4")
     c.duration = 120.0
     c.reports.append(WindowReport(
@@ -31,10 +35,12 @@ def ctx():
         uncertainties=["yüzler seçilemiyor"],
     ))
     inc = Incident(incident_id="abc123", title="Kavga",
-                   first_seen=42.0, last_seen=55.0, risk="yuksek")
+                   first_seen=42.0, last_seen=55.0, risk="yuksek",
+                   anomaly_type="kavga", evidence_ts=[42.0, 44.0])
     c.ledger.incidents[inc.incident_id] = inc
     yield c
     session.clear()
+    dispatcher.reset_memory()
 
 
 def test_tool_schemas_are_strict():
@@ -82,18 +88,22 @@ def test_olayi_vurgula_unknown_id_lists_known(ctx):
     assert not m.payloads("ui_command")
 
 
-def test_critical_actuator_requires_approval(ctx):
+def test_external_action_requires_approval(ctx):
     m = FakeManager()
-    out = asyncio.run(tools.execute("aktuator_calistir", {
-        "actuator": "alarm_ver", "incident_id": "abc123",
+    out = asyncio.run(tools.execute("emniyet_bildirimi_hazirla", {
+        "incident_id": "abc123", "feed": "",
         "gerekce": "yüksek riskli kavga"}, m))
     reqs = m.payloads("actuator_request")
-    assert len(reqs) == 1 and reqs[0].actuator == "alarm_ver"
+    assert len(reqs) == 1 and reqs[0].actuator == "emniyet_bildirimi_hazirla"
     assert reqs[0].incident_id == "abc123"
-    assert "onay" in out
-    out2 = asyncio.run(tools.execute("aktuator_calistir", {
-        "actuator": "kayit_baslat", "incident_id": "", "gerekce": "kayıt"}, m))
-    assert "mock" in out2 and len(m.payloads("actuator_request")) == 1
+    assert reqs[0].mode == "preview" and reqs[0].status == "pending"
+    assert reqs[0].evidence_timestamps == [42.0, 44.0]
+    assert "gönderilmedi" in out
+    out2 = asyncio.run(tools.execute("emniyet_bildirimi_hazirla", {
+        "incident_id": "abc123", "feed": "",
+        "gerekce": "yeniden"}, m))
+    assert "zaten" in out2 and len(m.payloads("actuator_request")) == 1
+    assert "aktuator_calistir" not in tools.tool_names()
 
 
 def test_tool_errors_return_text_not_raise(ctx):
