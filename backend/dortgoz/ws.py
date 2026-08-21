@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from collections import deque
+from collections.abc import Callable
 from pathlib import Path
 
 from fastapi import WebSocket
@@ -121,7 +122,13 @@ class ConnectionManager:
             LOGGER.debug("düşürülen istemci soketi kapatılamadı", exc_info=True)
 
 
-async def replay_jsonl(manager: ConnectionManager, path: Path, speed: float = 1.0) -> None:
+async def replay_jsonl(
+    manager: ConnectionManager,
+    path: Path,
+    speed: float = 1.0,
+    *,
+    transform: Callable[[Event], Event] | None = None,
+) -> None:
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
@@ -132,4 +139,5 @@ async def replay_jsonl(manager: ConnectionManager, path: Path, speed: float = 1.
             continue
         delay = float(raw.pop("delay", 0.8)) / max(speed, 0.01)
         await asyncio.sleep(delay)
-        await manager.broadcast(Event.model_validate(raw))
+        event = Event.model_validate(raw)
+        await manager.broadcast(transform(event) if transform is not None else event)

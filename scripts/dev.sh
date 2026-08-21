@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Backend + vite dev sunucusunu birlikte başlatır.
 #
-#   ./scripts/dev.sh          mock mod   — GPU/model gerekmez, örnek akış oynatılır
+#   ./scripts/dev.sh          arayüz test akışı — GPU/model gerekmez, video analizi yapılmaz
 #   ./scripts/dev.sh real     gerçek mod — .env'deki yerel model ucuna bağlanır
 #
 # Konsol: http://localhost:5173   (API/WS 8000'e proxy'lenir)
@@ -48,7 +48,7 @@ if [ "$MODE" = "real" ]; then
   [ "$count" -gt 0 ] || echo "UYARI: media/ boş — konsolda seçilecek klip olmayacak"
   echo "→ gerçek mod ($count klip)"
 else
-  echo "→ mock mod"
+  echo "→ arayüz test akışı (video analizi yapılmaz)"
 fi
 
 trap 'kill 0' EXIT

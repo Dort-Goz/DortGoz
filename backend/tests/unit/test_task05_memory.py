@@ -276,8 +276,8 @@ async def test_event_service_persists_mock_vertical_and_analysis_result() -> Non
     assert repository.get_event(event_id).status == EventStatus.REJECTED
 
 
-def test_legacy_import_is_read_only() -> None:
-    path = Path(__file__).parents[2] / "dortgoz" / "mock" / "sample_events.jsonl"
+def test_ui_replay_import_is_read_only() -> None:
+    path = Path(__file__).parents[2] / "dortgoz" / "fixtures" / "ui_replay_events.jsonl"
     before = path.read_bytes()
     records = list(iter_legacy_jsonl(path))
     assert len(records) >= 10

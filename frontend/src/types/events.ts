@@ -94,16 +94,37 @@ export interface ActuatorRequest {
   type: "actuator_request";
   request_id: string;
   actuator: string;
+  action_label: string;
   reason: string;
   incident_id?: string | null;
+  incident_title: string;
+  run_id: string;
+  feed: string;
+  anomaly_type: AnomalyType;
+  risk?: Risk | null;
+  evidence_timestamps: number[];
+  mode: "preview";
+  status: "pending";
+  requested_at?: number | null;
 }
 
 export interface ActuatorResult {
   type: "actuator_result";
   request_id: string;
   actuator: string;
+  action_label: string;
   approved: boolean;
+  status?: "prepared" | "rejected" | "failed" | null;
   detail: string;
+  incident_id?: string | null;
+  run_id: string;
+  feed: string;
+  mode: "preview";
+  delivered: false;
+  external_side_effect: false;
+  artifact_url?: string | null;
+  operator: string;
+  resolved_at?: number | null;
 }
 
 export interface ChatMessage {
@@ -157,6 +178,7 @@ export interface OperatorMessage {
   text?: string;
   request_id?: string;
   approved?: boolean;
+  operator?: string;
   from_seq?: number;
   feed?: string;
   video?: string;

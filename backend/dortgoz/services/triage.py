@@ -115,6 +115,7 @@ class TriageItem:
     event_id: str | None = None
     thumbnail: str | None = None
     evidence: str | None = None
+    evidence_refs: list[dict[str, Any]] = field(default_factory=list)
     sample: bool = False
     emsal_benzerlik: float | None = None
     emsal_key: str = ""
@@ -216,6 +217,38 @@ class TriageStore:
         if current is not None and (previous is None or current > previous):
             item.signals = incoming
 
+    @staticmethod
+    def _evidence_dicts(feed: str, incident_id: str) -> list[dict[str, Any]]:
+        """Olay defterindeki yapılandırılmış kare kanıtlarını güvenli biçimde kopyala."""
+
+        from .. import session
+
+        matches = []
+        for ctx in session.all_contexts():
+            if feed and ctx.feed != feed:
+                continue
+            incident = ctx.ledger.incidents.get(incident_id)
+            if incident is not None:
+                matches.append(incident)
+        if len(matches) != 1:
+            return []
+        return [
+            ref.model_dump(mode="json")
+            for ref in matches[0].evidence_refs
+        ]
+
+    def _merge_evidence_refs(self, item: TriageItem) -> None:
+        known = {
+            (entry.get("frame_id"), entry.get("timestamp"), entry.get("claim"))
+            for entry in item.evidence_refs
+        }
+        for entry in self._evidence_dicts(item.feed, item.incident_id):
+            key = (entry.get("frame_id"), entry.get("timestamp"), entry.get("claim"))
+            if key not in known:
+                item.evidence_refs.append(entry)
+                known.add(key)
+        item.evidence_refs.sort(key=lambda entry: float(entry.get("timestamp", 0.0)))
+
     def observe(self, event: Event) -> None:
         payload = event.payload
         kind = getattr(payload, "type", "")
@@ -242,6 +275,7 @@ class TriageStore:
             item.event_id = event_id or item.event_id
             item.thumbnail = payload.thumbnail or item.thumbnail
             item.evidence = payload.evidence or item.evidence
+            self._merge_evidence_refs(item)
             item.needs_review = payload.needs_review
             item.review_reason = payload.review_reason
             if payload.olay_baslangic is not None:
@@ -661,6 +695,22 @@ class TriageStore:
             )
         )
 
+    def get_item(self, key: str) -> TriageItem | None:
+        item = self._pending.get(key)
+        if item is not None:
+            return item
+        return next(
+            (entry for entry in reversed(self._resolved) if entry.key == key),
+            None,
+        )
+
+    def decision_for(self, feed: str, incident_id: str) -> TriageItem | None:
+        key = f"{feed}:{incident_id}"
+        return next(
+            (item for item in reversed(self._resolved) if item.key == key),
+            None,
+        )
+
     def snapshot(self) -> dict:
         self._expire_rules()
         confirmed = [
@@ -753,6 +803,7 @@ class TriageStore:
             phase=payload.phase,
             thumbnail=payload.thumbnail,
             evidence=payload.evidence,
+            evidence_refs=self._evidence_dicts(event.feed, payload.incident_id),
             needs_review=payload.needs_review,
             review_reason=payload.review_reason,
             run_id=run_id,

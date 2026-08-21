@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import tempfile
+import time
 import zipfile
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -11,7 +13,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -32,7 +34,8 @@ from .errors import (
     RepositoryError,
     RepositoryNotFoundError,
 )
-from .events import ChatMessage, Event, OperatorMessage, RunStatus
+from .events import ActuatorRequest, ChatMessage, Event, OperatorMessage, RunStatus
+from .services.action_dispatcher import dispatcher as action_dispatcher
 from .services.analysis_job import (
     AnalysisJobExecutionDisabled,
     AnalysisJobNotReady,
@@ -48,10 +51,16 @@ from .ws import ConnectionManager, replay_jsonl
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    global _ui_replay_task
     _reconcile_persistent_work_on_startup()
     try:
         yield
     finally:
+        task = _ui_replay_task
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        _ui_replay_task = None
         if live_cctv.active:
             await live_cctv.stop()
 
@@ -73,21 +82,107 @@ for _error_type in (
     app.add_exception_handler(_error_type, domain_exception_handler)
 app.add_exception_handler(Exception, domain_exception_handler)
 
-MOCK_EVENTS = Path(__file__).parent / "mock" / "sample_events.jsonl"
-_mock_replay_task: asyncio.Task[None] | None = None
+UI_REPLAY_EVENTS = Path(__file__).parent / "fixtures" / "ui_replay_events.jsonl"
+_ui_replay_task: asyncio.Task[None] | None = None
 
 
-def _observe_mock_replay(task: asyncio.Task[None]) -> None:
-    global _mock_replay_task
+def _observe_ui_replay(task: asyncio.Task[None]) -> None:
+    global _ui_replay_task
     try:
         task.result()
     except asyncio.CancelledError:
         pass
     except Exception:
-        LOGGER.exception("mock replay görevi başarısız oldu")
+        LOGGER.exception("UI replay akışı başarısız oldu")
     finally:
-        if _mock_replay_task is task:
-            _mock_replay_task = None
+        if _ui_replay_task is task:
+            _ui_replay_task = None
+
+
+def _ui_replay_transform(
+    *,
+    video: str,
+    feed: str,
+    run_id: str,
+    request_id: str,
+):
+    def transform(event: Event) -> Event:
+        transformed = event.model_copy(deep=True)
+        transformed.feed = feed
+        payload = transformed.payload
+        if isinstance(payload, RunStatus):
+            transformed.payload = payload.model_copy(update={
+                "run_id": run_id,
+                "video": video,
+            })
+        elif isinstance(payload, ActuatorRequest):
+            request = payload.model_copy(update={
+                "request_id": request_id,
+                "run_id": run_id,
+                "feed": feed,
+                "requested_at": time.time(),
+            })
+            registered, _ = action_dispatcher.register_ui_fixture(request)
+            transformed.payload = registered
+        elif payload.type == "tool_call":
+            args = dict(payload.args)
+            args["feed"] = feed
+            payload.args = args
+        return transformed
+
+    return transform
+
+
+async def _start_ui_replay(video: str, feed: str) -> None:
+    global _ui_replay_task
+    if _ui_replay_task is not None and not _ui_replay_task.done():
+        await manager.broadcast(Event.wrap(
+            RunStatus(
+                run_id="-",
+                state="processing",
+                detail="Arayüz test akışı zaten çalışıyor.",
+                video=video,
+            ),
+            feed=feed,
+        ))
+        return
+    safe_name = Path(video).name
+    video_path = (settings.media_dir / safe_name).resolve()
+    media_root = settings.media_dir.resolve()
+    if (
+        not video
+        or safe_name != video
+        or video_path.parent != media_root
+        or not video_path.is_file()
+    ):
+        await manager.broadcast(Event.wrap(
+            RunStatus(
+                run_id="-",
+                state="error",
+                detail="Arayüz test akışı için media/ içinden geçerli bir video seçin.",
+                video=safe_name,
+            ),
+            feed=feed,
+        ))
+        return
+    token = uuid4().hex[:10]
+    run_id = f"fixture-ui-crime-{token}"
+    request_id = f"fixture-req-{token}"
+    _ui_replay_task = asyncio.create_task(
+        replay_jsonl(
+            manager,
+            UI_REPLAY_EVENTS,
+            settings.mock_speed,
+            transform=_ui_replay_transform(
+                video=safe_name,
+                feed=feed,
+                run_id=run_id,
+                request_id=request_id,
+            ),
+        ),
+        name="dortgoz-ui-replay",
+    )
+    _ui_replay_task.add_done_callback(_observe_ui_replay)
 
 deployment_readiness = DeploymentReadinessService(settings, api_runtime.repository)
 app.state.deployment_readiness = deployment_readiness
@@ -138,7 +233,13 @@ app.state.analysis_jobs = analysis_jobs
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "mock": settings.mock, "profile": settings.runtime_profile}
+    return {
+        "status": "ok",
+        "mock": settings.mock,
+        "profile": settings.runtime_profile,
+        "analysis_mode": "ui_fixture_replay" if settings.mock else "real_local_analysis",
+        "external_delivery": False,
+    }
 
 
 @app.get("/ready")
@@ -244,7 +345,48 @@ manager.observers.append(triage.store.observe)
 
 @app.get("/api/triage")
 async def triage_snapshot() -> dict:
-    return triage.store.snapshot()
+    snapshot = triage.store.snapshot()
+    for item in snapshot["confirmed"]:
+        try:
+            item["suggested_actions"] = action_dispatcher.suggestions(
+                item["feed"], item["incident_id"]
+            )
+        except ValueError:
+            item["suggested_actions"] = []
+    return snapshot
+
+
+@app.get("/api/triage/evidence-frame")
+async def triage_evidence_frame(key: str, timestamp: float) -> Response:
+    item = triage.store.get_item(key)
+    if item is None:
+        raise HTTPException(status_code=404, detail="inceleme kaydı bulunamadı")
+    if not math.isfinite(timestamp):
+        raise HTTPException(status_code=422, detail="kanıt zamanı geçersiz")
+    matched = next(
+        (
+            evidence
+            for evidence in item.evidence_refs
+            if abs(float(evidence.get("timestamp", -1.0)) - timestamp) <= 0.001
+        ),
+        None,
+    )
+    if matched is None:
+        raise HTTPException(status_code=404, detail="olaya bağlı kanıt karesi bulunamadı")
+    if not item.video:
+        raise HTTPException(status_code=404, detail="kanıt videosu bulunamadı")
+    from .pipeline import ingest
+    from .pipeline.runner import resolve_media
+
+    try:
+        jpeg = await ingest.grab_frame(resolve_media(item.video), timestamp, width=480)
+    except (FileNotFoundError, ValueError, ingest.FFmpegError) as exc:
+        raise HTTPException(status_code=422, detail=f"kanıt karesi üretilemedi: {exc}")
+    return Response(
+        content=jpeg,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
 
 
 @app.post("/api/triage/rules/{proposal_id}/approve")
@@ -382,16 +524,41 @@ async def list_videos() -> list[str]:
     )
 
 
+@app.get("/api/actions")
+async def action_snapshot() -> dict:
+    return action_dispatcher.snapshot(fixture_only=settings.mock)
+
+
+@app.post("/api/actions/request")
+async def request_action(body: dict) -> dict:
+    try:
+        request, created = action_dispatcher.request(
+            str(body.get("action", "")),
+            str(body.get("incident_id", "")),
+            str(body.get("feed", "")),
+            "Operatör olay inceleme merkezinden yerel taslak istedi.",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    if created:
+        await manager.broadcast(Event.wrap(request, feed=request.feed))
+    return {"created": created, "request": request.model_dump(mode="json")}
+
+
+@app.get("/api/actions/{request_id}/artifact")
+async def action_artifact(request_id: str) -> FileResponse:
+    try:
+        path = action_dispatcher.artifact(request_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except (KeyError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return FileResponse(path, filename=path.name, media_type="text/markdown; charset=utf-8")
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket) -> None:
-    global _mock_replay_task
     await manager.connect(ws)
-    if settings.mock and _mock_replay_task is None:
-        _mock_replay_task = asyncio.create_task(
-            replay_jsonl(manager, MOCK_EVENTS, settings.mock_speed),
-            name="dortgoz-mock-replay",
-        )
-        _mock_replay_task.add_done_callback(_observe_mock_replay)
     try:
         while True:
             raw = await ws.receive_text()
@@ -427,16 +594,28 @@ async def handle_operator_message(msg: OperatorMessage, *, ws: WebSocket | None 
 
             await run_chat(msg.text, manager)
     elif msg.kind == "actuator_response":
-        from .agent.actuators import registry as actuator_registry
-
         try:
-            result = actuator_registry.resolve(msg.request_id, msg.approved)
-        except (KeyError, ValueError) as exc:
-            await manager.broadcast(
-                Event.wrap(ChatMessage(role="agent", text=f"Aktüatör kararı reddedildi: {exc}"))
+            result = action_dispatcher.resolve(
+                msg.request_id,
+                msg.approved,
+                msg.operator,
             )
-        else:
-            await manager.broadcast(Event.wrap(result))
+        except KeyError:
+            from .agent.actuators import registry as actuator_registry
+
+            try:
+                result = actuator_registry.resolve(msg.request_id, msg.approved)
+            except (KeyError, ValueError) as exc:
+                await manager.broadcast(Event.wrap(
+                    ChatMessage(role="agent", text=f"Aksiyon kararı reddedildi: {exc}")
+                ))
+                return
+        except ValueError as exc:
+            await manager.broadcast(
+                Event.wrap(ChatMessage(role="agent", text=f"Aksiyon kararı reddedildi: {exc}"))
+            )
+            return
+        await manager.broadcast(Event.wrap(result, feed=getattr(result, "feed", "")))
     elif msg.kind == "start_run":
         await start_run(msg)
     elif msg.kind == "stop_run":
@@ -444,6 +623,9 @@ async def handle_operator_message(msg: OperatorMessage, *, ws: WebSocket | None 
 
 
 async def start_run(msg: OperatorMessage) -> None:
+    if settings.mock:
+        await _start_ui_replay(msg.video, msg.feed)
+        return
     jobs: CanonicalAnalysisJobService = app.state.analysis_jobs
     try:
         await jobs.start(
@@ -471,6 +653,17 @@ async def start_run(msg: OperatorMessage) -> None:
 
 
 async def stop_run() -> None:
+    global _ui_replay_task
+    if settings.mock:
+        task = _ui_replay_task
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        _ui_replay_task = None
+        await manager.broadcast(Event.wrap(
+            RunStatus(run_id="-", state="idle", detail="Arayüz test akışı durduruldu.")
+        ))
+        return
     jobs: CanonicalAnalysisJobService = app.state.analysis_jobs
     await jobs.cancel_all()
 

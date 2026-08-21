@@ -1,9 +1,19 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { EventEvidenceRef } from "../types/events";
+
+interface SuggestedAction {
+  action: string;
+  label: string;
+  status: "available" | "pending" | "prepared" | "rejected" | "failed";
+  request_id: string | null;
+}
 
 /** `/api/triage` kaydı (backend TriageItem aynası). */
 interface TriageItem {
   key: string;
   feed: string;
+  run_id: string;
+  video: string;
   incident_id: string;
   event_id: string | null;
   t: number;
@@ -14,6 +24,7 @@ interface TriageItem {
   phase: string;
   thumbnail: string | null;
   evidence: string | null;
+  evidence_refs: EventEvidenceRef[];
   sample: boolean;
   needs_review: boolean;
   review_reason: string;
@@ -40,6 +51,7 @@ interface TriageItem {
   event_start: number | null;
   event_peak: number | null;
   event_end: number | null;
+  suggested_actions?: SuggestedAction[];
 }
 
 type TriageVerdict = "anomali" | "sorun_degil";
@@ -156,11 +168,36 @@ export function parseClock(text: string): number | null {
 const wallClock = (epoch: number) =>
   new Date(epoch * 1000).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
 
-function PendingCard({ item, categories, feedLabel, onDecide }: {
+export function selectReviewEvidence(
+  evidence: EventEvidenceRef[], peak: number, limit = 3,
+): EventEvidenceRef[] {
+  const unique = [...evidence]
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .filter((item, index, all) =>
+      index === all.findIndex((other) =>
+        other.frame_id === item.frame_id && other.timestamp === item.timestamp));
+  if (unique.length <= limit) return unique;
+  const closest = unique.reduce((best, item) =>
+    Math.abs(item.timestamp - peak) < Math.abs(best.timestamp - peak) ? item : best);
+  const selected = [unique[0], closest, unique[unique.length - 1]];
+  for (const item of unique) {
+    if (selected.length >= limit) break;
+    if (!selected.includes(item)) selected.push(item);
+  }
+  return [...new Set(selected)].slice(0, limit).sort((a, b) => a.timestamp - b.timestamp);
+}
+
+export function evidenceFrameUrl(key: string, timestamp: number): string {
+  const query = new URLSearchParams({ key, timestamp: String(timestamp) });
+  return `/api/triage/evidence-frame?${query.toString()}`;
+}
+
+function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
   item: TriageItem;
   categories: string[];
   feedLabel: string;
   onDecide: (decision: TriageDecision) => Promise<boolean>;
+  onSeek?: (feed: string, timestamp: number, video: string) => void;
 }) {
   const [verdict, setVerdict] = useState<TriageVerdict | "">("");
   const [cat, setCat] = useState(
@@ -251,7 +288,48 @@ function PendingCard({ item, categories, feedLabel, onDecide }: {
             )}
           </div>
         </div>
+        {onSeek && item.video && (
+          <button
+            onClick={() => onSeek(item.feed, item.t, item.video)}
+            className="ml-auto shrink-0 rounded border border-sky-800 px-1.5 py-1 text-[10px] text-sky-300 hover:bg-sky-950/50"
+            title="Videoyu olay anına götür"
+          >
+            ▶ videoda aç
+          </button>
+        )}
       </div>
+      {(item.evidence_refs ?? []).length > 0 && (
+        <div>
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+            Doğrulanmış video kanıtı
+          </div>
+          <div className="grid grid-cols-3 gap-1">
+            {selectReviewEvidence(item.evidence_refs, item.event_peak ?? item.t).map((evidence) => (
+              <button
+                key={`${evidence.frame_id}:${evidence.timestamp}`}
+                onClick={() => onSeek?.(item.feed, evidence.timestamp, item.video)}
+                className="overflow-hidden rounded border border-zinc-800 bg-zinc-950 text-left hover:border-sky-700"
+                title={`${clock(evidence.timestamp)} · ${evidence.claim}`}
+              >
+                <img
+                  src={evidenceFrameUrl(item.key, evidence.timestamp)}
+                  alt={`${clock(evidence.timestamp)} kanıt karesi`}
+                  loading="lazy"
+                  className="aspect-video w-full bg-black object-cover"
+                />
+                <div className="px-1 py-0.5">
+                  <div className="font-mono text-[9px] text-sky-300">
+                    {clock(evidence.timestamp)}
+                  </div>
+                  <div className="line-clamp-2 text-[9px] leading-tight text-zinc-400">
+                    {evidence.claim}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {item.needs_review && item.review_reason && (
         <div className="text-amber-300/90" title={item.review_reason}>
           ? {humanizeReason(item.review_reason)}
@@ -411,11 +489,21 @@ function PendingCard({ item, categories, feedLabel, onDecide }: {
   );
 }
 
-export default function TriagePanel({ onSelectFeed, onOpenTraining, feedNames = {} }: {
+export default function TriagePanel({
+  onSelectFeed,
+  onOpenTraining,
+  onSeek,
+  feedNames = {},
+  scopeFeed,
+  title = "Nöbet kuyruğu",
+}: {
   onSelectFeed?: (feed: string) => void;
   onOpenTraining?: (eventId: string) => void;
+  onSeek?: (feed: string, timestamp: number, video: string) => void;
   /** akış kimliği → insan-okur ad (canlı ızgaradan; yoksa kimlik gösterilir) */
   feedNames?: Record<string, string>;
+  scopeFeed?: string;
+  title?: string;
 }) {
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [error, setError] = useState("");
@@ -426,6 +514,12 @@ export default function TriagePanel({ onSelectFeed, onOpenTraining, feedNames = 
   useEffect(() => {
     localStorage.setItem("dortgoz.reviewer", reviewer);
   }, [reviewer]);
+
+  const loadSnapshot = useCallback(async () => {
+    const response = await fetch("/api/triage");
+    if (!response.ok) throw new Error("İnceleme kayıtları alınamadı.");
+    setSnap(await response.json());
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -505,15 +599,48 @@ export default function TriagePanel({ onSelectFeed, onOpenTraining, feedNames = 
     setSnap(body);
   };
 
+  const requestAction = async (item: TriageItem, action: string) => {
+    setError("");
+    let response: Response;
+    try {
+      response = await fetch("/api/actions/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          incident_id: item.incident_id,
+          feed: item.feed,
+        }),
+      });
+    } catch {
+      setError("Aksiyon taslağı sunucuya iletilemedi.");
+      return;
+    }
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      setError(body.detail || "Aksiyon taslağı istenemedi.");
+      return;
+    }
+    try {
+      await loadSnapshot();
+    } catch {
+      // İstek kaydedildi. Sonraki poll görünümü yeniler.
+    }
+  };
+
   if (!snap) return null;
+  const pending = scopeFeed === undefined
+    ? snap.pending : snap.pending.filter((item) => item.feed === scopeFeed);
+  const confirmed = scopeFeed === undefined
+    ? snap.confirmed : snap.confirmed.filter((item) => item.feed === scopeFeed);
   return (
     <div className="w-80 shrink-0 flex flex-col gap-2 min-h-0 text-sm">
       <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-2 flex-1 min-h-0 flex flex-col">
         <div className="font-bold mb-1.5">
-          ⚑ Nöbet kuyruğu
-          {snap.pending.length > 0 && (
+          ⚑ {title}
+          {pending.length > 0 && (
             <span className="ml-1 rounded-full bg-amber-700 text-white px-1.5 text-xs">
-              {snap.pending.length}
+              {pending.length}
             </span>
           )}
         </div>
@@ -537,14 +664,14 @@ export default function TriagePanel({ onSelectFeed, onOpenTraining, feedNames = 
           </div>
         )}
         <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5">
-          {snap.pending.length === 0 && (
+          {pending.length === 0 && (
             <div className="text-zinc-500 text-xs">Bekleyen olay yok.</div>
           )}
-          {snap.pending.map((i) => (
+          {pending.map((i) => (
             <div key={i.key} onClick={() => onSelectFeed?.(i.feed)}>
               <PendingCard item={i} categories={snap.categories}
                            feedLabel={feedNames[i.feed] || i.feed || "ana akış"}
-                           onDecide={decide} />
+                           onDecide={decide} onSeek={onSeek} />
             </div>
           ))}
         </div>
@@ -602,15 +729,15 @@ export default function TriagePanel({ onSelectFeed, onOpenTraining, feedNames = 
         <div className="font-bold mb-1.5">
           ✔ Bu oturumda tespit edilenler
           <span className="ml-1 text-zinc-500 text-xs font-normal">
-            {snap.confirmed.length} anomali · {snap.dismissed_count} elendi
+            {confirmed.length} anomali · {snap.dismissed_count} elendi
           </span>
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto space-y-1 text-xs">
-          {snap.confirmed.length === 0 && (
+          {confirmed.length === 0 && (
             <div className="text-zinc-500">Henüz doğrulanan anomali yok.</div>
           )}
-          {snap.confirmed.map((i) => (
-            <div key={i.key} className="rounded border border-emerald-900/60 bg-emerald-950/20 px-2 py-1">
+          {confirmed.map((i) => (
+            <div key={i.key} className="rounded border border-emerald-900/60 bg-emerald-950/20 px-2 py-1 space-y-1">
               <span className="font-medium text-emerald-300">
                 {CATEGORY_TR[i.operator_category] ?? i.operator_category}
               </span>
@@ -637,6 +764,28 @@ export default function TriagePanel({ onSelectFeed, onOpenTraining, feedNames = 
                 >
                   Geliştirmeye incele
                 </button>
+              )}
+              {(i.suggested_actions ?? []).length > 0 && (
+                <div className="border-t border-emerald-900/50 pt-1">
+                  <div className="mb-1 text-[9px] uppercase tracking-wide text-zinc-500">
+                    Güvenli yerel taslak önerileri
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {(i.suggested_actions ?? []).map((suggestion) => (
+                      <button
+                        key={suggestion.action}
+                        disabled={suggestion.status !== "available"}
+                        onClick={() => requestAction(i, suggestion.action)}
+                        className="rounded border border-amber-800 px-1.5 py-0.5 text-[9px] text-amber-200 hover:bg-amber-950/50 disabled:border-zinc-800 disabled:text-zinc-600"
+                        title="Yalnız operatör onayına gidecek yerel taslak isteği oluşturur"
+                      >
+                        {suggestion.status === "available"
+                          ? `+ ${suggestion.label}`
+                          : `${suggestion.label} · ${suggestion.status}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           ))}

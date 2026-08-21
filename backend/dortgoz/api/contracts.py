@@ -20,7 +20,7 @@ from ..services.analysis_job import AnalysisJobStatus
 class AnalyzeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    profile: str = Field(default="mock", min_length=1, deprecated=True)
+    profile: str = Field(default="canonical", min_length=1, deprecated=True)
     config_version: str = Field(default="task-06-v1", min_length=1, deprecated=True)
     feed: str = Field(default="", max_length=120)
     model: str = Field(default="", max_length=500)

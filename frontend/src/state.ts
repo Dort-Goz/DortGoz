@@ -61,8 +61,10 @@ function cap<T>(arr: T[], n: number): T[] {
 export type Action =
   | { kind: "event"; event: Event }
   | { kind: "sync_reset" }
+  | { kind: "hydrate_actions"; requests: ActuatorRequest[]; results: ActuatorResult[] }
   | { kind: "run_started"; video: string; feed: string }
   | { kind: "select_incident"; incident: IncidentUpdate }
+  | { kind: "seek"; feed: string; timestamp: number; video?: string }
   | { kind: "select_feed"; feed: string };
 
 function withFeed(state: ConsoleState, feed: string,
@@ -77,6 +79,13 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
   if (action.kind === "sync_reset") {
     return initialState;
   }
+  if (action.kind === "hydrate_actions") {
+    return {
+      ...state,
+      actuatorRequests: cap(action.requests, CAPS.actuators),
+      actuatorResults: cap(action.results, CAPS.actuators),
+    };
+  }
   if (action.kind === "select_feed") {
     return { ...state, active: action.feed };
   }
@@ -84,6 +93,16 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
     return withFeed(state, state.active, (f) => ({
       ...f, highlight: action.incident, seekTo: action.incident.t,
     }));
+  }
+  if (action.kind === "seek") {
+    return {
+      ...withFeed(state, action.feed, (f) => ({
+        ...f,
+        seekTo: action.timestamp,
+        video: f.video ?? action.video ?? null,
+      })),
+      active: action.feed,
+    };
   }
   if (action.kind === "run_started") {
     return {
@@ -133,10 +152,22 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
       }
       return { ...state, chat: cap([...state.chat, p], CAPS.chat) };
     }
-    case "actuator_request":
-      return { ...state, actuatorRequests: cap([...state.actuatorRequests, p], CAPS.actuators) };
-    case "actuator_result":
-      return { ...state, actuatorResults: cap([...state.actuatorResults, p], CAPS.actuators) };
+    case "actuator_request": {
+      const request = p.feed || !feed ? p : { ...p, feed };
+      const others = state.actuatorRequests.filter((item) => item.request_id !== p.request_id);
+      return {
+        ...state,
+        actuatorRequests: cap([...others, request], CAPS.actuators),
+      };
+    }
+    case "actuator_result": {
+      const result = p.feed || !feed ? p : { ...p, feed };
+      const others = state.actuatorResults.filter((item) => item.request_id !== p.request_id);
+      return {
+        ...state,
+        actuatorResults: cap([...others, result], CAPS.actuators),
+      };
+    }
     case "run_status":
       return withFeed(state, feed, (f) => {
         const newRun = p.run_id !== "-" && p.run_id !== f.runStatus?.run_id;

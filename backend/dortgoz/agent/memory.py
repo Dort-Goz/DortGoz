@@ -4,7 +4,14 @@ import re
 import uuid
 from dataclasses import dataclass, field
 
-from ..events import AnomalyType, IncidentUpdate, Risk, WindowEvent, WindowReport
+from ..events import (
+    AnomalyType,
+    EventEvidenceRef,
+    IncidentUpdate,
+    Risk,
+    WindowEvent,
+    WindowReport,
+)
 
 RISK_ORDER: list[Risk] = ["dusuk", "orta", "yuksek", "kritik"]
 ALARM_FLOOR = 1
@@ -31,13 +38,24 @@ class Incident:
     olay_baslangic: float | None = None
     olay_bitis: float | None = None
     evidence_ts: list[float] = field(default_factory=list)
+    evidence_refs: list[EventEvidenceRef] = field(default_factory=list)
 
     def not_evidence(self, events: list) -> None:
+        known = {
+            (ref.frame_id, round(ref.timestamp, 3), ref.claim)
+            for ref in self.evidence_refs
+        }
         for e in events:
             for ref in getattr(e, "evidence", []) or []:
                 ts = getattr(ref, "timestamp", None)
                 if isinstance(ts, int | float):
                     self.evidence_ts.append(float(ts))
+                    key = (ref.frame_id, round(float(ts), 3), ref.claim)
+                    if key not in known:
+                        self.evidence_refs.append(ref.model_copy(deep=True))
+                        known.add(key)
+        self.evidence_ts = sorted(set(self.evidence_ts))
+        self.evidence_refs.sort(key=lambda ref: ref.timestamp)
         if self.evidence_ts:
             self.olay_baslangic = max(0.0, min(self.evidence_ts) - 1.0)
             self.olay_bitis = max(self.evidence_ts) + 1.0

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { Event, Payload } from "./types/events";
+import type { ActuatorRequest, ActuatorResult, Event, Payload } from "./types/events";
 import { DortgozSocket, type ConnectionState } from "./lib/ws";
 import VideoPanel from "./components/VideoPanel";
 import Timeline from "./components/Timeline";
@@ -11,6 +11,7 @@ import FeedStrip from "./components/FeedStrip";
 import LiveGrid from "./components/LiveGrid";
 import UploadPanel from "./components/UploadPanel";
 import TrainingReviewPanel from "./components/TrainingReviewPanel";
+import TriagePanel from "./components/TriagePanel";
 import { includeUploadedVideo, startCanonicalRun } from "./lib/canonicalRun";
 import { consoleReducer, emptyFeed, initialState } from "./state";
 
@@ -49,6 +50,7 @@ export default function App() {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [liveView, setLiveView] = useState(false);
   const [trainingEventId, setTrainingEventId] = useState("");
+  const [fixtureMode, setFixtureMode] = useState(false);
   // Sunucu bağlantısı — üst çubuktaki kalıcı rozet
   const [connection, setConnection] = useState<ConnectionState>("connecting");
 
@@ -78,6 +80,30 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    fetch("/api/actions")
+      .then((r) => r.json())
+      .then((body: { requests: ActuatorRequest[]; results: ActuatorResult[] }) => {
+        dispatch({
+          kind: "hydrate_actions",
+          requests: body.requests ?? [],
+          results: body.results ?? [],
+        });
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    fetch("/health")
+      .then((r) => r.json())
+      .then((body: { analysis_mode?: string }) => {
+        const fixture = body.analysis_mode === "ui_fixture_replay";
+        setFixtureMode(fixture);
+        if (fixture) setLiveView(false);
+      })
+      .catch(() => setFixtureMode(false));
+  }, []);
+
+  useEffect(() => {
     fetch("/api/interpret_config")
       .then((r) => r.json())
       .then((cfg: InterpretConfig) => {
@@ -104,7 +130,12 @@ export default function App() {
   const send = useMemo(() => ({
     chat: (text: string) => socketRef.current?.send({ kind: "chat", text }),
     actuator: (request_id: string, approved: boolean) =>
-      socketRef.current?.send({ kind: "actuator_response", request_id, approved }),
+      socketRef.current?.send({
+        kind: "actuator_response",
+        request_id,
+        approved,
+        operator: localStorage.getItem("dortgoz.reviewer") ?? "",
+      }),
   }), []);
 
   const feed = state.feeds[state.active] ?? emptyFeed;
@@ -170,6 +201,11 @@ export default function App() {
 
   return (
     <div className="h-screen flex flex-col gap-2 p-2">
+      {fixtureMode && (
+        <div className="rounded border border-amber-700 bg-amber-950/50 px-3 py-1.5 text-center text-xs font-bold text-amber-200">
+          ARAYÜZ TEST AKIŞI · VİDEOYU SEÇİP “BAŞLAT”A BASIN · VİDEO ANALİZ EDİLMEZ
+        </div>
+      )}
       <header className="flex items-center flex-wrap gap-x-3 gap-y-1.5 px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-900/60 shrink-0">
         <span className="text-lg font-bold tracking-tight">
           DÖRTGÖZ <span className="text-zinc-500 font-normal text-sm">operatör konsolu</span>
@@ -185,7 +221,7 @@ export default function App() {
           {connection === "open" ? "●" : "○"} {CONNECTION_TR[connection]}
         </span>
         <div className="ml-auto flex items-center flex-wrap gap-x-3 gap-y-1.5 text-xs text-zinc-400">
-          <button
+          {!fixtureMode && <button
             onClick={() => setLiveView((v) => !v)}
             title="Canlı CCTV ızgarası: config/live_feeds.json'daki gerçek akışlar, işlenme durumu ve gecikme rozetleriyle"
             className={`rounded px-2 py-1 border ${
@@ -195,8 +231,8 @@ export default function App() {
             }`}
           >
             📡 canlı
-          </button>
-          {!liveView && feed.highlight && run?.run_id && run.run_id !== "-" && (
+          </button>}
+          {!fixtureMode && !liveView && feed.highlight && run?.run_id && run.run_id !== "-" && (
             <button
               onClick={() => setTrainingEventId(`${run.run_id}:${feed.highlight!.incident_id}`)}
               disabled={run.state !== "done"}
@@ -208,7 +244,7 @@ export default function App() {
               ◎ eğitim verisi
             </button>
           )}
-          {interpretCfg && !liveView && (
+          {interpretCfg && !liveView && !fixtureMode && (
             <button
               onClick={() => setShowExperiment((s) => !s)}
               title="Model ve istem deneyleri"
@@ -260,7 +296,7 @@ export default function App() {
             </button>
           )}
           {!liveView && (<>
-          <select
+          {!fixtureMode && <select
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
             disabled={busy || videos.length === 0}
@@ -269,7 +305,7 @@ export default function App() {
           >
             {videos.length === 0 && <option value="">media/ boş</option>}
             {videos.map((v) => <option key={v} value={v}>{v}</option>)}
-          </select>
+          </select>}
           <select
             value={runMode}
             onChange={(e) => setRunMode(e.target.value as "" | "temkinli" | "genis")}
@@ -290,7 +326,7 @@ export default function App() {
           >
             {busy ? "Durdur" : startPending ? "Başlatılıyor…" : "Başlat"}
           </button>
-          {!busy && videos.length > 1 && (
+          {!fixtureMode && !busy && videos.length > 1 && (
             <span className="flex items-center gap-1">
               <button
                 onClick={() => startDemo(demoCount)}
@@ -318,7 +354,7 @@ export default function App() {
                 />
               </div>
               <span className={busy ? "text-emerald-400" : ""}>{run.state}</span>
-              {run.state === "done" && run.run_id !== "-" && (
+              {!fixtureMode && run.state === "done" && run.run_id !== "-" && (
                 <a
                   href={`/api/runs/${run.run_id}/export`}
                   download
@@ -339,7 +375,7 @@ export default function App() {
         </div>
       </header>
 
-      {showExperiment && interpretCfg && (
+      {!fixtureMode && showExperiment && interpretCfg && (
         <ExperimentPanel
           config={interpretCfg}
           model={model}
@@ -388,6 +424,7 @@ export default function App() {
       )}
 
       {!liveView && (
+      <div className="flex-1 flex gap-2 min-h-0">
       <div className="flex-1 grid grid-cols-6 grid-rows-2 gap-2 min-h-0">
         <div className="col-span-2 row-span-1 min-h-0">
           <VideoPanel
@@ -419,6 +456,23 @@ export default function App() {
             onRespond={send.actuator}
           />
         </div>
+      </div>
+      {!fixtureMode && (
+        <TriagePanel
+          title="Olay İnceleme Merkezi"
+          scopeFeed={state.active}
+          onSelectFeed={(selectedFeed) =>
+            dispatch({ kind: "select_feed", feed: selectedFeed })}
+          onSeek={(selectedFeed, timestamp, reviewVideo) =>
+            dispatch({
+              kind: "seek",
+              feed: selectedFeed,
+              timestamp,
+              video: reviewVideo,
+            })}
+          onOpenTraining={setTrainingEventId}
+        />
+      )}
       </div>
       )}
       {trainingEventId && (
