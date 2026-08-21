@@ -21,6 +21,16 @@ from ..utils import inline_defs
 from .ingest import grab_frame
 from .thinking import thinking_extra, thinking_on
 
+
+def learned_category_block() -> str:
+    """Onaylanmış kategori ölçütlerini isteme ekler (yoksa boş döner)."""
+    if not settings.category_rules_enabled:
+        return ""
+    from ..services import category_rules
+
+    return category_rules.prompt_block(category_rules.load(settings.runs_dir))
+
+
 SYSTEM_TR = (
     "Sen bir güvenlik kamerası görüntü analiz uzmanısın. Sana tek bir kameranın "
     "aynı zaman penceresinden alınmış kareler zaman damgalarıyla veriliyor. "
@@ -624,6 +634,7 @@ async def interpret_window(
     system = system_prompt or SYSTEM_TR
     if settings.two_tier:
         system = f"{system}\n\n{tier_prompt or TIER_TR}"
+    system += learned_category_block()
 
     client = main_client()
     started = time.monotonic()

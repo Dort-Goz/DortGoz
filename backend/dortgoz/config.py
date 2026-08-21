@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     escalate_target_p: float = 0.0
     escalate_shadow: bool = True
     shadow_sample_rate: float = 0.0
+    category_rules_enabled: bool = True
     exemplar_suppress: bool = False
     exemplar_shadow: bool = True
     exemplar_threshold: float = 0.97
