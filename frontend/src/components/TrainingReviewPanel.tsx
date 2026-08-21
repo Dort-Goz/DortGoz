@@ -7,14 +7,15 @@ import {
 } from "react";
 import {
   ApiError,
-  approveEventForDFine,
+  approveEventForLearning,
   getCanonicalEvent,
   getDevelopmentApprovals,
   getEventReviews,
   getIncidentMedia,
+  getLearningPlan,
   getTrainingSamples,
   prepareTrainingSamples,
-  revokeEventDFineApproval,
+  revokeEventLearningApproval,
   saveEventReview,
   verifyTrainingSample,
 } from "../lib/api";
@@ -23,8 +24,10 @@ import { boxFromPoints, imagePoint, type ImagePoint } from "../lib/trainingBoxes
 import type {
   CanonicalEvent,
   DevelopmentApproval,
+  DevelopmentUse,
   HumanReview,
   IncidentMedia,
+  LearningPlan,
   TrainingSample,
   VerifiedBoundingBox,
 } from "../types/domain";
@@ -75,6 +78,22 @@ const APPROVAL_STATUS_TR = {
   approved: "Onaylandı",
   rejected: "Reddedildi",
   revoked: "Geri alındı",
+} as const;
+
+const DEVELOPMENT_USE_TR: Record<DevelopmentUse, string> = {
+  camera_rule: "Süreli kamera kuralı",
+  prompt_example: "İstem örneği",
+  threshold_calibration: "Eşik kalibrasyonu",
+  siglip_training: "SigLIP aday havuzu",
+  d_fine_training: "D-FINE kare havuzu",
+  evaluation: "Sabit değerlendirme",
+};
+
+const LEARNING_BAND_TR = {
+  low: "Düşük",
+  medium: "Orta",
+  high: "Yüksek",
+  priority: "Öncelikli",
 } as const;
 
 const dateTime = (value: string) => new Date(value).toLocaleString("tr-TR", {
@@ -241,6 +260,8 @@ export default function TrainingReviewPanel({
   const [reviews, setReviews] = useState<HumanReview[]>([]);
   const [incidentMedia, setIncidentMedia] = useState<IncidentMedia | null>(null);
   const [approvals, setApprovals] = useState<DevelopmentApproval[]>([]);
+  const [learningPlan, setLearningPlan] = useState<LearningPlan | null>(null);
+  const [selectedUses, setSelectedUses] = useState<DevelopmentUse[]>([]);
   const [samples, setSamples] = useState<TrainingSample[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [boxes, setBoxes] = useState<VerifiedBoundingBox[]>([]);
@@ -255,7 +276,7 @@ export default function TrainingReviewPanel({
   const [intervention, setIntervention] = useState<"" | "yes" | "no">("");
   const [reviewNote, setReviewNote] = useState("");
   const [approvalNote, setApprovalNote] = useState(
-    "İnsan doğrulamalı kareler D-FINE eğitimi için onaylandı.",
+    "İnsan doğrulamalı olay, seçilen geliştirme kullanımları için onaylandı.",
   );
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [revocationNote, setRevocationNote] = useState("");
@@ -265,19 +286,37 @@ export default function TrainingReviewPanel({
 
   const load = useCallback(async () => {
     setError("");
-    const [eventResult, reviewResult, approvalResult, sampleResult, mediaResult] = await Promise.all([
+    const [
+      eventResult,
+      reviewResult,
+      approvalResult,
+      sampleResult,
+      mediaResult,
+      learningResult,
+    ] = await Promise.all([
       getCanonicalEvent(eventId),
       getEventReviews(eventId),
       getDevelopmentApprovals(eventId),
       getTrainingSamples(eventId),
       getIncidentMedia(eventId),
+      getLearningPlan(eventId),
     ]);
     setCanonicalEvent(eventResult);
     setReviews(reviewResult);
     setApprovals(approvalResult);
     setSamples(sampleResult);
     setIncidentMedia(mediaResult);
+    setLearningPlan(learningResult);
     const latest = reviewResult.at(-1) ?? null;
+    const latestDevelopment = approvalResult.at(-1) ?? null;
+    setSelectedUses(
+      latestDevelopment?.status === "approved"
+        && latestDevelopment.review_id === latest?.review_id
+        ? latestDevelopment.approved_uses
+        : learningResult.routes
+          .filter((route) => route.recommended && route.use !== "camera_rule")
+          .map((route) => route.use),
+    );
     setReviewOpen(latest === null);
     setReviewVerdict(latest?.decision === "reject" ? "sorun_degil" : "anomali");
     const eventType = latest?.event_type ?? eventResult.event_type;
@@ -333,10 +372,12 @@ export default function TrainingReviewPanel({
 
   const latestReview = reviews.at(-1) ?? null;
   const latestApproval = approvals.at(-1) ?? null;
-  const activeApproval = latestApproval?.status === "approved"
+  const activeDevelopmentApproval = latestApproval?.status === "approved"
     && latestApproval.review_id === latestReview?.review_id
-    && latestApproval.approved_uses.includes("d_fine_training")
     ? latestApproval
+    : null;
+  const activeApproval = activeDevelopmentApproval?.approved_uses.includes("d_fine_training")
+    ? activeDevelopmentApproval
     : null;
   const approvalNeedsRenewal = latestApproval?.status === "approved"
     && latestApproval.review_id !== latestReview?.review_id;
@@ -578,56 +619,114 @@ export default function TrainingReviewPanel({
               </details>
             )}
 
+            {learningPlan && (
+              <div className="mb-3 space-y-2 rounded border border-sky-900/70 bg-sky-950/20 p-2">
+                <div className="flex items-center justify-between">
+                  <div className="font-medium text-sky-100">Öğrenme yönlendiricisi</div>
+                  <span className="rounded bg-sky-900 px-1.5 py-0.5 font-semibold text-sky-100">
+                    {learningPlan.learning_score}/100 · {LEARNING_BAND_TR[learningPlan.learning_band]}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-1 text-[10px] text-zinc-400">
+                  <span>Belirsizlik {learningPlan.components.uncertainty}</span>
+                  <span>Uyuşmazlık {learningPlan.components.disagreement}</span>
+                  <span>Yenilik {learningPlan.components.novelty}</span>
+                  <span>Kapsama açığı {learningPlan.components.coverage_gap}</span>
+                </div>
+                <p className="text-[10px] leading-relaxed text-zinc-500">
+                  Müdahale önceliği: {learningPlan.intervention_score ?? "—"} · Kayma gözcüsü: {learningPlan.drift_state}
+                </p>
+                <div className="space-y-1">
+                  {learningPlan.routes.filter((route) => route.recommended).map((route) => (
+                    <div key={route.use} className="rounded border border-zinc-800 bg-zinc-950/60 px-1.5 py-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-zinc-300">{DEVELOPMENT_USE_TR[route.use]}</span>
+                        <span className={route.ready ? "text-emerald-400" : "text-amber-400"}>
+                          {route.ready ? "hazır" : route.approval_state}
+                        </span>
+                      </div>
+                      <p className="text-[9px] text-zinc-600">{route.downstream} · {route.safety_gate}</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[10px] font-medium text-amber-300">
+                  Otomatik eğitim ve canlı modele otomatik terfi kapalıdır.
+                </p>
+              </div>
+            )}
+
             <div className="mb-3 space-y-1 rounded border border-zinc-800 bg-zinc-900/60 p-2">
               <div className="font-medium text-zinc-200">2 · Geliştirme izni</div>
-              <div className={activeApproval ? "text-emerald-400" : latestApproval?.status === "revoked" ? "text-red-400" : approvalNeedsRenewal ? "text-amber-400" : "text-zinc-500"}>
-                {activeApproval
-                  ? "D-FINE kullanımı onaylı"
+              <div className={activeDevelopmentApproval ? "text-emerald-400" : latestApproval?.status === "revoked" ? "text-red-400" : approvalNeedsRenewal ? "text-amber-400" : "text-zinc-500"}>
+                {activeDevelopmentApproval
+                  ? `${activeDevelopmentApproval.approved_uses.length} geliştirme kullanımı onaylı`
                   : latestApproval?.status === "revoked"
-                    ? "D-FINE izni geri alındı"
+                    ? "Geliştirme izni geri alındı"
                     : approvalNeedsRenewal
                       ? "Karar değişti · yeniden izin gerekli"
                       : "Henüz izin verilmedi"}
               </div>
-              {latestReview && !activeApproval && (
+              {latestReview && !activeDevelopmentApproval && (
                 <div className="mt-2 space-y-2">
+                  <div className="space-y-1 rounded border border-zinc-800 bg-zinc-950/60 p-1.5">
+                    {(learningPlan?.routes ?? [])
+                      .filter((route) => route.recommended && route.use !== "camera_rule")
+                      .map((route) => (
+                        <label key={route.use} className="flex items-start gap-2 text-zinc-300">
+                          <input
+                            type="checkbox"
+                            checked={selectedUses.includes(route.use)}
+                            onChange={(event) => setSelectedUses((current) =>
+                              event.target.checked
+                                ? [...new Set([...current, route.use])]
+                                : current.filter((item) => item !== route.use))}
+                            className="mt-0.5"
+                          />
+                          <span>
+                            <span className="block">{DEVELOPMENT_USE_TR[route.use]}</span>
+                            <span className="block text-[9px] text-zinc-600">{route.reason}</span>
+                          </span>
+                        </label>
+                      ))}
+                  </div>
                   <textarea
                     value={approvalNote}
                     onChange={(event) => setApprovalNote(event.target.value)}
                     rows={2}
                     maxLength={4000}
                     className="w-full resize-none rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-zinc-200"
-                    aria-label="D-FINE onay notu"
+                    aria-label="Geliştirme kullanım onay notu"
                   />
                   <button
-                    disabled={busy || !reviewerName || !approvalNote.trim()}
+                    disabled={busy || !reviewerName || !approvalNote.trim() || selectedUses.length === 0}
                     onClick={() => run(
-                      () => approveEventForDFine(eventId, {
+                      () => approveEventForLearning(eventId, {
                         review_id: latestReview.review_id,
+                        approved_uses: selectedUses,
                         reviewer: reviewerName,
                         note: approvalNote.trim(),
                         ...(latestApproval ? { supersedes_approval_id: latestApproval.approval_id } : {}),
                       }),
-                      "D-FINE kullanım izni kaydedildi.",
+                      "Seçilen geliştirme kullanımları kaydedildi.",
                     )}
                     className="w-full rounded bg-indigo-700 px-2 py-1.5 font-medium text-white disabled:opacity-40"
                   >
-                    D-FINE için onayla
+                    Seçilen kullanımları onayla
                   </button>
                 </div>
               )}
-              {activeApproval && !revokeOpen && (
+              {activeDevelopmentApproval && !revokeOpen && (
                 <button
                   type="button"
                   onClick={() => setRevokeOpen(true)}
                   className="mt-2 w-full rounded border border-red-900 px-2 py-1.5 text-red-300 hover:bg-red-950/40"
                 >
-                  D-FINE iznini geri al
+                  Geliştirme iznini geri al
                 </button>
               )}
-              {activeApproval && revokeOpen && (
+              {activeDevelopmentApproval && revokeOpen && (
                 <div className="mt-2 space-y-2 rounded border border-red-900/70 bg-red-950/20 p-2">
-                  <p className="text-red-200">Bu izne bağlı eğitim kareleri geçersiz olacak.</p>
+                  <p className="text-red-200">Bu izne bağlı bütün geliştirme rotaları kapanacak.</p>
                   <textarea
                     value={revocationNote}
                     onChange={(event) => setRevocationNote(event.target.value)}
@@ -635,7 +734,7 @@ export default function TrainingReviewPanel({
                     maxLength={4000}
                     className="w-full resize-none rounded border border-red-900 bg-zinc-950 px-2 py-1 text-zinc-200"
                     placeholder="Geri alma gerekçesi"
-                    aria-label="D-FINE izin geri alma gerekçesi"
+                    aria-label="Geliştirme izni geri alma gerekçesi"
                   />
                   <div className="grid grid-cols-2 gap-1">
                     <button
@@ -652,17 +751,17 @@ export default function TrainingReviewPanel({
                       disabled={busy || !reviewerName || !revocationNote.trim()}
                       onClick={() => run(
                         async () => {
-                          const result = await revokeEventDFineApproval(eventId, {
-                            review_id: activeApproval.review_id,
+                          const result = await revokeEventLearningApproval(eventId, {
+                            review_id: activeDevelopmentApproval.review_id,
                             reviewer: reviewerName,
                             note: revocationNote.trim(),
-                            supersedes_approval_id: activeApproval.approval_id,
+                            supersedes_approval_id: activeDevelopmentApproval.approval_id,
                           });
                           setRevokeOpen(false);
                           setRevocationNote("");
                           return result;
                         },
-                        "D-FINE kullanım izni geri alındı.",
+                        "Geliştirme kullanım izni geri alındı.",
                       )}
                       className="rounded bg-red-800 px-2 py-1.5 font-medium text-white disabled:opacity-40"
                     >

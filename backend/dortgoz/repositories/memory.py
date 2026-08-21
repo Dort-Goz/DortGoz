@@ -312,6 +312,16 @@ class InMemoryEventRepository:
             ]
             return _copy(sorted(events, key=lambda event: event.created_at))
 
+    def list_all_events(self, status: str | None = None) -> list[VerifiedEvent]:
+        with self._lock:
+            parsed = EventStatus(status) if status is not None else None
+            events = [
+                event
+                for event in self._events.values()
+                if parsed is None or event.status == parsed
+            ]
+            return _copy(sorted(events, key=lambda event: (event.created_at, event.event_id)))
+
     def save_review(self, review: HumanReview) -> HumanReview:
         with self._lock:
             event = self._events.get(review.event_id)

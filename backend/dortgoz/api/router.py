@@ -13,7 +13,8 @@ from fastapi.responses import JSONResponse
 from ..config import settings
 from ..domain.event import VerifiedEvent
 from ..domain.evidence import EvidenceItem, VerifiedEventType
-from ..domain.feedback import DevelopmentApproval
+from ..domain.feedback import DevelopmentApproval, DevelopmentUse
+from ..domain.learning import DriftSnapshot, LearningPlan, LearningRouteQueue
 from ..domain.priority import InterventionPriority
 from ..domain.provenance import HumanReview, ProcedureSource, ReviewDecision
 from ..domain.video import VideoMetadata
@@ -31,6 +32,7 @@ from ..services.analysis_job import (
 from ..services.event_service import EventMemoryService
 from ..services.incident_media import IncidentMediaError, IncidentMediaService
 from ..services.ingest_service import VideoIngestService
+from ..services.learning_orchestrator import LearningOrchestrator
 from ..services.training_sample import TrainingSampleError, TrainingSampleService
 from .contracts import (
     AnalysisAccepted,
@@ -80,6 +82,7 @@ class ApiRuntime:
             frame_root=settings.media_dir / "_training_samples",
             frame_width=settings.training_frame_width,
         )
+        self.learning = LearningOrchestrator(self.repository)
         self.jobs: dict[str, asyncio.Task[None]] = {}
 
 
@@ -319,6 +322,21 @@ async def review_event(
 @router.get("/events/{event_id}/reviews", response_model=list[HumanReview])
 async def list_event_reviews(event_id: str) -> list[HumanReview]:
     return runtime.repository.list_reviews(event_id)
+
+
+@router.get("/events/{event_id}/learning-plan", response_model=LearningPlan)
+async def event_learning_plan(event_id: str) -> LearningPlan:
+    return runtime.learning.plan(event_id)
+
+
+@router.get("/system/learning-health", response_model=DriftSnapshot)
+async def learning_health() -> DriftSnapshot:
+    return runtime.learning.drift_snapshot()
+
+
+@router.get("/learning/routes/{use}", response_model=LearningRouteQueue)
+async def learning_route_queue(use: DevelopmentUse) -> LearningRouteQueue:
+    return runtime.learning.route_queue(use)
 
 
 @router.post(

@@ -68,16 +68,67 @@ export interface InterventionPriority {
   calculated_at: string;
 }
 
+export type DevelopmentUse =
+  | "camera_rule"
+  | "prompt_example"
+  | "threshold_calibration"
+  | "siglip_training"
+  | "d_fine_training"
+  | "evaluation";
+
 export interface DevelopmentApproval {
   approval_id: string;
   event_id: string;
   review_id: string;
   status: "approved" | "rejected" | "revoked";
-  approved_uses: string[];
+  approved_uses: DevelopmentUse[];
   reviewer: string;
   note: string;
   supersedes_approval_id: string | null;
   created_at: string;
+}
+
+export interface LearningRoute {
+  use: DevelopmentUse;
+  recommended: boolean;
+  approval_state:
+    | "review_required"
+    | "approval_required"
+    | "approved"
+    | "not_approved"
+    | "rejected"
+    | "revoked"
+    | "stale";
+  ready: boolean;
+  downstream: string;
+  reason: string;
+  safety_gate: string;
+}
+
+export interface LearningPlan {
+  plan_version: "learning-orchestrator-v1";
+  event_id: string;
+  event_revision: number;
+  latest_review_id: string | null;
+  learning_score: number;
+  learning_band: "low" | "medium" | "high" | "priority";
+  components: {
+    uncertainty: number;
+    disagreement: number;
+    novelty: number;
+    drift: number;
+    coverage_gap: number;
+    redundancy: number;
+    annotation_cost: number;
+  };
+  reasons: string[];
+  intervention_score: number | null;
+  intervention_band: string | null;
+  drift_state: "insufficient_data" | "stable" | "watch" | "drift";
+  routes: LearningRoute[];
+  automatic_training: false;
+  automatic_promotion: false;
+  generated_at: string;
 }
 
 export interface VerifiedBoundingBox {

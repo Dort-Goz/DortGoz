@@ -1,10 +1,12 @@
 import type {
   CanonicalEvent,
   DevelopmentApproval,
+  DevelopmentUse,
   HumanReview,
   IncidentMedia,
   InterventionPriority,
   TrainingSample,
+  LearningPlan,
   VerifiedBoundingBox,
   VideoMetadata,
 } from "../types/domain";
@@ -95,6 +97,23 @@ export const getDevelopmentApprovals = (eventId: string) =>
     `/api/events/${encodeURIComponent(eventId)}/development-approvals`,
   );
 
+export const getLearningPlan = (eventId: string) =>
+  request<LearningPlan>(`/api/events/${encodeURIComponent(eventId)}/learning-plan`);
+
+export const approveEventForLearning = (
+  eventId: string,
+  body: {
+    review_id: string;
+    approved_uses: DevelopmentUse[];
+    reviewer: string;
+    note: string;
+    supersedes_approval_id?: string;
+  },
+) => request<DevelopmentApproval>(
+  `/api/events/${encodeURIComponent(eventId)}/development-approval`,
+  json({ ...body, status: "approved" }),
+);
+
 export const approveEventForDFine = (
   eventId: string,
   body: {
@@ -103,12 +122,12 @@ export const approveEventForDFine = (
     note: string;
     supersedes_approval_id?: string;
   },
-) => request<DevelopmentApproval>(
-  `/api/events/${encodeURIComponent(eventId)}/development-approval`,
-  json({ ...body, status: "approved", approved_uses: ["d_fine_training"] }),
-);
+) => approveEventForLearning(eventId, {
+  ...body,
+  approved_uses: ["d_fine_training"],
+});
 
-export const revokeEventDFineApproval = (
+export const revokeEventLearningApproval = (
   eventId: string,
   body: {
     review_id: string;
@@ -120,6 +139,8 @@ export const revokeEventDFineApproval = (
   `/api/events/${encodeURIComponent(eventId)}/development-approval`,
   json({ ...body, status: "revoked", approved_uses: [] }),
 );
+
+export const revokeEventDFineApproval = revokeEventLearningApproval;
 
 export const getTrainingSamples = (eventId: string) =>
   request<TrainingSample[]>(`/api/events/${encodeURIComponent(eventId)}/training-samples`);

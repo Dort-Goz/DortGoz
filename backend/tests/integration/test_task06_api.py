@@ -148,6 +148,18 @@ def test_review_and_development_approval_are_separate_api_decisions(
         assert reviewed.status_code == 200
         review_id = reviewed.json()["review_id"]
 
+        pending_plan = client.get("/api/events/event-feedback-api/learning-plan")
+        assert pending_plan.status_code == 200
+        assert pending_plan.json()["automatic_training"] is False
+        assert pending_plan.json()["automatic_promotion"] is False
+        evaluation_route = next(
+            route
+            for route in pending_plan.json()["routes"]
+            if route["use"] == "evaluation"
+        )
+        assert evaluation_route["approval_state"] == "approval_required"
+        assert evaluation_route["ready"] is False
+
         approved = client.post(
             "/api/events/event-feedback-api/development-approval",
             json={
@@ -160,6 +172,16 @@ def test_review_and_development_approval_are_separate_api_decisions(
         )
         assert approved.status_code == 200
         assert approved.json()["status"] == "approved"
+
+        evaluation_queue = client.get("/api/learning/routes/evaluation")
+        calibration_queue = client.get("/api/learning/routes/threshold_calibration")
+        learning_health = client.get("/api/system/learning-health")
+        assert evaluation_queue.status_code == 200
+        assert evaluation_queue.json()["count"] == 1
+        assert evaluation_queue.json()["automatic_execution"] is False
+        assert calibration_queue.json()["count"] == 1
+        assert learning_health.status_code == 200
+        assert learning_health.json()["mode"] == "shadow"
 
         revoked = client.post(
             "/api/events/event-feedback-api/development-approval",
@@ -174,6 +196,7 @@ def test_review_and_development_approval_are_separate_api_decisions(
         )
         assert revoked.status_code == 200
         assert revoked.json()["status"] == "revoked"
+        assert client.get("/api/learning/routes/evaluation").json()["count"] == 0
 
         reviews = client.get("/api/events/event-feedback-api/reviews")
         approvals = client.get("/api/events/event-feedback-api/development-approvals")
