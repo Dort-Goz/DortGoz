@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from dortgoz.events import Event, IncidentUpdate, RunStatus, WindowSignals
+from dortgoz.events import Event, IncidentUpdate, ReviewSample, RunStatus, WindowSignals
 from dortgoz.services import triage
 
 
@@ -79,6 +79,41 @@ def test_evidence_clip_url_reaches_the_queue_and_the_ledger(tmp_path):
 
     triage.store.decide("kamera1:INC-1", "sorun_degil")
     assert ledger_lines(tmp_path)[-1]["evidence"] == url
+
+
+def review_sample(sid: str = "S-1", sig: WindowSignals | None = None) -> Event:
+    return Event.wrap(
+        ReviewSample(sample_id=sid, t=30.0, window_start=30.0, window_end=60.0,
+                     summary="olay yok", signals=sig,
+                     evidence="/media/_evidence/r/ornek_30.mp4"),
+        feed="kamera1",
+    )
+
+
+def test_review_sample_becomes_a_labelable_negative(tmp_path):
+    triage.store.observe(run_started())
+    triage.store.observe(review_sample(sig=signals(durum_p=0.06)))
+
+    pending = triage.store.snapshot()["pending"]
+    assert len(pending) == 1
+    assert pending[0]["sample"] is True
+    assert pending[0]["evidence"] == "/media/_evidence/r/ornek_30.mp4"
+
+    triage.store.decide("kamera1:ornek:S-1", "sorun_degil")
+    line = ledger_lines(tmp_path)[-1]
+    assert line["sample"] is True
+    assert line["verdict"] == "sorun_degil"
+    assert line["signals"]["durum_p"] == pytest.approx(0.06)
+
+
+def test_sample_dismissals_never_create_suppression_rules(tmp_path):
+    triage.store.observe(run_started())
+    for n in range(triage.RULE_THRESHOLD + 1):
+        triage.store.observe(review_sample(sid=f"S-{n}"))
+        triage.store.decide(f"kamera1:ornek:S-{n}", "sorun_degil")
+
+    assert triage.store.rules == {}
+    assert triage.store.dismissed_count == 0
 
 
 def test_calibration_pairs_are_reconstructable(tmp_path):

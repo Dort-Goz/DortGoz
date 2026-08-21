@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 import time
+import uuid
 from contextlib import nullcontext
 from pathlib import Path
 
@@ -16,7 +18,15 @@ from ..domain.taxonomy import (
     canonical_event_type_from_ws_label,
     legacy_ws_label_from_canonical,
 )
-from ..events import AgentStep, Event, RunStatus, WindowEvent, WindowReport, WindowSignals
+from ..events import (
+    AgentStep,
+    Event,
+    ReviewSample,
+    RunStatus,
+    WindowEvent,
+    WindowReport,
+    WindowSignals,
+)
 from ..services.runtime_metrics import CanonicalRunMetrics
 from ..services.runtime_policy import decide_runtime_policy
 from ..services.runtime_postprocess import RuntimeEvidenceScope, postprocess_finalized_report
@@ -42,6 +52,11 @@ async def save_thumbnail(video: Path, t: float, run_id: str, name: str) -> str |
     out.mkdir(parents=True, exist_ok=True)
     (out / f"{name}.jpg").write_bytes(jpeg)
     return f"/media/{THUMB_DIR}/{run_id}/{name}.jpg"
+
+
+def _sample_this_window() -> bool:
+    rate = settings.shadow_sample_rate
+    return rate > 0 and random.random() < rate
 
 
 async def save_evidence_clip(video: Path, start: float, end: float,
@@ -733,6 +748,17 @@ async def run_video(
                         evidence=kanit,
                     )
                 sig = window_signals(start, end, screen_samples, profile, call)
+                if not updates and not serious and _sample_this_window():
+                    await rec.emit(ReviewSample(
+                        sample_id=uuid.uuid4().hex[:8],
+                        t=start, window_start=start, window_end=end,
+                        summary=(ledger_report.summary if ledger_report else ""),
+                        signals=sig,
+                        thumbnail=await save_thumbnail(path, start, run_id,
+                                                      f"ornek_{int(start)}"),
+                        evidence=await save_evidence_clip(path, start, end, run_id,
+                                                         f"ornek_{int(start)}"),
+                    ))
                 for update in updates:
                     update = update.model_copy(update={"signals": sig})
                     await rec.emit(update)

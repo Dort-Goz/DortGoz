@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     incident_review: bool = True
     incident_grace_windows: int = 1
     escalate_p: float = 0.10
+    shadow_sample_rate: float = 0.0
     second_opinion_model: str = "qwen3.8-27b-vision-dg"
     second_opinion_motion: float = 0.30
     interpret_effort: str = ""

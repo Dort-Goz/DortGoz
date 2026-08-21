@@ -12,6 +12,7 @@ interface TriageItem {
   phase: string;
   thumbnail: string | null;
   evidence: string | null;
+  sample: boolean;
   needs_review: boolean;
   review_reason: string;
   verdict: string;
@@ -131,9 +132,16 @@ function PendingCard({ item, categories, feedLabel, onDecide }: {
             {feedLabel} · video {clock(item.t)} · {wallClock(item.wall)}
           </div>
           <div className="flex gap-1 mt-0.5">
-            <span className={`rounded px-1 ${RISK_CLS[item.risk] ?? "bg-zinc-800"}`}>
-              {item.risk}
-            </span>
+            {item.sample ? (
+              <span className="rounded px-1 bg-sky-900 text-sky-200"
+                    title="Rastgele denetim örneği: model bu pencerede olay görmedi. ‘Sorun değil’ = model haklı. Kategori seçmek = model olayı KAÇIRMIŞ.">
+                denetim örneği
+              </span>
+            ) : (
+              <span className={`rounded px-1 ${RISK_CLS[item.risk] ?? "bg-zinc-800"}`}>
+                {item.risk}
+              </span>
+            )}
             <span className="rounded px-1 bg-zinc-800 text-zinc-300">
               model: {CATEGORY_TR[item.model_category] ?? item.model_category}
             </span>

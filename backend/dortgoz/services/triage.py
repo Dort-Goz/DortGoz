@@ -76,6 +76,7 @@ class TriageItem:
     phase: str
     thumbnail: str | None = None
     evidence: str | None = None
+    sample: bool = False
     needs_review: bool = False
     review_reason: str = ""
     run_id: str = ""
@@ -132,6 +133,9 @@ class TriageStore:
         if kind == "run_status":
             if getattr(p, "run_id", ""):
                 self._runs[event.feed] = (p.run_id, getattr(p, "video", ""))
+            return
+        if kind == "review_sample":
+            self._observe_sample(event, p)
             return
         if kind != "incident_update":
             return
@@ -195,6 +199,20 @@ class TriageStore:
             self._stamp_and_log(dropped)
 
 
+    def _observe_sample(self, event: Event, p: Any) -> None:
+        run_id, video = self._runs.get(event.feed, ("", ""))
+        key = f"{event.feed}:ornek:{p.sample_id}"
+        if key in self._pending or any(r.key == key for r in self._resolved):
+            return
+        self._pending[key] = TriageItem(
+            key=key, feed=event.feed, incident_id=p.sample_id,
+            t=p.t, wall=time.time(),
+            title=p.summary or "Denetim örneği: model olay görmedi",
+            model_category="normal", risk="dusuk", phase="sonuclandi",
+            thumbnail=p.thumbnail, evidence=p.evidence, sample=True,
+            run_id=run_id, video=video, signals=self._signal_dict(p),
+            model_start=p.window_start, model_end=p.window_end)
+
     def decide(self, key: str, verdict: str, category: str = "",
                note: str = "", reviewer: str = "",
                operator_start: float | None = None,
@@ -209,7 +227,7 @@ class TriageStore:
                 raise ValueError(f"geçersiz kategori: {category}")
             item.operator_category = category
             self._dismissals.pop((item.feed, item.model_category), None)
-        else:
+        elif not item.sample:
             self.dismissed_count += 1
             pair = (item.feed, item.model_category)
             self._dismissals[pair] = self._dismissals.get(pair, 0) + 1

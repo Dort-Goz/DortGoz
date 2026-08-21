@@ -166,11 +166,25 @@ class RunStatus(BaseModel):
     video: str = ""
 
 
+class ReviewSample(BaseModel):
+
+    type: Literal["review_sample"] = "review_sample"
+    sample_id: str
+    t: float
+    window_start: float
+    window_end: float
+    summary: str = ""
+    signals: WindowSignals | None = None
+    thumbnail: str | None = None
+    evidence: str | None = None
+
+
 Payload = (
     WindowReport
     | AgentStep
     | ToolCall
     | IncidentUpdate
+    | ReviewSample
     | ActuatorRequest
     | ActuatorResult
     | ChatMessage

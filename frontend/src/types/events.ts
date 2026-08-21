@@ -129,8 +129,20 @@ export interface RunStatus {
   video: string;
 }
 
+export interface ReviewSample {
+  type: "review_sample";
+  sample_id: string;
+  t: number;
+  window_start: number;
+  window_end: number;
+  summary?: string;
+  signals?: WindowSignals | null;
+  thumbnail?: string | null;
+  evidence?: string | null;
+}
+
 export type Payload =
-  | WindowReport | AgentStep | ToolCall | IncidentUpdate
+  | WindowReport | AgentStep | ToolCall | IncidentUpdate | ReviewSample
   | ActuatorRequest | ActuatorResult | ChatMessage | UICommand | RunStatus;
 
 export interface Event {
