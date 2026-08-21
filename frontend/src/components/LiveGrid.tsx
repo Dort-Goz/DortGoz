@@ -134,7 +134,12 @@ export default function LiveGrid({ incidents, onSelectFeed }: {
       )}
 
       <div className="flex-1 min-h-0 flex gap-2">
-      <div className="flex-1 min-h-0 grid grid-cols-5 gap-1 overflow-auto">
+      <div
+        className="flex-1 min-h-0 grid gap-1 overflow-auto content-start"
+        style={{
+          gridTemplateColumns: `repeat(${Math.max(1, Math.ceil(Math.sqrt(feeds.length)))}, minmax(0, 1fr))`,
+        }}
+      >
         {feeds.map((f) => {
           const badge = lagBadge(f);
           const inc = incidents[f.name]?.length ?? 0;
@@ -142,7 +147,7 @@ export default function LiveGrid({ incidents, onSelectFeed }: {
             <button
               key={f.name}
               onClick={() => { setZoom(f.name); onSelectFeed(f.name); }}
-              className={`relative rounded overflow-hidden border text-left ${
+              className={`relative aspect-video rounded overflow-hidden border text-left ${
                 inc > 0 ? "border-amber-600" : "border-zinc-800"
               } bg-black hover:border-zinc-500`}
               title={`${f.name} · ${f.state}`}
@@ -186,7 +191,7 @@ export default function LiveGrid({ incidents, onSelectFeed }: {
           );
         })}
         {!active && feeds.length === 0 && (
-          <div className="col-span-5 flex items-center justify-center text-zinc-500 py-20">
+          <div className="col-span-full flex items-center justify-center text-zinc-500 py-20">
             Canlı kip kapalı — config/live_feeds.json'daki akışlarla başlatın.
           </div>
         )}
