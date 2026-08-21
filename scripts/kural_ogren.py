@@ -64,7 +64,22 @@ async def main() -> int:
     ap.add_argument("--model", default="")
     ap.add_argument("--min", type=int, default=category_rules.MIN_EVIDENCE,
                     help="bir kategori için gereken en az düzeltme sayısı")
+    ap.add_argument("--seed", action="store_true",
+                    help="taksonomi taban ölçütlerini kur (model çağırmaz)")
     args = ap.parse_args()
+
+    if args.seed:
+        seeds = category_rules.seed_rules(ROOT / "defaults")
+        if not seeds:
+            print("defaults/kategori_olcutleri.json okunamadı", file=sys.stderr)
+            return 2
+        merged = category_rules.merge(category_rules.load(args.runs), seeds)
+        category_rules.save(args.runs, merged)
+        for r in seeds:
+            print(f"  {r.category:14} {r.criterion[:88]}…")
+        print(f"\n{len(seeds)} taban ölçüt ONAYSIZ yazıldı: "
+              f"{args.runs / category_rules.RULES_FILE}")
+        return 0
 
     corr = category_rules.corrections(args.ledger)
     if not corr:

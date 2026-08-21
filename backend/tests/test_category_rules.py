@@ -81,3 +81,49 @@ def test_revised_correction_supersedes_the_earlier_line(tmp_path):
     ]), encoding="utf-8")
 
     assert cr.corrections(ledger) == []
+
+
+def test_seed_rules_need_no_evidence_but_induced_ones_do():
+    seed = cr.CategoryRule(category="yangin", criterion="Alev veya duman.",
+                           approved=True, source="seed")
+    induced = cr.CategoryRule(category="yangin", criterion="X.",
+                              approved=True, source="induced", evidence=["a"])
+
+    assert seed.supported is True
+    assert induced.supported is False
+
+
+def test_induced_rule_wins_over_seed_for_the_same_category():
+    seed = cr.CategoryRule(category="silahli_olay", criterion="TABAN",
+                           approved=True, source="seed")
+    induced = cr.CategoryRule(category="silahli_olay", criterion="CIKARILMIS",
+                              approved=True, source="induced",
+                              evidence=["a", "b"])
+
+    block = cr.prompt_block([seed, induced])
+
+    assert "CIKARILMIS" in block
+    assert "TABAN" not in block
+    assert block.count("`silahli_olay`") == 1
+
+
+def test_each_category_appears_at_most_once():
+    rules = [
+        cr.CategoryRule(category="kavga", criterion="A", approved=True,
+                        source="seed"),
+        cr.CategoryRule(category="kavga", criterion="B", approved=True,
+                        source="seed"),
+    ]
+
+    assert cr.prompt_block(rules).count("`kavga`") == 1
+
+
+def test_seed_file_covers_every_confirmable_category(tmp_path):
+    from pathlib import Path
+
+    from dortgoz.services.triage import CATEGORIES
+
+    seeds = cr.seed_rules(Path(__file__).resolve().parents[2] / "defaults")
+
+    assert {r.category for r in seeds} == set(CATEGORIES)
+    assert all(r.source == "seed" for r in seeds)

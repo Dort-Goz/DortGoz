@@ -22,6 +22,9 @@ class CategoryRule:
 
     @property
     def supported(self) -> bool:
+        # Tohum ölçütler taksonomi TANIMIDIR, kanıt saymaz; çıkarılanlar kanıt ister.
+        if self.source == "seed":
+            return True
         return len(self.evidence) >= MIN_EVIDENCE
 
 
@@ -60,20 +63,41 @@ def merge(existing: list[CategoryRule],
 
 
 def prompt_block(rules: list[CategoryRule]) -> str:
-    """Yalnız ONAYLI ve yeterli kanıtı olan kuralları isteme yazar."""
+    """Onaylı ölçütleri isteme yazar — kategori başına EN FAZLA BİR tane.
+
+    Aynı kategoride hem çıkarılmış hem taban ölçüt varsa çıkarılmış olan
+    kazanır: operatörün gerçek düzeltmelerine dayanır.
+    """
     live = [r for r in rules if r.approved and r.supported and r.criterion.strip()]
     if not live:
         return ""
-    by_cat: dict[str, list[str]] = {}
+    best: dict[str, CategoryRule] = {}
     for r in live:
-        by_cat.setdefault(r.category, []).append(r.criterion.strip())
-    lines = ["\n\n## Kategori ayrım ölçütleri (operatör düzeltmelerinden öğrenildi)"]
-    for cat in sorted(by_cat):
-        for crit in by_cat[cat]:
-            lines.append(f"- `{cat}`: {crit}")
+        kept = best.get(r.category)
+        if kept is None or (kept.source == "seed" and r.source != "seed"):
+            best[r.category] = r
+    lines = ["\n\n## Kategori ayrım ölçütleri"]
+    for cat in sorted(best):
+        lines.append(f"- `{cat}`: {best[cat].criterion.strip()}")
     lines.append("Bu ölçütler kategori SEÇİMİ içindir; olay olup olmadığını "
                  "değiştirmez.")
     return "\n".join(lines) + "\n"
+
+
+def seed_rules(defaults_dir: Path) -> list[CategoryRule]:
+    """Taksonomi taban ölçütleri — düzeltme olmadan da kategoriyi tanımlar."""
+    try:
+        raw = json.loads(
+            (defaults_dir / "kategori_olcutleri.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    out: list[CategoryRule] = []
+    for row in raw if isinstance(raw, list) else []:
+        try:
+            out.append(CategoryRule(**row))
+        except TypeError:
+            continue
+    return out
 
 
 def corrections(ledger: Path) -> list[dict]:

@@ -1,0 +1,47 @@
+[
+ {
+  "category": "silahli_olay",
+  "criterion": "Karede ateşli silah, bıçak veya benzeri bir kesici/delici alet tehdit ya da saldırı amacıyla taşınıyor veya kullanılıyorsa, çevredeki eylem ne olursa olsun (kavga, hırsızlık, soygun) baskın sınıf budur.",
+  "source": "seed"
+ },
+ {
+  "category": "kavga",
+  "criterion": "İki veya daha fazla kişi KARŞILIKLI fiziksel çatışma hâlindeyse (iki taraf da vuruyor, itiyor, boğuşuyor) bu sınıftır; tek taraf saldırıyor diğeri karşılık vermiyorsa `saldiri` seç.",
+  "source": "seed"
+ },
+ {
+  "category": "saldiri",
+  "criterion": "Bir kişi, karşılık vermeyen veya kaçmaya çalışan bir kişiye TEK TARAFLI fiziksel şiddet uyguluyorsa bu sınıftır; karşılıklı boğuşma varsa `kavga` seç.",
+  "source": "seed"
+ },
+ {
+  "category": "hirsizlik",
+  "criterion": "Bir kişi başkasına ait eşyayı, aracı veya ürünü izinsiz ALIP GÖTÜRÜYORSA ya da kapalı bir yere zorla giriyorsa bu sınıftır; amaç eşyayı almak değil zarar vermekse `vandalizm` seç.",
+  "source": "seed"
+ },
+ {
+  "category": "vandalizm",
+  "criterion": "Bir kişi mala veya yapıya KASITLI zarar veriyorsa (kırma, çizme, devirme, boyama, parçalama) bu sınıftır; eşya alınıp götürülüyorsa `hirsizlik`, tutuşturma varsa `yangin`, patlayıcı varsa `patlama` önceliklidir.",
+  "source": "seed"
+ },
+ {
+  "category": "yangin",
+  "criterion": "Görünür alev veya SÜREKLİ yükselen duman varsa bu sınıftır; egzoz, buhar, toz ve ışık yansıması yangın değildir. Ani tek seferlik parlama ve basınç dalgası varsa `patlama` seç.",
+  "source": "seed"
+ },
+ {
+  "category": "patlama",
+  "criterion": "ANİ ve tek seferlik parlama, basınç dalgası veya enkaz saçılması varsa bu sınıftır; ardından süregelen alev/duman kalıyorsa yine patlama önceliklidir, yalnız yavaş büyüyen alev varsa `yangin` seç.",
+  "source": "seed"
+ },
+ {
+  "category": "arac_kazasi",
+  "criterion": "Araç ile araç, araç ile yaya veya araç ile sabit nesne arasında ÇARPIŞMA, devrilme ya da savrulma varsa bu sınıftır; yalnız duran, yavaşlayan veya park eden araç kaza değildir.",
+  "source": "seed"
+ },
+ {
+  "category": "bilinmeyen",
+  "criterion": "Gerçekten dikkat gerektiren bir durum var ama yukarıdaki sınıfların hiçbirine oturmuyorsa bu sınıfı kullan; zorlama sınıflandırma yapma. Olağan hareketlilik için bu sınıfı KULLANMA, `normal` yaz.",
+  "source": "seed"
+ }
+]
