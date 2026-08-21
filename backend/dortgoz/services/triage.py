@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 import uuid
@@ -54,7 +55,12 @@ def _run_meta(run_id: str) -> dict[str, Any]:
         meta = json.loads(raw)
     except ValueError:
         return {}
-    return {k: meta.get(k, "") for k in ("model", "mode", "video", "system_prompt")}
+    out = {k: meta.get(k, "") for k in ("model", "mode", "video")}
+    prompt = meta.get("system_prompt", "") or ""
+    task = meta.get("task_prompt", "") or ""
+    out["system_prompt_sha"] = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12]
+    out["task_prompt_sha"] = hashlib.sha256(task.encode("utf-8")).hexdigest()[:12]
+    return out
 
 
 @dataclass

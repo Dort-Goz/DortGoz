@@ -105,6 +105,8 @@ def test_config_and_run_meta_are_snapshotted(tmp_path):
     assert item.config["escalate_p"] == triage.settings.escalate_p
     assert item.run_meta["model"] == "qwen3.6-35b"
     assert item.run_meta["mode"] == "dengeli"
+    assert len(item.run_meta["system_prompt_sha"]) == 12
+    assert "system_prompt" not in item.run_meta
 
 
 def test_operator_time_correction_is_recorded(tmp_path):
@@ -225,3 +227,36 @@ def test_model_bounds_are_kept_next_to_the_operator_correction(tmp_path):
 
     assert (item.model_start, item.model_end) == (11.0, 20.0)
     assert (item.operator_start, item.operator_end) == (9.5, 19.0)
+
+
+def test_prompt_is_referenced_by_hash_not_duplicated(tmp_path):
+    long_prompt = "x" * 5000
+    (tmp_path / "canli-kamera1-0001.meta.json").write_text(
+        json.dumps({"model": "m", "mode": "dengeli", "video": "v.mp4",
+                    "system_prompt": long_prompt, "task_prompt": "t"}),
+        encoding="utf-8",
+    )
+    triage.store.observe(run_started())
+    triage.store.observe(incident())
+    triage.store.decide("kamera1:INC-1", "sorun_degil")
+
+    raw = (tmp_path / "nobet_defteri.jsonl").read_text(encoding="utf-8")
+    assert long_prompt not in raw
+    assert len(raw) < 3000
+
+    line = ledger_lines(tmp_path)[-1]
+    assert len(line["run_meta"]["system_prompt_sha"]) == 12
+
+
+def test_prompt_change_is_detectable_across_decisions(tmp_path):
+    meta = tmp_path / "canli-kamera1-0001.meta.json"
+    meta.write_text(json.dumps({"system_prompt": "ilk istem"}), encoding="utf-8")
+    triage.store.observe(run_started())
+    triage.store.observe(incident("INC-1"))
+    a = triage.store.decide("kamera1:INC-1", "sorun_degil")
+
+    meta.write_text(json.dumps({"system_prompt": "degismis istem"}), encoding="utf-8")
+    triage.store.observe(incident("INC-2", risk="yuksek"))
+    b = triage.store.decide("kamera1:INC-2", "sorun_degil")
+
+    assert a.run_meta["system_prompt_sha"] != b.run_meta["system_prompt_sha"]
