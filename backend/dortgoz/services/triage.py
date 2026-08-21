@@ -8,13 +8,17 @@ etkinleşmez. Kritik olay sınıfları hiçbir zaman bastırılamaz.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import uuid4
 
+from ..config import settings
 from ..domain.feedback import (
     DevelopmentApproval,
     DevelopmentApprovalStatus,
@@ -29,6 +33,7 @@ from ..domain.taxonomy import canonical_event_type_from_ws_label
 from ..events import Event, IncidentUpdate
 from ..repositories.bundles import FeedbackWriteBundle
 from ..repositories.protocols import EventRepository
+from . import exemplar_bank
 from .event_service import EventMemoryService
 from .intervention_priority import (
     RULESET_VERSION,
@@ -37,6 +42,7 @@ from .intervention_priority import (
 )
 
 LOGGER = logging.getLogger(__name__)
+LEDGER_VERSION = 2
 
 CATEGORIES = [
     "kavga", "saldiri", "hirsizlik", "silahli_olay", "yangin",
@@ -51,12 +57,44 @@ PROTECTED_CATEGORIES = frozenset(
     {"kavga", "saldiri", "silahli_olay", "yangin", "patlama", "arac_kazasi"}
 )
 PROTECTED_RISKS = frozenset({"yuksek", "kritik"})
+RISK = ["dusuk", "orta", "yuksek", "kritik"]
 
 _NOTE_TR = {
     "hirsizlik": "araç ve eşya çevresindeki olağan yükleme veya bekleme hareketleri",
     "vandalizm": "yapı veya eşya yakınında çalışan ya da bekleyen kişiler",
     "bilinmeyen": "bu kameranın olağan sahne hareketleri",
 }
+
+
+def _config_snapshot() -> dict[str, Any]:
+    return {
+        "escalate_p": settings.escalate_p,
+        "candidate_start_threshold": settings.candidate_start_threshold,
+        "candidate_continue_threshold": settings.candidate_continue_threshold,
+        "candidate_screening": settings.candidate_screening,
+        "second_opinion_model": settings.second_opinion_model,
+        "dual_read": settings.dual_read,
+        "final_sweep": settings.final_sweep,
+    }
+
+
+def _run_meta(run_id: str) -> dict[str, Any]:
+    if not run_id:
+        return {}
+    try:
+        raw = (settings.runs_dir / f"{run_id}.meta.json").read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    try:
+        meta = json.loads(raw)
+    except ValueError:
+        return {}
+    out = {key: meta.get(key, "") for key in ("model", "mode", "video")}
+    prompt = meta.get("system_prompt", "") or ""
+    task = meta.get("task_prompt", "") or ""
+    out["system_prompt_sha"] = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12]
+    out["task_prompt_sha"] = hashlib.sha256(task.encode("utf-8")).hexdigest()[:12]
+    return out
 
 
 class TriagePersistenceError(RuntimeError):
@@ -76,10 +114,23 @@ class TriageItem:
     phase: str
     event_id: str | None = None
     thumbnail: str | None = None
+    evidence: str | None = None
+    sample: bool = False
+    emsal_benzerlik: float | None = None
+    emsal_key: str = ""
+    emsal_golge: bool = False
     needs_review: bool = False
     review_reason: str = ""
+    run_id: str = ""
+    video: str = ""
+    model_start: float | None = None
+    model_end: float | None = None
+    signals: dict[str, Any] = field(default_factory=dict)
     verdict: str = ""
     operator_category: str = ""
+    operator_start: float | None = None
+    operator_end: float | None = None
+    reviewer: str = ""
     note: str = ""
     decided_wall: float | None = None
     tekrar: int = 1
@@ -95,6 +146,11 @@ class TriageItem:
     intervention_reasons: list[str] = field(default_factory=list)
     priority_ruleset_version: str = RULESET_VERSION
     escalation_scopes: list[str] = field(default_factory=list)
+    decision_id: str = ""
+    supersedes: str | None = None
+    ledger_version: int = LEDGER_VERSION
+    config: dict[str, Any] = field(default_factory=dict)
+    run_meta: dict[str, Any] = field(default_factory=dict)
 
 
 class TriageStore:
@@ -104,12 +160,18 @@ class TriageStore:
         event_service: EventMemoryService | None = None,
         event_id_resolver: Callable[[str, str], str | None] | None = None,
         clock: Callable[[], datetime] | None = None,
+        allow_ledger_only: bool = False,
     ) -> None:
         self._pending: dict[str, TriageItem] = {}
         self._resolved: list[TriageItem] = []
         self.dismissed_count = 0
         self.auto_dismissed = 0
         self.queue_overflow_count = 0
+        self.expired_count = 0
+        self.emsal_shadow_count = 0
+        self.emsal_suppressed = 0
+        self.rules: dict[tuple[str, str], int] = {}
+        self._runs: dict[str, tuple[str, str]] = {}
         self.repository = repository
         self.event_service = event_service or (
             EventMemoryService(repository) if repository is not None else None
@@ -119,6 +181,10 @@ class TriageStore:
             InterventionPriorityService(repository) if repository is not None else None
         )
         self._clock = clock or (lambda: datetime.now(UTC))
+        self.allow_ledger_only = allow_ledger_only
+        self._matcher = exemplar_bank.Matcher(
+            settings.runs_dir, settings.runs_dir / "nobet_defteri.jsonl"
+        )
 
     def configure(
         self,
@@ -133,9 +199,37 @@ class TriageStore:
         self.event_id_resolver = event_id_resolver
         self.priority_service = InterventionPriorityService(repository)
 
+    @staticmethod
+    def _signal_dict(payload: Any) -> dict[str, Any]:
+        signals = getattr(payload, "signals", None)
+        return signals.model_dump() if signals is not None else {}
+
+    def _merge_signals(self, item: TriageItem, payload: Any) -> None:
+        incoming = self._signal_dict(payload)
+        if not incoming:
+            return
+        if not item.signals:
+            item.signals = incoming
+            return
+        previous = item.signals.get("durum_p")
+        current = incoming.get("durum_p")
+        if current is not None and (previous is None or current > previous):
+            item.signals = incoming
+
     def observe(self, event: Event) -> None:
         payload = event.payload
-        if getattr(payload, "type", "") != "incident_update":
+        kind = getattr(payload, "type", "")
+        if kind == "run_status":
+            if getattr(payload, "run_id", ""):
+                self._runs[event.feed] = (
+                    payload.run_id,
+                    getattr(payload, "video", ""),
+                )
+            return
+        if kind == "review_sample":
+            self._observe_sample(event, payload)
+            return
+        if kind != "incident_update":
             return
         key = f"{event.feed}:{payload.incident_id}"
         event_id = self._resolve_event_id(event.feed, payload.incident_id)
@@ -147,8 +241,14 @@ class TriageStore:
             item.model_category = payload.anomaly_type
             item.event_id = event_id or item.event_id
             item.thumbnail = payload.thumbnail or item.thumbnail
+            item.evidence = payload.evidence or item.evidence
             item.needs_review = payload.needs_review
             item.review_reason = payload.review_reason
+            if payload.olay_baslangic is not None:
+                item.model_start = payload.olay_baslangic
+            if payload.olay_bitis is not None:
+                item.model_end = payload.olay_bitis
+            self._merge_signals(item, payload)
             self._apply_priority(item, priority)
             return
         resolved = next((item for item in self._resolved if item.key == key), None)
@@ -186,6 +286,7 @@ class TriageStore:
             item.decided_wall = time.time()
             item.review_ids = [review.review_id]
             self._append_resolved(item)
+            self._stamp_and_log(item)
             return
 
         item = self._new_item(event, event_id, priority)
@@ -195,6 +296,31 @@ class TriageStore:
             item.review_reason = " · ".join(filter(None, [item.review_reason, suffix]))
         self._pending[key] = item
         self._enforce_capacity()
+
+    def _observe_sample(self, event: Event, payload: Any) -> None:
+        run_id, video = self._runs.get(event.feed, ("", ""))
+        key = f"{event.feed}:ornek:{payload.sample_id}"
+        if key in self._pending or any(item.key == key for item in self._resolved):
+            return
+        self._pending[key] = TriageItem(
+            key=key,
+            feed=event.feed,
+            incident_id=payload.sample_id,
+            t=payload.t,
+            wall=time.time(),
+            title=payload.summary or "Denetim örneği: model olay görmedi",
+            model_category="normal",
+            risk="dusuk",
+            phase="sonuclandi",
+            thumbnail=payload.thumbnail,
+            evidence=payload.evidence,
+            sample=True,
+            run_id=run_id,
+            video=video,
+            signals=self._signal_dict(payload),
+            model_start=payload.window_start,
+            model_end=payload.window_end,
+        )
 
     def decide(
         self,
@@ -209,6 +335,8 @@ class TriageStore:
         intervention_required: bool | None = None,
         note: str = "",
         reviewer: str = "operator-console",
+        operator_start: float | None = None,
+        operator_end: float | None = None,
     ) -> TriageItem:
         if verdict not in {"anomali", "sorun_degil"}:
             raise ValueError(f"geçersiz karar: {verdict}")
@@ -231,15 +359,65 @@ class TriageStore:
             raise ValueError(f"geçersiz risk düzeyi: {risk_level}")
         if not reviewer.strip():
             raise ValueError("reviewer boş olamaz")
+        if (operator_start is None) != (operator_end is None):
+            raise ValueError("operatör başlangıç ve bitiş zamanı birlikte verilmelidir")
+        if (
+            operator_start is not None
+            and operator_end is not None
+            and operator_start > operator_end
+        ):
+            raise ValueError("operatör başlangıcı bitişten sonra olamaz")
+
+        if item.sample:
+            self._pending.pop(key)
+            item.verdict = verdict
+            item.operator_category = category if verdict == "anomali" else ""
+            item.operator_risk = risk_level or (item.risk if verdict == "anomali" else "")
+            item.note = note[:500]
+            item.reviewer = reviewer[:120]
+            item.intervention_required = intervention_required
+            item.review_start, item.review_peak, item.review_end = (
+                start_time,
+                peak_time,
+                end_time,
+            )
+            item.operator_start = operator_start if operator_start is not None else start_time
+            item.operator_end = operator_end if operator_end is not None else end_time
+            item.decided_wall = time.time()
+            self._append_resolved(item)
+            self._stamp_and_log(item)
+            return item
 
         event_id = item.event_id or self._resolve_event_id(item.feed, item.incident_id)
         if event_id is None or self.repository is None or self.repository.get_event(event_id) is None:
+            if self.allow_ledger_only:
+                return self._save_ledger_only_decision(
+                    item,
+                    verdict=verdict,
+                    category=category,
+                    risk_level=risk_level,
+                    start_time=start_time,
+                    peak_time=peak_time,
+                    end_time=end_time,
+                    note=note,
+                    reviewer=reviewer,
+                    operator_start=operator_start,
+                    operator_end=operator_end,
+                )
             raise TriagePersistenceError(
                 "Olay henüz canonical SQLite kaydına bağlanamadı; karar kaydedilmedi."
             )
         item.event_id = event_id
         event = self.repository.get_event(event_id)
         assert event is not None
+        if operator_start is not None and operator_end is not None:
+            if any(value is not None for value in (start_time, peak_time, end_time)):
+                raise ValueError(
+                    "legacy ve yapılandırılmış zaman düzeltmeleri birlikte verilemez"
+                )
+            start_time = operator_start
+            end_time = operator_end
+            peak_time = min(max(event.peak_time, start_time), end_time)
         corrected_times = self._review_times(
             event_id,
             start_time=start_time,
@@ -306,10 +484,96 @@ class TriageStore:
         item.review_ids = [review.review_id]
         item.verdict = verdict
         item.note = review.note[:500]
+        item.reviewer = reviewer.strip()[:120]
         item.intervention_required = required
         item.review_start, item.review_peak, item.review_end = corrected_times
+        item.operator_start = corrected_times[0]
+        item.operator_end = corrected_times[2]
         item.decided_wall = time.time()
         self._append_resolved(item)
+        self._stamp_and_log(item)
+        return item
+
+    def _save_ledger_only_decision(
+        self,
+        item: TriageItem,
+        *,
+        verdict: str,
+        category: str,
+        risk_level: str | None,
+        start_time: float | None,
+        peak_time: float | None,
+        end_time: float | None,
+        note: str,
+        reviewer: str,
+        operator_start: float | None,
+        operator_end: float | None,
+    ) -> TriageItem:
+        """Save an explicitly enabled offline/evaluation label to the JSONL corpus."""
+
+        self._pending.pop(item.key)
+        item.verdict = verdict
+        item.operator_category = category if verdict == "anomali" else ""
+        item.operator_risk = risk_level or (item.risk if verdict == "anomali" else "")
+        item.note = note[:500]
+        item.reviewer = reviewer[:120]
+        item.operator_start = operator_start
+        item.operator_end = operator_end
+        item.review_start = start_time
+        item.review_peak = peak_time
+        item.review_end = end_time
+        if operator_start is None:
+            item.operator_start = start_time
+        if operator_end is None:
+            item.operator_end = end_time
+        item.decided_wall = time.time()
+        if verdict == "sorun_degil" and not item.sample:
+            self.dismissed_count += 1
+        self._append_resolved(item)
+        self._stamp_and_log(item)
+        return item
+
+    def revise(
+        self,
+        key: str,
+        verdict: str,
+        category: str = "",
+        note: str = "",
+        reviewer: str = "operator-console",
+        operator_start: float | None = None,
+        operator_end: float | None = None,
+    ) -> TriageItem:
+        """Append an operator correction without deleting the earlier ledger line."""
+
+        from dataclasses import replace
+
+        prior = next((item for item in reversed(self._resolved) if item.key == key), None)
+        if prior is None:
+            raise KeyError(f"düzeltilecek karar yok: {key}")
+        if verdict not in {"anomali", "sorun_degil"}:
+            raise ValueError(f"geçersiz karar: {verdict}")
+        if verdict == "anomali" and category not in CATEGORIES:
+            raise ValueError(f"geçersiz kategori: {category}")
+        if (
+            operator_start is not None
+            and operator_end is not None
+            and operator_start > operator_end
+        ):
+            raise ValueError("operatör başlangıcı bitişten sonra olamaz")
+        item = replace(
+            prior,
+            verdict=verdict,
+            operator_category=category if verdict == "anomali" else "",
+            note=note[:500],
+            reviewer=reviewer[:120],
+            operator_start=operator_start,
+            operator_end=operator_end,
+            decided_wall=time.time(),
+            decision_id="",
+            supersedes=prior.decision_id,
+        )
+        self._append_resolved(item)
+        self._stamp_and_log(item)
         return item
 
     def approve_rule(
@@ -427,10 +691,27 @@ class TriageStore:
             "dismissed_count": self.dismissed_count,
             "auto_dismissed": self.auto_dismissed,
             "queue_overflow_count": self.queue_overflow_count,
+            "expired_count": self.expired_count,
             "critical_overflow_count": max(0, len(self._pending) - MAX_PENDING),
             "rule_proposals": proposals,
+            "rules": [
+                {
+                    "feed": item.feed,
+                    "category": item.category,
+                    "auto_count": item.auto_applied_count,
+                }
+                for item in self._approved_rules()
+            ],
             "categories": CATEGORIES,
             "protected_categories": sorted(PROTECTED_CATEGORIES),
+            "emsal": {
+                "acik": settings.exemplar_suppress,
+                "golge": settings.exemplar_shadow,
+                "esik": settings.exemplar_threshold,
+                "golge_isabet": self.emsal_shadow_count,
+                "bastirilan": self.emsal_suppressed,
+                "kamera_basina": self._matcher.counts(),
+            },
         }
 
     def clear(self) -> None:
@@ -439,6 +720,11 @@ class TriageStore:
         self.dismissed_count = 0
         self.auto_dismissed = 0
         self.queue_overflow_count = 0
+        self.expired_count = 0
+        self.emsal_shadow_count = 0
+        self.emsal_suppressed = 0
+        self.rules.clear()
+        self._runs.clear()
 
     def _new_item(
         self,
@@ -447,6 +733,13 @@ class TriageStore:
         priority: tuple[int, str, list[str], str],
     ) -> TriageItem:
         payload = event.payload
+        run_id, video = self._runs.get(event.feed, ("", ""))
+        match = self._emsal_check(event.feed, payload)
+        shadow_hit = bool(
+            match is not None
+            and match.shadow
+            and match.similarity >= settings.exemplar_threshold
+        )
         item = TriageItem(
             key=f"{event.feed}:{payload.incident_id}",
             feed=event.feed,
@@ -459,11 +752,45 @@ class TriageStore:
             risk=payload.risk,
             phase=payload.phase,
             thumbnail=payload.thumbnail,
+            evidence=payload.evidence,
             needs_review=payload.needs_review,
             review_reason=payload.review_reason,
+            run_id=run_id,
+            video=video,
+            model_start=payload.olay_baslangic,
+            model_end=payload.olay_bitis,
+            signals=self._signal_dict(payload),
+            emsal_golge=shadow_hit,
+            emsal_benzerlik=(round(match.similarity, 4) if shadow_hit else None),
+            emsal_key=(
+                match.precedent.key
+                if shadow_hit and match is not None and match.precedent is not None
+                else ""
+            ),
         )
         self._apply_priority(item, priority)
         return item
+
+    def _emsal_check(self, feed: str, payload: Any):
+        embedding = None
+        evidence_key = exemplar_bank.key_from_evidence(
+            getattr(payload, "evidence", None)
+        )
+        if evidence_key:
+            found = exemplar_bank.load(settings.runs_dir).get(evidence_key)
+            embedding = found.embedding if found is not None else None
+        match = self._matcher.check(
+            feed,
+            payload.anomaly_type,
+            payload.risk,
+            embedding,
+            threshold=settings.exemplar_threshold,
+            enabled=settings.exemplar_suppress,
+            shadow=settings.exemplar_shadow,
+        )
+        if match.shadow and match.similarity >= settings.exemplar_threshold:
+            self.emsal_shadow_count += 1
+        return match
 
     def _reopen_escalated(
         self,
@@ -584,6 +911,11 @@ class TriageStore:
             )
             self._pending.pop(victim.key)
             self.queue_overflow_count += 1
+            self.expired_count += 1
+            victim.verdict = "expired"
+            victim.decided_wall = time.time()
+            victim.note = "kuyruk taştı: operatör karar veremeden görünümden çıkarıldı"
+            self._stamp_and_log(victim)
             LOGGER.warning(
                 "nöbet kartı kapasite nedeniyle görünümden çıkarıldı; canonical kayıt korundu: %s",
                 victim.key,
@@ -928,6 +1260,22 @@ class TriageStore:
     def _append_resolved(self, item: TriageItem) -> None:
         self._resolved.append(item)
         del self._resolved[:-MAX_RESOLVED]
+
+    def _stamp_and_log(self, item: TriageItem) -> None:
+        if not item.decision_id:
+            item.decision_id = uuid4().hex
+        if not item.config:
+            item.config = _config_snapshot()
+        if not item.run_meta:
+            item.run_meta = _run_meta(item.run_id)
+        try:
+            settings.runs_dir.mkdir(parents=True, exist_ok=True)
+            with (settings.runs_dir / "nobet_defteri.jsonl").open(
+                "a", encoding="utf-8"
+            ) as handle:
+                handle.write(json.dumps(asdict(item), ensure_ascii=False) + "\n")
+        except OSError:
+            LOGGER.exception("nöbet defteri yazılamadı")
 
 
 store = TriageStore()

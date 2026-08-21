@@ -1,5 +1,3 @@
-"""Canonical analysis job ownership, single-flight and status reconstruction."""
-
 from __future__ import annotations
 
 import asyncio

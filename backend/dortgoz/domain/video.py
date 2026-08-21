@@ -1,5 +1,3 @@
-"""Video ingest domain modelleri ve typed hata sözleşmesi."""
-
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -22,7 +20,6 @@ class VideoErrorCode(StrEnum):
 
 
 class VideoIngestError(RuntimeError):
-    """Ingest katmanından API ErrorEnvelope'a çevrilecek typed hata."""
 
     def __init__(self, code: VideoErrorCode, message: str) -> None:
         super().__init__(message)
@@ -30,7 +27,6 @@ class VideoIngestError(RuntimeError):
 
 
 class VideoProbe(BaseModel):
-    """ffprobe çıktısının uygulamanın kullandığı normalize edilmiş alt kümesi."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -47,7 +43,6 @@ class VideoProbe(BaseModel):
 
 
 class VideoMetadata(BaseModel):
-    """Güvenli storage ve ffprobe doğrulamasından geçmiş video kaydı."""
 
     model_config = ConfigDict(extra="forbid")
 

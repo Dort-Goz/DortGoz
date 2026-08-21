@@ -1,5 +1,3 @@
-"""Yerel prosedür index/retrieval entegrasyon testleri."""
-
 from __future__ import annotations
 
 import hashlib
@@ -10,7 +8,7 @@ import pytest
 
 from dortgoz.domain.event import EventStatus, RiskAssessment, RiskLevel, VerifiedEvent
 from dortgoz.domain.evidence import EvidenceItem, EvidenceValidationResult, VerifiedEventType
-from dortgoz.repositories.procedure_index import LocalProcedureIndex
+from dortgoz.services.procedure_index import LocalProcedureIndex
 from dortgoz.services.procedure_service import ProcedureService
 
 

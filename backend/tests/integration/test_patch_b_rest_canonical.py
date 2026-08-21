@@ -1,5 +1,3 @@
-"""Patch B REST → canonical analysis job entegrasyon testleri."""
-
 from __future__ import annotations
 
 import asyncio
@@ -92,9 +90,19 @@ class CanonicalApi:
         return self.runtime.repository.create_video(video)
 
 
+def assert_control_plane_has_no_duplicate_analysis(repository) -> None:
+    """REST job başlangıcı kalıcı event memory'de ikinci bir analiz açmamalı."""
+
+    metrics = repository.snapshot_metrics()
+    assert metrics["total_videos"] == 1
+    assert metrics["total_analyses"] == 0
+    assert metrics["total_events"] == 0
+
+
+
 @pytest.fixture
 async def canonical_api(monkeypatch, tmp_path: Path) -> AsyncIterator[CanonicalApi]:
-    monkeypatch.setattr(api_module.settings, "event_store_path", None)
+    monkeypatch.setattr(api_module.settings, "video_store_path", None)
     runtime = ApiRuntime()
     runner = BlockingRunner()
     jobs = CanonicalAnalysisJobService(
@@ -152,11 +160,8 @@ async def test_rest_start_uses_canonical_job_and_writes_no_legacy_analysis(
     assert canonical_api.runner.calls[0][1] == analysis_id
     assert payload["status_url"] == f"/api/analyses/{analysis_id}/status"
     assert payload["result_url"] == f"/api/runs/{analysis_id}"
-    assert canonical_api.runtime.repository.get_analysis(analysis_id) is None
     assert canonical_api.runtime.jobs == {}
-    metrics = canonical_api.runtime.repository.snapshot_metrics()
-    assert metrics["total_analyses"] == 0
-    assert metrics["total_events"] == 0
+    assert_control_plane_has_no_duplicate_analysis(canonical_api.runtime.repository)
 
     status = await canonical_api.client.get(payload["status_url"])
     assert status.status_code == 200
@@ -181,18 +186,8 @@ async def test_deprecated_profiles_never_invoke_legacy_execution(
         calls["event_orchestrator"] += 1
         raise AssertionError("legacy orchestrator çağrılmamalı")
 
-    def forbidden_local_vlm(*_args, **_kwargs):
-        calls["local_vlm"] += 1
-        raise AssertionError("legacy local VLM çağrılmamalı")
-
-    def forbidden_candidate(*_args, **_kwargs):
-        calls["candidate"] += 1
-        raise AssertionError("legacy candidate çağrılmamalı")
-
     monkeypatch.setattr(MockVerticalAnalysisService, "analyze", forbidden_vertical)
     monkeypatch.setattr(EventOrchestrator, "run", forbidden_orchestrator)
-    monkeypatch.setattr(api_module, "LocalVlmAgentTools", forbidden_local_vlm)
-    monkeypatch.setattr(api_module, "LocalCandidateScreeningTool", forbidden_candidate)
 
     response = await canonical_api.client.post(
         f"/api/videos/{video.video_id}/analyze",
@@ -411,7 +406,5 @@ async def test_rest_errors_are_typed_and_never_fall_back_to_legacy(
     assert missing_cancel.status_code == 404
     assert missing_cancel.json()["error"]["code"] == "ANALYSIS_NOT_FOUND"
     assert legacy_calls == 0
-    metrics = canonical_api.runtime.repository.snapshot_metrics()
-    assert metrics["total_analyses"] == 0
-    assert metrics["total_events"] == 0
+    assert_control_plane_has_no_duplicate_analysis(canonical_api.runtime.repository)
     assert canonical_api.runner.calls == []

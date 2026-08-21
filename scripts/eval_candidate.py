@@ -1,5 +1,3 @@
-"""JSONL screening sample'larından candidate interval raporu üretir."""
-
 from __future__ import annotations
 
 import argparse

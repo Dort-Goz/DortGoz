@@ -1,5 +1,3 @@
-"""VLM ve kanıt doğrulama domain modelleri."""
-
 from __future__ import annotations
 
 from enum import StrEnum

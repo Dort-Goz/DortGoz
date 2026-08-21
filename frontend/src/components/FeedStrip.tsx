@@ -1,10 +1,6 @@
 import type { FeedState } from "../state";
 import { RISK_TR } from "../lib/labels";
 
-/** Kamera duvarı şeridi — çoklu-akış (demo) kipinde akış başına bir karo.
- *  Karo: akış adı, ilerleme, olay sayısı + en ciddi risk, inceleme bayrağı.
- *  Tıklanan akış konsolun odağı olur (video/çizelge/iz o akışı gösterir). */
-
 const ORDER = ["dusuk", "orta", "yuksek", "kritik"] as const;
 
 function worstRisk(f: FeedState): string | null {
@@ -19,19 +15,12 @@ export default function FeedStrip({ feeds, active, onSelect }: {
   onSelect: (feed: string) => void;
 }) {
   const names = Object.keys(feeds).filter((k) => k !== "");
-  if (names.length < 2) return null;      // tek akışta şerit gereksiz
+  if (names.length < 2) return null;
 
-  // Toplam kapasite göstergesi: akış hızlarının toplamı. N akışın gerçek
-  // zamanda taşınması için Σ ≥ işlenen akış sayısı gerekir — jüriye "kaç
-  // kamera kaldırır" sorusunun canlı cevabı.
   const busyFeeds = names.filter((n) => feeds[n].runStatus?.state === "processing");
   const total = names.reduce((s, n) => s + (feeds[n].runStatus?.speed ?? 0), 0);
   const enough = busyFeeds.length === 0 || total >= busyFeeds.length;
 
-  // SARAN duvar, yatay kaydırma DEĞİL: 24 akış tek satırda ekran dışına
-  // taşıyordu ve kaydırmadan görülemiyordu (2026-08-14 kullanılabilirlik
-  // bulgusu). Karolar satırlara sarar; ~3 satırı aşarsa dikey kaydırma açılır
-  // — tüm akışlar tek bakışta, en kötü durumda tek parmak kaydırması.
   return (
     <div className="shrink-0 flex flex-wrap gap-1.5 overflow-y-auto max-h-44">
       <div className={`rounded-lg border px-3 py-1.5 min-w-32 shrink-0 ${
@@ -74,7 +63,6 @@ export default function FeedStrip({ feeds, active, onSelect }: {
               {review > 0 && (
                 <span className="text-[10px] text-amber-400">⚑{review}</span>
               )}
-              {/* Gerçek-zaman oranı: ≥1× yeşil (akışa yetişiyor), <1× kırmızı */}
               {speed > 0 && (
                 <span className={`ml-auto text-[10px] font-mono font-bold ${
                   speed >= 1 ? "text-emerald-400" : "text-red-400"

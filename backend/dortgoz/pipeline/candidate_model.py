@@ -1,10 +1,3 @@
-"""Local candidate scorer sözleşmesi, manifest doğrulaması ve scorer yükleme.
-
-``MotionBaselineModel`` gerçek learned CNN değildir; Task 07'nin ölçülebilir
-referansıdır. Model artifact'i geldiğinde yalnızca ``score_motion_profile``
-implementasyonu değişir, interval builder ve agent contract aynı kalır.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -41,7 +34,6 @@ class CandidateScorer(Protocol):
 
 
 class MotionBaselineModel:
-    """Hareket profilini reproducible screening skorlarına çeviren referans."""
 
     model_id = "motion-baseline-v1"
     _FEATURE_SCHEMA = ("changed", "fg", "mad", "activity")
@@ -67,8 +59,6 @@ class MotionBaselineModel:
                 timestamp=sample.t,
                 anomaly_score=_clamp(sample.activity * self.activity_scale),
                 interaction_score=_clamp(sample.changed * self.interaction_scale),
-                # Hareket profili fall/fire/vehicle semantiğini ayırt edemez;
-                # bu alanlar bilinçli olarak sıfır kalır ve VLM'ye hüküm taşımaz.
                 image_quality=1.0,
                 source_model=self.model_id,
                 feature_ref=f"motion:{index}",
@@ -110,7 +100,6 @@ class MotionBaselineModel:
 
 
 class MotionBaselineArtifact(BaseModel):
-    """Baseline artifact'inin manifestten bağımsız strict biçimi."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -122,38 +111,7 @@ class MotionBaselineArtifact(BaseModel):
     license: Literal["Apache-2.0", "MIT"]
 
 
-class CandidatePipeline:
-    """Profile → score → hysteresis candidate pipeline."""
-
-    def __init__(
-        self,
-        scorer: CandidateScorer | None = None,
-        interval_config: IntervalConfig | None = None,
-    ) -> None:
-        self.scorer = scorer or MotionBaselineModel()
-        self.interval_config = interval_config or IntervalConfig()
-
-    def run(
-        self,
-        profile: list[MotionSample],
-        *,
-        analysis_id: str,
-        video_id: str,
-        duration_seconds: float,
-    ) -> list[CandidateEvent]:
-        samples = self.scorer.score(profile)
-        return build_candidate_intervals(
-            samples,
-            analysis_id=analysis_id,
-            video_id=video_id,
-            duration_seconds=duration_seconds,
-            model_id=self.scorer.model_id,
-            config=self.interval_config,
-        )
-
-
 def load_manifest(path: Path, *, verify_artifact: bool = True) -> CandidateModelManifest:
-    """Model manifest'i strict yükler ve varsayılan olarak artifact hash doğrular."""
 
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -168,7 +126,6 @@ def load_manifest(path: Path, *, verify_artifact: bool = True) -> CandidateModel
 def verify_manifest_artifact(
     manifest_path: Path, manifest: CandidateModelManifest | None = None
 ) -> bool:
-    """Manifest'teki repo-relative artifact yolunu ve SHA-256 değerini doğrular."""
 
     loaded = manifest or load_manifest(manifest_path, verify_artifact=False)
     artifact = resolve_manifest_artifact_path(manifest_path, loaded)
@@ -181,7 +138,6 @@ def verify_manifest_artifact(
 def resolve_manifest_artifact_path(
     manifest_path: Path, manifest: CandidateModelManifest
 ) -> Path:
-    """Manifest artifact'ini proje kökü içinde path-safe olarak çözer."""
 
     artifact_ref = PurePosixPath(manifest.artifact_path.replace("\\", "/"))
     if artifact_ref.is_absolute() or ".." in artifact_ref.parts:
@@ -195,11 +151,6 @@ def resolve_manifest_artifact_path(
 
 
 def load_candidate_scorer(manifest_path: Path) -> CandidateScorer:
-    """Hash'i doğrulanmış manifestten kayıtlı local scorer'ı yükler.
-
-    ONNX tipi henüz yalnız kabul edilmiş manifest türüdür; runtime adapter'i
-    ayrı bir bağımlılık/lisans kapısından geçmeden etkinleştirilmez.
-    """
 
     manifest = load_manifest(manifest_path)
     artifact_path = resolve_manifest_artifact_path(manifest_path, manifest)
@@ -241,7 +192,6 @@ def load_candidate_scorer(manifest_path: Path) -> CandidateScorer:
 
 
 def _resolve_repo_file(repo_root: Path, ref: str) -> Path:
-    """Repo-relative dosya referansını path-safe çözer (artifact yolu kuralı)."""
 
     rel = PurePosixPath(ref.replace("\\", "/"))
     if rel.is_absolute() or ".." in rel.parts:
@@ -265,7 +215,6 @@ def _clamp(value: float) -> float:
 
 __all__ = [
     "CandidateModelManifest",
-    "CandidatePipeline",
     "CandidateScorer",
     "MotionBaselineArtifact",
     "MotionBaselineModel",

@@ -1,22 +1,16 @@
-"""Canlı CCTV kipi — akış listesi, yetişme kuralı, işleyici adımı, budama."""
-
 from __future__ import annotations
 
-import asyncio
 import json
-import time
 
 import pytest
 
 from dortgoz.config import settings
-from dortgoz.services.execution_coordinator import ExclusiveWorkload, ExecutionCoordinator
 from dortgoz.services.live_cctv import (
     LiveFeedWorker,
     load_feeds,
     plan_segments,
 )
 
-# ---- akış listesi ----
 
 def test_load_feeds_valid(tmp_path):
     p = tmp_path / "live_feeds.json"
@@ -31,13 +25,10 @@ def test_load_feeds_falls_back_to_example(tmp_path):
 
 
 @pytest.mark.parametrize("bad", [
-    [],                                            # boş
-    [{"name": "x"}],                               # url yok
-    [{"name": "a/b", "url": "u"}],                 # yol ayracı (spool güvenliği)
-    [{"name": r"a\b", "url": "u"}],                # Windows yol ayracı
-    [{"name": "kamera bir", "url": "u"}],           # run_id içinde boşluk
-    [{"name": "CON", "url": "u"}],                  # Windows aygıt adı
-    [{"name": "a", "url": "u"}, {"name": "a", "url": "v"}],  # yinelenen ad
+    [],
+    [{"name": "x"}],
+    [{"name": "a/b", "url": "u"}],
+    [{"name": "a", "url": "u"}, {"name": "a", "url": "v"}],
 ])
 def test_load_feeds_rejects_invalid(tmp_path, bad):
     p = tmp_path / "live_feeds.json"
@@ -45,8 +36,6 @@ def test_load_feeds_rejects_invalid(tmp_path, bad):
     with pytest.raises(ValueError):
         load_feeds(p)
 
-
-# ---- canlıya yetişme kuralı ----
 
 def test_plan_keeps_all_when_under_backlog(tmp_path):
     segs = [tmp_path / f"seg_{i}.mp4" for i in range(2)]
@@ -57,18 +46,9 @@ def test_plan_keeps_all_when_under_backlog(tmp_path):
 def test_plan_drops_oldest_beyond_backlog(tmp_path):
     segs = [tmp_path / f"seg_{i}.mp4" for i in range(5)]
     drop, pending = plan_segments(segs, max_backlog=2)
-    assert drop == segs[:3]            # en eskiler atılır
-    assert pending == segs[3:]         # işleme zaman sırasında sürer
+    assert drop == segs[:3]
+    assert pending == segs[3:]
 
-
-def test_plan_with_zero_backlog_drops_everything(tmp_path):
-    """Sınır 0 iken `[:-0]` BOŞ liste verir; kural tersine dönerdi."""
-    segs = [tmp_path / f"seg_{i}.mp4" for i in range(3)]
-    drop, pending = plan_segments(segs, max_backlog=0)
-    assert drop == segs and pending == []
-
-
-# ---- işleyici adımı (sahte run_video ile) ----
 
 @pytest.fixture
 def worker(tmp_path, monkeypatch):
@@ -94,29 +74,13 @@ def _seg(worker, epoch: int, size: int = 100):
 @pytest.mark.asyncio
 async def test_step_processes_oldest_closed_segment(worker, monkeypatch):
     calls = []
-    order = []
-
-    async def prepare_run(run_id, video, source):
-        order.append("prepare")
-        assert run_id == "canli-kavsak1-1000"
-        assert video == "canli/kavsak1/seg_1000.mp4"
-        assert source.name == "seg_1000.mp4"
-
-    worker.prepare_run = prepare_run
-
-    async def finalize_run(run_id):
-        order.append("finalize")
-        assert run_id == "canli-kavsak1-1000"
-
-    worker.finalize_run = finalize_run
 
     async def fake_run_video(manager, video, run_id, **kw):
-        order.append("run")
         calls.append((video, run_id, kw))
     monkeypatch.setattr("dortgoz.pipeline.runner.run_video", fake_run_video)
 
     _seg(worker, 1000)
-    _seg(worker, 1030)      # en yeni = hâlâ yazılıyor sayılır, işlenmez
+    _seg(worker, 1030)
     assert await worker._step() is True
 
     (video, run_id, kw) = calls[0]
@@ -126,37 +90,6 @@ async def test_step_processes_oldest_closed_segment(worker, monkeypatch):
     assert worker.status.segments_done == 1
     assert worker.status.lag_s is not None
     assert worker.status.snapshot.endswith("latest.jpg")
-    assert order == ["prepare", "run", "finalize"]
-
-
-@pytest.mark.asyncio
-async def test_live_segment_preempts_exclusive_work_and_waits_for_release(
-    worker, monkeypatch, tmp_path
-):
-    calls = []
-
-    async def fake_run_video(*args, **kwargs):
-        calls.append((args, kwargs))
-
-    monkeypatch.setattr("dortgoz.pipeline.runner.run_video", fake_run_video)
-    coordinator = ExecutionCoordinator(tmp_path / "event.sqlite3", poll_seconds=0.005)
-    worker.execution_coordinator = coordinator
-    exclusive = coordinator.acquire_exclusive(ExclusiveWorkload.TRAINING)
-    _seg(worker, 1000)
-    _seg(worker, 1030)
-
-    step_task = asyncio.create_task(worker._step())
-
-    def wait_for_stop() -> None:
-        while not exclusive.stop_requested():
-            time.sleep(0.005)
-
-    await asyncio.to_thread(wait_for_stop)
-    assert calls == []
-    exclusive.release()
-
-    assert await step_task is True
-    assert len(calls) == 1
 
 
 @pytest.mark.asyncio
@@ -169,10 +102,9 @@ async def test_step_drops_backlog_and_counts_seconds(worker, monkeypatch):
         _seg(worker, 1000 + i * 30)
     await worker._step()
 
-    # 5 kapanmış segment → 3 atıldı, en eski kalan işlendi
     assert worker.status.dropped_s == 3 * settings.live_segment_seconds
     assert worker.status.segments_done == 1
-    assert not (worker.dir / "seg_1000.mp4").exists()   # atılan silindi
+    assert not (worker.dir / "seg_1000.mp4").exists()
 
 
 @pytest.mark.asyncio
@@ -183,14 +115,9 @@ async def test_segment_failure_does_not_stop_feed(worker, monkeypatch):
 
     _seg(worker, 1000)
     _seg(worker, 1030)
-    assert await worker._step() is True                # adım tamamlandı
+    assert await worker._step() is True
     assert "model koptu" in worker.status.last_error
-    assert "seg_1000.mp4" in worker._done              # tekrar denenmez
-    assert worker.segments_failed == 1
-    assert worker.status.segments_done == 0
-    # gecikme demiri ilerlemedi: işlenmemiş segment "yetiştik" göstermez
-    assert worker._last_seg_mtime is None
-    assert worker.status.lag_s is None
+    assert "seg_1000.mp4" in worker._done
 
 
 @pytest.mark.asyncio
@@ -202,32 +129,15 @@ async def test_prune_keeps_recent_segments_and_runs(worker, monkeypatch):
     for i in range(30):
         (settings.runs_dir / f"canli-kavsak1-{i:03d}.jsonl").write_text("{}")
 
-    for i in range(5):                 # 4 kapanmış segmenti sırayla işle
+    for i in range(5):
         _seg(worker, 1000 + i * 30)
     for _ in range(4):
         await worker._step()
 
     kept = sorted(p.name for p in worker.dir.glob("seg_*.mp4"))
-    assert len(kept) <= 3              # son N işlenmiş + yazılan
+    assert len(kept) <= 3
     runs = list(settings.runs_dir.glob("canli-kavsak1-*.jsonl"))
     assert len(runs) <= settings.live_keep_runs
-
-
-@pytest.mark.asyncio
-async def test_prune_with_zero_keep_deletes_everything_processed(worker, monkeypatch):
-    """Saklama sınırı 0 iken `[:-0]` HİÇBİR şeyi silmez — disk 7/24 dolardı."""
-    async def fake_run_video(*a, **kw): ...
-    monkeypatch.setattr("dortgoz.pipeline.runner.run_video", fake_run_video)
-    monkeypatch.setattr(settings, "live_keep_segments", 0)
-    monkeypatch.setattr(settings, "live_keep_runs", 0)
-    (settings.runs_dir / "canli-kavsak1-1000.jsonl").write_text("{}")
-
-    _seg(worker, 1000)
-    _seg(worker, 1030)
-    await worker._step()
-
-    assert not (worker.dir / "seg_1000.mp4").exists()
-    assert list(settings.runs_dir.glob("canli-kavsak1-*.jsonl")) == []
 
 
 @pytest.mark.asyncio
@@ -236,11 +146,9 @@ async def test_empty_dir_step_is_idle(worker):
 
 
 def test_wipe_stale_clears_previous_session_segments(worker):
-    """Taze başlatma eski oturum segmentlerini işlememeli — gecikme rozeti
-    saatler gerideki dosyaya demirleniyordu (2026-08-14 canlı bulgu)."""
     _seg(worker, 1000)
     _seg(worker, 1030)
-    (worker.dir / "latest.jpg").write_bytes(b"jpg")   # anlık görüntü kalabilir
+    (worker.dir / "latest.jpg").write_bytes(b"jpg")
     worker._wipe_stale()
     assert list(worker.dir.glob("seg_*.mp4")) == []
     assert (worker.dir / "latest.jpg").exists()

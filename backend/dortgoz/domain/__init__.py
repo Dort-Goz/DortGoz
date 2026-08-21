@@ -1,5 +1,3 @@
-"""Dörtgöz'ün taşıma ve framework'ten bağımsız domain sözleşmeleri."""
-
 from .candidate import CandidateEvent, CandidateType, ScreeningSample
 from .context import ContextClip, DenseAnalysisResult, KeyframeRef
 from .dataset import (

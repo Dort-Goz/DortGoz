@@ -1,5 +1,3 @@
-"""Görev 09 evidence validator filesystem ve conservative-claim testleri."""
-
 from __future__ import annotations
 
 import hashlib

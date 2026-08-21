@@ -1,14 +1,9 @@
-/** WS olay şeması — backend/dortgoz/events.py'nin birebir aynası.
- *  Sözleşme değişiklikleri iki dosyada birden yapılır. */
-
 export type Risk = "dusuk" | "orta" | "yuksek" | "kritik";
 
-/** A1 kararının olay taksonomisi; `bilinmeyen` = A1'deki `unknown_anomaly`. */
 export type AnomalyType =
   | "kavga" | "saldiri" | "hirsizlik" | "silahli_olay" | "yangin"
   | "patlama" | "arac_kazasi" | "vandalizm" | "normal" | "bilinmeyen";
 
-/** Canonical internal taxonomy'nin frontend aynası; WS legacy Türkçe değer taşır. */
 export type CanonicalEventType =
   | "normal" | "uncertain" | "unknown_anomaly"
   | "physical_fight" | "assault"
@@ -31,10 +26,8 @@ export interface EventEvidenceRef {
 export interface WindowEvent {
   t: number;
   desc: string;
-  /** Eski WS kayıtlarında bulunmayabilir; gerçek VLM olaylarında doludur. */
   evidence?: EventEvidenceRef[];
   severity_hint: Risk;
-  /** Canonical internal tip; eski WS kayıtlarında bulunmayabilir. */
   event_type?: CanonicalEventType | null;
 }
 
@@ -63,8 +56,24 @@ export interface ToolCall {
   result?: string | null;
 }
 
+export interface WindowSignals {
+  durum_p?: number | null;
+  anomaly_score?: number | null;
+  interaction_score?: number | null;
+  fall_score?: number | null;
+  fire_smoke_score?: number | null;
+  vehicle_conflict_score?: number | null;
+  tampering_score?: number | null;
+  image_quality?: number | null;
+  changed?: number | null;
+  fg?: number | null;
+  mad?: number | null;
+  screening_model?: string;
+}
+
 export interface IncidentUpdate {
   type: "incident_update";
+  signals?: WindowSignals | null;
   incident_id: string;
   t: number;
   phase: "basladi" | "gelisiyor" | "sonuclandi";
@@ -73,11 +82,10 @@ export interface IncidentUpdate {
   risk: Risk;
   detail: string;
   thumbnail?: string | null;
+  evidence?: string | null;
   boxes: BoundingBox[];
-  /** Model emin değil → insan incelemesi istiyor; gerekçesi gösterilir. */
   needs_review?: boolean;
   review_reason?: string;
-  /** 2. geçiş incelemesinin sayısal olay aralığı (yoksa henüz incelenmedi) */
   olay_baslangic?: number | null;
   olay_bitis?: number | null;
 }
@@ -116,26 +124,34 @@ export interface RunStatus {
   run_id: string;
   state: "idle" | "processing" | "done" | "error";
   progress: number;
-  /** İşleme hızı, × gerçek zaman; ≥1 = akış gerçek zamanda taşınıyor. */
   speed?: number;
   detail: string;
-  /** Koşulan klip — koşuyu başlatmayan istemci (yenileme, 2. izleyici) için */
   video: string;
 }
 
+export interface ReviewSample {
+  type: "review_sample";
+  sample_id: string;
+  t: number;
+  window_start: number;
+  window_end: number;
+  summary?: string;
+  signals?: WindowSignals | null;
+  thumbnail?: string | null;
+  evidence?: string | null;
+}
+
 export type Payload =
-  | WindowReport | AgentStep | ToolCall | IncidentUpdate
+  | WindowReport | AgentStep | ToolCall | IncidentUpdate | ReviewSample
   | ActuatorRequest | ActuatorResult | ChatMessage | UICommand | RunStatus;
 
 export interface Event {
   seq: number;
   ts: number;
-  /** Çoklu-akış (demo) kipinde kamera etiketi; boş/yok = tek akış. */
   feed?: string;
   payload: Payload;
 }
 
-/** frontend → backend */
 export interface OperatorMessage {
   kind: "chat" | "actuator_response" | "start_run" | "stop_run" | "sync";
   text?: string;
@@ -144,11 +160,8 @@ export interface OperatorMessage {
   from_seq?: number;
   feed?: string;
   video?: string;
-  /** start_run deney seçenekleri — boş/undefined = varsayılan (bkz. events.py) */
   model?: string;
   system_prompt?: string;
   task_prompt?: string;
-  /** Çalışma kipi: "" = dengeli varsayılan; temkinli = ikinci-okuma doğrulaması;
-   *  genis = çift okuma + son tarama (max-recall). */
   mode?: "" | "dengeli" | "temkinli" | "genis";
 }

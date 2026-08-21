@@ -1,25 +1,21 @@
 import { useEffect, useRef } from "react";
 import type { IncidentUpdate } from "../types/events";
 
-/** Video + canvas kaplaması. Ajan seek_video/highlight_incident komutlarına tepki verir.
- *  Kaynak, koşuya alınan `/media` altındaki klip; koşu yoksa bilgi gösterilir. */
 export default function VideoPanel({
   highlight, seekTo, video, feed,
 }: {
   highlight: IncidentUpdate | null;
   seekTo: number | null;
   video: string | null;
-  feed?: string | null;    // çoklu-akışta hangi kameranın oynadığı (tek akışta boş)
+  feed?: string | null;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Ajan komutu: videoda konuma git
   useEffect(() => {
     if (seekTo !== null && videoRef.current) videoRef.current.currentTime = seekTo;
   }, [seekTo]);
 
-  // Vurgulanan olayın kutularını çiz
   useEffect(() => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
@@ -60,9 +56,6 @@ export default function VideoPanel({
           </span>
         )}
       </div>
-      {/* Siyah zemin panelin TAMAMINI kaplar (ayrı bir kutu gibi durmasın);
-          oynatıcı içine sığdırılır. Panel sütunu zaten dar (ızgarada 2/6), yani
-          kare içerik yatayda boşluk bırakmıyor. */}
       <div className="relative flex-1 min-h-0 bg-black rounded-b-lg overflow-hidden
                       flex items-center justify-center">
         {video ? (
@@ -71,8 +64,6 @@ export default function VideoPanel({
             ref={videoRef}
             src={`/media/${video}`}
             controls
-            // w/h-full + object-contain: küçük kaynak (320×240) da panele
-            // ÖLÇEKLENİR; en-boy korunur, artan yer siyah zeminle dolar
             className="w-full h-full object-contain"
           />
         ) : (

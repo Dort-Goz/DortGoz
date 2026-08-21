@@ -4,7 +4,8 @@ __pycache__/
 .venv/
 .pytest_cache/
 .pytest-tmp*/
-.tmp/
+.pytest-all/
+/.tmp/
 .ruff_cache/
 
 # Node
@@ -19,7 +20,6 @@ runs/
 cache/
 models/candidate/local/
 models/semantic/local/
-models/dfine/local/
 models/vlm/manifest.local.json
 models/**/*.gguf
 models/**/*.safetensors
@@ -29,6 +29,7 @@ models/**/*.bin
 !bench/results/**/*.jsonl
 
 # Local
+local/
 .env
 *.db
 .DS_Store

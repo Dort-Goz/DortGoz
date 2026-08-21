@@ -1,19 +1,19 @@
-"""Repository katmanının typed hata sınıfları."""
+"""Eski repository içe aktarımları için uyumluluk katmanı.
 
+Hata sınıflarının tek kaynağı ``dortgoz.errors`` modülüdür. Geri bildirim
+katmanındaki mevcut adapter'lar bu ince modül üzerinden aynı sınıfları kullanır.
+"""
 
-class RepositoryError(RuntimeError):
-    """Beklenen repository hatalarının tabanı."""
+from ..errors import (
+    RepositoryConflictError,
+    RepositoryDuplicateError,
+    RepositoryError,
+    RepositoryNotFoundError,
+)
 
-    code = "REPOSITORY_ERROR"
-
-
-class RepositoryNotFoundError(RepositoryError):
-    code = "NOT_FOUND"
-
-
-class RepositoryDuplicateError(RepositoryError):
-    code = "DUPLICATE_RECORD"
-
-
-class RepositoryConflictError(RepositoryError):
-    code = "REVISION_CONFLICT"
+__all__ = [
+    "RepositoryConflictError",
+    "RepositoryDuplicateError",
+    "RepositoryError",
+    "RepositoryNotFoundError",
+]

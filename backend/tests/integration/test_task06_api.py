@@ -1,5 +1,3 @@
-"""Görev 06 local REST upload ve ortak hata sözleşmesi testleri."""
-
 from __future__ import annotations
 
 import hashlib

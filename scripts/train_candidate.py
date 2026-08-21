@@ -1,17 +1,3 @@
-"""Yerel candidate artifact üreticisi.
-
-İki açık mod vardır:
-
-* ``baseline``: önceki deterministic motion referansını tekrar üretir.
-* ``temporal-cnn``: yalnız proje annotation şemasındaki video-bazlı train ve
-  validation bölmelerinden 1-D temporal CNN eğitir.
-
-Video klipleri ve dış veri sete ait ağırlıklar repoya yazılmaz. CNN çıktısı
-git-dışı ``models/candidate/local/`` altında üretilir; manifest SHA-256 ve
-lisansını kaydeder. Etkinleştirmek için manifest yolu yalnız local ortam
-değişkeniyle verilir.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -61,7 +47,6 @@ def build_artifact(activity_scale: float, interaction_scale: float) -> dict:
 
 
 def write_baseline(output_dir: Path, activity_scale: float, interaction_scale: float) -> Path:
-    """Geriye uyumlu motion baseline artifact üretimi."""
 
     output_dir = output_dir.resolve()
     try:
@@ -89,12 +74,6 @@ def write_baseline(output_dir: Path, activity_scale: float, interaction_scale: f
 
 
 def load_annotation_records(annotation_dir: Path) -> list[AnnotationRecord]:
-    """Project annotation JSON'larını strict biçimde okur.
-
-    UCA'nın dil açıklamaları bu şemaya otomatik çevrilmez: zaman damgalı cümle,
-    candidate/anomali etiketi değildir. Bu koruma normal davranışı pozitif diye
-    öğretme ve train/validation leakage riskini önler.
-    """
 
     if not annotation_dir.is_dir():
         raise ValueError(f"annotation dizini bulunamadı: {annotation_dir}")
@@ -217,9 +196,6 @@ def train_and_write_temporal_cnn(
         artifact_license=artifact_license,
     )
     validation_metrics = evaluate_temporal_cnn(model, validation_examples)
-    # Kabul ölçütü ARALIK-düzeyi olay recall'u (mimarinin sözleşmesi) —
-    # örnek-düzeyi recall@0.5 yüksek-recall interval screener için yanlış
-    # kapıydı (2026-08-07 ölçümü; ayrıntı temporal_cnn.py notları).
     if validation_metrics.interval_event_recall < min_validation_recall:
         raise ValueError(
             "validation ARALIK olay-recall'u kabul eşiğinin altında: "
@@ -248,7 +224,6 @@ def write_temporal_cnn(
     training_dataset_fingerprint: str,
     training_dataset_license: str | None,
 ) -> Path:
-    """Temporal CNN artifact + hash'li manifest'i git-dışı local dizine yazar."""
 
     if input_fps <= 0:
         raise ValueError("input_fps pozitif olmalı")
@@ -314,7 +289,6 @@ def main() -> None:
     parser.add_argument("--base-fps", type=float, default=1.0)
     parser.add_argument("--kernel-size", type=int, default=3)
     parser.add_argument("--epochs", type=int, default=80)
-    # 0.35 sınıf-ağırlıklı güncellemelerle ıraksıyor; 0.05 ölçülü varsayılan
     parser.add_argument("--learning-rate", type=float, default=0.05)
     parser.add_argument("--l2", type=float, default=0.0001)
     parser.add_argument("--seed", type=int, default=20260806)

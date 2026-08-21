@@ -13,11 +13,11 @@ from typing import Any
 import httpx
 
 from ..config import Settings
+from ..infrastructure.vlm_manifest import load_vlm_manifest
 from ..pipeline.candidate_model import load_candidate_scorer
 from ..pipeline.perception import resolve_production_model_path
 from ..pipeline.semantic import SemanticCandidateModel
-from ..repositories.procedure_index import LocalProcedureIndex
-from ..tools.local_vlm import load_local_vlm_manifest
+from .procedure_index import LocalProcedureIndex
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +89,11 @@ class DeploymentReadinessService:
                 skipped=profile == "mock",
             ),
         }
+        components["video_store"] = {
+            **components["event_store"],
+            "required": False,
+            "detail": "video meta verisi canonical event deposunda tutulur",
+        }
         if profile == "mock":
             components.update(
                 {
@@ -151,7 +156,7 @@ class DeploymentReadinessService:
             result.update({"mode": "local_vlm", "endpoint_checked": False})
             return result
         try:
-            manifest = load_local_vlm_manifest(path)
+            manifest = load_vlm_manifest(path)
             if manifest.model_id != self.settings.main_model:
                 raise ValueError("VLM manifest model_id ile DORTGOZ_MAIN_MODEL eşleşmiyor")
         except Exception as exc:

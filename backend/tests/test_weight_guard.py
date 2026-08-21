@@ -1,5 +1,3 @@
-"""Ağırlık sayfa-önbelleği nöbetçisi — tespit, eşik, iyileşme."""
-
 from __future__ import annotations
 
 import pytest
@@ -24,12 +22,12 @@ def test_cjk_leak_detected_and_alert_queued(guard, leak):
     assert guard.record(leak) is True
     alerts = guard.drain_alerts()
     assert len(alerts) == 1 and "CJK" in alerts[0]
-    assert guard.drain_alerts() == []          # tek seferlik kuyruk
+    assert guard.drain_alerts() == []
 
 
 def test_single_hit_does_not_demand_heal_two_do(guard):
     guard.record("或 tek isabet")
-    assert guard.needs_heal is False           # örnekleme gürültüsü tamponu
+    assert guard.needs_heal is False
     guard.record("temiz çıktı")
     guard.record("用 ikinci isabet")
     assert guard.needs_heal is True
@@ -74,5 +72,5 @@ async def test_heal_unloads_and_drops_pages(guard, tmp_path, monkeypatch):
 
     assert calls["unload"].endswith("/unload")
     assert dropped == [wg.os.POSIX_FADV_DONTNEED]
-    assert guard.needs_heal is False           # pencere sıfırlandı
+    assert guard.needs_heal is False
     assert guard.heals == 1

@@ -1,5 +1,3 @@
-"""AgentToolset protokolünün deterministik, tamamen yerel mock uygulaması."""
-
 from __future__ import annotations
 
 from hashlib import sha256
@@ -50,7 +48,6 @@ def _frame(
 
 
 class MockAgentTools:
-    """`fail_on`, araç hatası güvenli-terminal testleri için kullanılır."""
 
     def __init__(self, fail_on: set[AgentAction] | None = None) -> None:
         self.fail_on = fail_on or set()

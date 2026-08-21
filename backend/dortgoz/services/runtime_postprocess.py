@@ -1,5 +1,3 @@
-"""Gerçek WindowReport hattı için transient ve fail-closed evidence köprüsü."""
-
 from __future__ import annotations
 
 import asyncio
@@ -23,6 +21,7 @@ from ..domain.evidence import (
 )
 from ..domain.taxonomy import CanonicalEventType, requires_human_review
 from ..events import FrameReference, WindowReport
+from ..utils import file_sha256
 from .evidence_validator import VALIDATOR_VERSION, validate_runtime_evidence
 
 LOGGER = logging.getLogger(__name__)
@@ -31,7 +30,6 @@ CapturedFrames = Mapping[str, tuple[FrameReference, bytes]]
 
 @dataclass(frozen=True, slots=True)
 class RuntimeEvidenceScope:
-    """Public run_id'den bağımsız, yalnız artifact yolu için kullanılan kimlik."""
 
     public_run_id: str = field(repr=False, compare=False)
     artifact_run_id: UUID = field(default_factory=uuid4)
@@ -42,7 +40,6 @@ class RuntimeEvidenceScope:
 
 
 class RuntimeValidationStatus(StrEnum):
-    """Yalnız gözlem sidecar'ı; terminal EventStatus veya VLMStatus değildir."""
 
     VALIDATED = "VALIDATED"
     HUMAN_REVIEW = "HUMAN_REVIEW"
@@ -51,7 +48,6 @@ class RuntimeValidationStatus(StrEnum):
 
 
 class RuntimeEvidenceDigest(BaseModel):
-    """Cleanup sonrasında kalabilen, path taşımayan transient evidence özeti."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -71,7 +67,6 @@ class RuntimeEventValidation(BaseModel):
 
 
 class RuntimeWindowValidation(BaseModel):
-    """WS'ye ve durable state'e eklenmeyen transient pencere sidecar'ı."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -124,7 +119,6 @@ def postprocess_finalized_report(
     workspace_root: Path,
     evidence_root: Path,
 ) -> RuntimeWindowValidation | None:
-    """Olaylı final raporu doğrula ve her koşulda ephemeral dosyaları temizle."""
 
     if not report.events:
         return None
@@ -195,7 +189,6 @@ def materialize_runtime_evidence(
     captured_frames: CapturedFrames,
     tracker: _ArtifactTracker,
 ) -> list[_MaterializedFrame]:
-    """Yalnız raporda referans verilen selected JPEG'leri atomik yayımla."""
 
     if tracker.window_directory is None:
         raise RuntimeEvidenceOperationalError("ephemeral workspace hazırlanmadı")
@@ -243,7 +236,6 @@ def validate_materialized_report(
     video_duration: float,
     workspace_root: Path,
 ) -> RuntimeWindowValidation:
-    """Final raporu mevcut EvidenceValidator kurallarıyla sidecar'a dönüştür."""
 
     keyframes = [item.keyframe for item in materialized_frames]
     event_results: list[RuntimeEventValidation] = []
@@ -364,7 +356,7 @@ def _publish_frame(
     target = window / f"{frame_id}-{digest[:32]}.jpg"
     _assert_safe_file_path(target, tracker.evidence_root.resolve())
     if target.exists():
-        if _file_hash(target) != digest:
+        if file_sha256(target) != digest:
             raise RuntimeEvidenceIdentityConflict(
                 "aynı content identity farklı evidence bytes içeriyor"
             )
@@ -377,7 +369,7 @@ def _publish_frame(
         try:
             os.link(temporary, target)
         except FileExistsError:
-            if _file_hash(target) != digest:
+            if file_sha256(target) != digest:
                 raise RuntimeEvidenceIdentityConflict(
                     "concurrent evidence publish farklı bytes üretti"
                 )
@@ -566,14 +558,6 @@ def _status_rank(status: RuntimeValidationStatus) -> int:
         RuntimeValidationStatus.INVALID_EVIDENCE: 2,
         RuntimeValidationStatus.UNDETERMINED: 3,
     }[status]
-
-
-def _file_hash(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        while chunk := handle.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 __all__ = [

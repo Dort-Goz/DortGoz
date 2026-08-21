@@ -1,9 +1,3 @@
-"""Etiketli local VLM JSONL artifact'ından karar, evidence ve latency KPI'ları.
-
-Her satır en az ``expected_positive`` ve ``predicted_status`` taşır. Zaman,
-validator ve latency alanları varsa ek metriklere girer.
-"""
-
 from __future__ import annotations
 
 import argparse

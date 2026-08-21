@@ -1,5 +1,3 @@
-"""Algı katmanı: D-FINE tespiti + pencere özeti (model dosyası yoksa atlanır)."""
-
 import asyncio
 from pathlib import Path
 
@@ -29,7 +27,6 @@ def test_meta_text_is_numeric_not_interpretive():
     text = p.meta_text()
     assert "2 kişi" in text and "1 otomobil" in text
     assert "hareketsiz" in text
-    # sınıf sözlüğü dersi: metaya yorum/şüphe dili GİRMEZ
     for banned in ("şüphe", "hırsız", "tehlike", "risk"):
         assert banned not in text.lower()
     empty = WindowPerception(counts={}, stationary_persons=0, samples=4)
@@ -39,7 +36,6 @@ def test_meta_text_is_numeric_not_interpretive():
 @needs_model
 def test_scan_window_finds_person_and_car():
     p = asyncio.run(scan_window(CLIP, 0, 25))
-    # Stealing095: park halindeki araca yaklaşan kişi — canlı doğrulanmış sahne
     assert p.counts.get("person", 0) >= 1
     assert p.counts.get("car", 0) >= 1
     assert p.hit

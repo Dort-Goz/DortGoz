@@ -13,6 +13,8 @@ interface TriageItem {
   risk: string;
   phase: string;
   thumbnail: string | null;
+  evidence: string | null;
+  sample: boolean;
   needs_review: boolean;
   review_reason: string;
   verdict: string;
@@ -140,6 +142,17 @@ const PRIORITY_CLS = {
 
 const clock = (t: number) =>
   `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+
+export function parseClock(text: string): number | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split(":");
+  if (parts.length > 2) return null;
+  const numbers = parts.map((part) => Number(part));
+  if (numbers.some((value) => !Number.isFinite(value) || value < 0)) return null;
+  return numbers.length === 2 ? numbers[0] * 60 + numbers[1] : numbers[0];
+}
+
 const wallClock = (epoch: number) =>
   new Date(epoch * 1000).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
 
@@ -218,9 +231,15 @@ function PendingCard({ item, categories, feedLabel, onDecide }: {
             >
               {item.intervention_score} · {PRIORITY_TR[item.intervention_band]}
             </span>
-            <span className={`rounded px-1 ${RISK_CLS[item.risk] ?? "bg-zinc-800"}`}>
-              {item.risk}
-            </span>
+            {item.sample ? (
+              <span className="rounded bg-sky-900 px-1 text-sky-200">
+                denetim örneği
+              </span>
+            ) : (
+              <span className={`rounded px-1 ${RISK_CLS[item.risk] ?? "bg-zinc-800"}`}>
+                {item.risk}
+              </span>
+            )}
             <span className="rounded px-1 bg-zinc-800 text-zinc-300">
               model: {CATEGORY_TR[item.model_category] ?? item.model_category}
             </span>
@@ -243,12 +262,12 @@ function PendingCard({ item, categories, feedLabel, onDecide }: {
           Öncelik: {item.intervention_reasons.join(" · ")}
         </div>
       )}
-      {item.clip_url && (
+      {(item.clip_url || item.evidence) && (
         <video
           controls
           preload="metadata"
           poster={item.media_thumbnail_url ?? undefined}
-          src={item.clip_url}
+          src={item.clip_url ?? item.evidence ?? undefined}
           className="max-h-40 w-full rounded bg-black object-contain"
         >
           Tarayıcınız olay klibini oynatamıyor.
@@ -465,8 +484,12 @@ export default function TriagePanel({ onSelectFeed, onOpenTraining, feedNames = 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           action === "approve"
-            ? { duration_hours: 24, revision: proposal.revision }
-            : {},
+            ? {
+                duration_hours: 24,
+                revision: proposal.revision,
+                reviewer: reviewer.trim(),
+              }
+            : { reviewer: reviewer.trim() },
         ),
       });
     } catch {

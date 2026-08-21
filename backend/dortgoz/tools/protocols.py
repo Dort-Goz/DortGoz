@@ -1,5 +1,3 @@
-"""Mock ve gerçek implementasyonların paylaştığı araç sınırları."""
-
 from __future__ import annotations
 
 from typing import Protocol
@@ -10,7 +8,6 @@ from ..domain.video import VideoMetadata
 
 
 class ToolExecutionError(RuntimeError):
-    """Agent'ın güvenli recovery kuralı uygulayabileceği typed araç hatası."""
 
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
@@ -18,7 +15,6 @@ class ToolExecutionError(RuntimeError):
 
 
 class VlmSchemaError(ToolExecutionError):
-    """İlk geçersiz VLM çıktısı için tek strict retry'a izin verir."""
 
     def __init__(self, message: str, *, code: str = "VLM_SCHEMA_INVALID") -> None:
         super().__init__(code, message)

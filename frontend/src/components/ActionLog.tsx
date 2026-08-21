@@ -1,6 +1,5 @@
 import type { ActuatorRequest, ActuatorResult } from "../types/events";
 
-/** Aksiyon günlüğü + insan-onaylı aktüatörler (human-in-the-loop). */
 export default function ActionLog({
   requests, results, onRespond,
 }: {

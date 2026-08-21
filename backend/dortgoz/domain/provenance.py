@@ -1,5 +1,3 @@
-"""Event, analiz ve insan incelemesi için audit/provenance modelleri."""
-
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
@@ -11,7 +9,6 @@ from .feedback import FalseAlarmReason
 
 
 class TraceRecord(BaseModel):
-    """Repository katmanının agent paketine bağımlı olmayan trace görünümü."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

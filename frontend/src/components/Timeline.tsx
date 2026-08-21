@@ -2,14 +2,11 @@ import { useState } from "react";
 import type { IncidentUpdate, WindowReport } from "../types/events";
 import { PHASE_TR, RISK_TR, TYPE_TR, clock } from "../lib/labels";
 
-/** Sessiz pencere: sınıf normal VE olay yok — okunacak bir şey taşımaz. */
 const quiet = (r: WindowReport) => r.anomaly_type === "normal" && r.events.length === 0;
 
 type Row = { kind: "report"; report: WindowReport }
          | { kind: "quiet"; reports: WindowReport[] };
 
-/** Ardışık sessiz pencereleri TEK satırda toplar — olaylı pencereler boğulmasın.
- *  Saatlik kayıtta 100+ "sahne sakin" satırı operatör için gürültüdür. */
 function groupRows(reports: WindowReport[]): Row[] {
   const rows: Row[] = [];
   for (const r of reports) {
@@ -45,8 +42,6 @@ function ReportRow({ r }: { r: WindowReport }) {
   );
 }
 
-/** Sessiz aralık: varsayılan kapalı, tek satır. Tıklayınca pencereler açılır —
- *  bilgi SİLİNMİYOR, yalnız katlanıyor (denetlenebilirlik korunur). */
 function QuietGroup({ reports }: { reports: WindowReport[] }) {
   const [open, setOpen] = useState(false);
   const first = reports[0], last = reports[reports.length - 1];
@@ -114,8 +109,6 @@ export default function Timeline({
               inc.incident_id === highlightId ? "ring-1 ring-zinc-500" : ""
             }`}
           >
-            {/* Kanıt karesi SOLDA küçük bir rozet: tam genişlikte gösterilince
-                kart yüksekliğini üçe katlıyor ve anlatı ekrandan taşıyordu. */}
             <div className="flex gap-2">
               {inc.thumbnail && (
                 <img src={inc.thumbnail} alt=""
@@ -124,12 +117,10 @@ export default function Timeline({
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2 flex-wrap">
                   <span className="font-mono text-xs text-zinc-500">{clock(inc.t)}</span>
-                  {/* Nihai sınıf kararı — operatörün ilk bakışta görmesi gereken bilgi */}
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300
                                    uppercase tracking-wide font-semibold">
                     {TYPE_TR[inc.anomaly_type] ?? inc.anomaly_type}
                   </span>
-                  {/* Model emin değil → insan incelemesi rozeti (gerekçe altta) */}
                   {inc.needs_review && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wide
                                      font-semibold bg-amber-950/60 text-amber-300
@@ -150,17 +141,12 @@ export default function Timeline({
             {inc.needs_review && inc.review_reason && (
               <p className="text-[11px] text-amber-400/80 mt-1">⚑ {inc.review_reason}</p>
             )}
-            {/* 2. geçiş anlatısı yapılandırılmış satırlar hâlinde gelir
-                (Başlangıç/Zirve/Sonuç). Kart seçiliyken TAMAMI görünür,
-                değilken 3 satırda kırpılır — uzun anlatı listeyi boğmasın. */}
             <p className={`text-xs text-zinc-400 mt-1 whitespace-pre-line ${
               inc.incident_id === highlightId ? "" : "line-clamp-3"
             }`}>{inc.detail}</p>
           </button>
         ))}
 
-        {/* Pencere raporları: kesintisiz anlatı. Olaya dönüşmeyen `dusuk`
-            gözlemler burada kalır — deftere girmezler (yanlış alarm üretmesin). */}
         {reports.length > 0 && (
           <div className="pt-2 border-t border-zinc-800">
             <div className="text-[10px] uppercase tracking-wide text-zinc-600 mb-1 px-1">

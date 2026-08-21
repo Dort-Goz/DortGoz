@@ -1,10 +1,3 @@
-"""REST request/response sözleşmeleri.
-
-Bu modeller, UI ile repository arasındaki sınırı açık tutar. Domain modelleri
-doğrudan HTTP detaylarıyla kirletilmez; response modelleri domain nesnelerini
-JSON'a güvenli biçimde taşır.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Literal
@@ -20,11 +13,7 @@ from ..domain.feedback import (
 from ..domain.media import IncidentMedia
 from ..domain.memory import AnalysisResult
 from ..domain.provenance import ProcedureSource, TraceRecord
-from ..domain.training import (
-    FrameReviewResult,
-    TrainingSample,
-    VerifiedBoundingBox,
-)
+from ..domain.training import FrameReviewResult, TrainingSample, VerifiedBoundingBox
 from ..services.analysis_job import AnalysisJobStatus
 
 
@@ -37,7 +26,6 @@ class AnalyzeRequest(BaseModel):
     model: str = Field(default="", max_length=500)
     system_prompt: str = Field(default="", max_length=20_000)
     task_prompt: str = Field(default="", max_length=20_000)
-    # Çalışma kipi: "" | dengeli | temkinli | genis (bkz. runner._mode_flags)
     mode: Literal["", "dengeli", "temkinli", "genis"] = ""
 
 
@@ -61,7 +49,7 @@ class AnalysisProgress(BaseModel):
 class HumanReviewInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    decision: str = Field(pattern=r"^(confirm|reject|edit)$")
+    decision: Literal["confirm", "reject", "edit"]
     reviewer: str = Field(min_length=1, max_length=120)
     note: str = Field(min_length=1, max_length=4000)
     event_type: str | None = None
@@ -74,7 +62,7 @@ class HumanReviewInput(BaseModel):
 
 
 class TriageDecisionInput(BaseModel):
-    """Nöbet kartındaki açık ve yapılandırılmış operatör kararı."""
+    """Nöbet kartındaki yapılandırılmış operatör kararı."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -112,7 +100,6 @@ class TriageDecisionInput(BaseModel):
             assert start is not None and peak is not None and end is not None
             if not start <= peak <= end:
                 raise ValueError("beklenen sıra: start_time <= peak_time <= end_time")
-
         if self.verdict == "anomali":
             if self.category is None or self.risk_level is None:
                 raise ValueError("anomali kararı kategori ve risk düzeyi gerektirir")
@@ -127,10 +114,7 @@ class TriageDecisionInput(BaseModel):
                 raise ValueError("sorun değil kararı kategori veya risk düzeyi taşıyamaz")
             if any(value is not None for value in times):
                 raise ValueError("sorun değil kararı olay zamanı düzeltmesi taşıyamaz")
-        if (
-            self.false_alarm_reason == FalseAlarmReason.OTHER
-            and not self.note.strip()
-        ):
+        if self.false_alarm_reason == FalseAlarmReason.OTHER and not self.note.strip():
             raise ValueError("diğer yanlış alarm nedeni açıklama gerektirir")
         return self
 
@@ -150,14 +134,14 @@ class DevelopmentApprovalInput(BaseModel):
         if len(set(self.approved_uses)) != len(self.approved_uses):
             raise ValueError("approved_uses tekrar eden değer içeremez")
         if self.status == DevelopmentApprovalStatus.APPROVED and not self.approved_uses:
-            raise ValueError("approved decision en az bir kullanım gerektirir")
+            raise ValueError("onay kararı en az bir kullanım gerektirir")
         if self.status != DevelopmentApprovalStatus.APPROVED and self.approved_uses:
-            raise ValueError("rejected veya revoked decision kullanım izni taşıyamaz")
+            raise ValueError("ret veya geri alma kararı kullanım izni taşıyamaz")
         if (
             self.status == DevelopmentApprovalStatus.REVOKED
             and self.supersedes_approval_id is None
         ):
-            raise ValueError("revoked decision önceki approval kaydını belirtmelidir")
+            raise ValueError("geri alma kararı önceki onay kaydını belirtmelidir")
         return self
 
 
@@ -227,12 +211,10 @@ class EventListResponse(BaseModel):
 
 
 class ReportResponse(AnalysisResult):
-    """Sözleşme adı okunaklı kalsın diye AnalysisResult'ın API görünümü."""
+    """AnalysisResult modelinin REST görünümü."""
 
 
 def event_to_json(event: VerifiedEvent) -> dict[str, Any]:
-    """Pydantic dışı tüketiciler için tek biçimli event payload'ı."""
-
     return event.model_dump(mode="json")
 
 
@@ -251,5 +233,6 @@ __all__ = [
     "TrainingSamplePrepareInput",
     "TrainingSampleReviewInput",
     "TrainingSampleView",
+    "TriageDecisionInput",
     "event_to_json",
 ]

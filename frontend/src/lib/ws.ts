@@ -22,31 +22,23 @@ export class EventSequence {
   }
 }
 
-/** Operatöre gösterilen bağlantı durumu. */
 export type ConnectionState = "connecting" | "open" | "reconnecting" | "closed";
 
 export const RECONNECT_BASE_MS = 1500;
 export const RECONNECT_MAX_MS = 30000;
 
-/** Üstel geri çekilme: 1.5 s, 3 s, 6 s … üst sınırda sabitlenir.
- *  Sabit gecikme, backend yavaş istemciyi düşürdüğünde sunucuyu
- *  saniyede bir yeniden bağlanma denemesiyle dövüyordu. */
 export function reconnectDelay(attempt: number): number {
-  const step = RECONNECT_BASE_MS * 2 ** Math.max(0, attempt);
-  return Math.min(step, RECONNECT_MAX_MS);
+  return Math.min(RECONNECT_BASE_MS * 2 ** Math.max(0, attempt), RECONNECT_MAX_MS);
 }
 
 export interface DortgozSocketOptions {
-  /** Durum değişince çağrılır — üst çubuktaki bağlantı rozetini besler. */
   onState?: (state: ConnectionState) => void;
-  /** Testler gerçek soket, adres ve zamanlayıcı yerine sahte verir. */
   url?: string;
   createSocket?: (url: string) => WebSocket;
   schedule?: (fn: () => void, ms: number) => number;
   cancel?: (handle: number) => void;
 }
 
-/** Otomatik yeniden bağlanan, tipli WS istemcisi. */
 export class DortgozSocket {
   private ws: WebSocket | null = null;
   private url: string;
@@ -58,12 +50,9 @@ export class DortgozSocket {
   private cancel: (handle: number) => void;
   private sequence = new EventSequence();
   private closed = false;
-  // Henüz soket yok; ilk setState çağrısı "connecting"i operatöre bildirsin.
   private state: ConnectionState = "closed";
   private attempt = 0;
   private retryTimer: number | null = null;
-  // Bağlantı kurulmadan gönderilenler SESSİZCE düşüyordu (sayfa açılır açılmaz
-  // "demo"ya basmak 4 start_run'ı yutuyordu) → açılana dek kuyrukta bekletilir.
   private pending: OperatorMessage[] = [];
 
   constructor(
@@ -93,7 +82,6 @@ export class DortgozSocket {
   }
 
   private connect() {
-    // Kapanan eski soketler geç olay yollayabiliyor; yalnız güncel soket sayılır.
     const socket = this.createSocket(this.url);
     this.ws = socket;
     socket.onopen = () => {
@@ -130,8 +118,7 @@ export class DortgozSocket {
     this.attempt += 1;
     this.retryTimer = this.schedule(() => {
       this.retryTimer = null;
-      if (this.closed) return;
-      this.connect();
+      if (!this.closed) this.connect();
     }, delay);
   }
 
@@ -142,7 +129,6 @@ export class DortgozSocket {
 
   close() {
     this.closed = true;
-    // Zamanlayıcı sızıyordu: kapatılan konsol yeniden bağlanıp olay akıtıyordu.
     if (this.retryTimer !== null) {
       this.cancel(this.retryTimer);
       this.retryTimer = null;

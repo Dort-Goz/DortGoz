@@ -1,5 +1,3 @@
-"""Çalışma kipi (dengeli/temkinli/genis) zinciri: bayrak çözümü + job kimliği."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -20,7 +18,6 @@ def test_mode_flags_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _mode_flags("dengeli") == (False, False, False)
     assert _mode_flags("genis") == (True, False, True)
     assert _mode_flags("temkinli") == (False, True, False)
-    # kip verilmediğinde ayar bayrakları geçerli kalır
     monkeypatch.setattr(settings, "dual_read", True)
     monkeypatch.setattr(settings, "final_sweep", True)
     assert _mode_flags("") == (True, False, True)

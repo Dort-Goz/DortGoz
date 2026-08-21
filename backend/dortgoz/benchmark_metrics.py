@@ -1,5 +1,3 @@
-"""JSONL benchmark artifact'larından saf agent ve evidence metrikleri."""
-
 from __future__ import annotations
 
 import math
@@ -10,7 +8,6 @@ from typing import Any
 
 
 def evidence_precision[T](chosen: Collection[T], valid: Collection[T]) -> float:
-    """Seçilen kanıtların insan-doğrulamalı geçerli kümeye düşen oranı."""
 
     if not chosen:
         return 0.0
@@ -18,23 +15,16 @@ def evidence_precision[T](chosen: Collection[T], valid: Collection[T]) -> float:
 
 
 def event_has_valid_evidence[T](chosen: Collection[T], valid: Collection[T]) -> bool:
-    """Bir event'in en az bir insan-doğrulamalı kanıt karesi var mı?"""
 
     return bool(set(chosen) & set(valid))
 
 
 def evidence_count[T](chosen: Collection[T]) -> int:
-    """Modelin ürettiği evidence kayıtlarının sayısı."""
 
     return len(chosen)
 
 
 def evidence_set_recall[T](chosen: Collection[T], valid: Collection[T]) -> float | None:
-    """Geçerli evidence kümesinin ne kadarının seçildiğini diagnostic olarak ölçer.
-
-    Geçerli küme boşsa oran matematiksel olarak tanımsızdır. Normal kontrollerde
-    sahte bir sıfır veya bir üretmek yerine ``None`` döndürülür.
-    """
 
     if not valid:
         return None
@@ -48,12 +38,6 @@ def temporal_absolute_error(
     gt_end: float,
     gt_peak: float | None = None,
 ) -> float | None:
-    """Bir kanıt zamanının GT peak/interval'a mutlak uzaklığı.
-
-    GT peak varsa mutlak peak hatası kullanılır. Yalnız interval varsa interval
-    içindeki tahmin sıfır hata alır; dışarıdaki tahmin en yakın sınıra olan
-    uzaklığı alır. Tahmin yoksa ölçüm tanımsızdır ve ``None`` döner.
-    """
 
     if gt_end < gt_start:
         raise ValueError("gt_end, gt_start değerinden küçük olamaz")
@@ -72,7 +56,6 @@ def temporal_absolute_error(
 
 
 def agreement_rate[T](left: Sequence[T], right: Sequence[T]) -> float:
-    """Eşlenmiş iki sonuç dizisindeki exact-agreement oranı."""
 
     if len(left) != len(right):
         raise ValueError("agreement dizileri aynı uzunlukta olmalı")
@@ -82,7 +65,6 @@ def agreement_rate[T](left: Sequence[T], right: Sequence[T]) -> float:
 
 
 def raw_binary_agreement(left: Sequence[bool], right: Sequence[bool]) -> float | None:
-    """İki annotator'ın eşlenmiş binary frame kararlarında ham anlaşması."""
 
     if len(left) != len(right):
         raise ValueError("annotator dizileri aynı uzunlukta olmalı")
@@ -94,11 +76,6 @@ def raw_binary_agreement(left: Sequence[bool], right: Sequence[bool]) -> float |
 def binary_cohens_kappa(
     left: Sequence[bool], right: Sequence[bool]
 ) -> dict[str, float | str | None]:
-    """İki annotator için dependency'siz Cohen's kappa hesabı.
-
-    Beklenen anlaşma 1 olduğunda payda sıfırdır. Bu degenerate class dağılımı
-    typed ``undefined`` sonucu ile gösterilir; uydurma 0/1 üretilmez.
-    """
 
     if len(left) != len(right):
         raise ValueError("annotator dizileri aynı uzunlukta olmalı")
@@ -125,7 +102,6 @@ def binary_cohens_kappa(
 
 
 def grounding_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
-    """Phase B grounding satırlarından arm-seviyesi kalite ve maliyet özeti."""
 
     positives = [record for record in records if record.get("expected_event_type") != "normal"]
     normals = [record for record in records if record.get("expected_event_type") == "normal"]
@@ -271,7 +247,6 @@ def candidate_metrics(
 
 
 def vlm_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
-    """Etiketli VLM doğrulama artifact'ından karar/kanıt/zaman KPI'ları."""
 
     tp = fp = fn = 0
     peak_errors: list[float] = []
@@ -313,7 +288,6 @@ def vlm_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def e2e_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
-    """Video seviyesindeki local run artifact'larından uçtan uca KPI'lar."""
 
     critical_total = critical_hit = false_alarms = 0
     normal_seconds = 0.0

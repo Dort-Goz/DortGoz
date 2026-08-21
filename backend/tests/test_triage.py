@@ -121,6 +121,11 @@ class CanonicalTriageStore(triage.TriageStore):
         )
 
 
+@pytest.fixture(autouse=True)
+def _isolated_ledger(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(triage.settings, "runs_dir", tmp_path / "runs")
+
+
 @pytest.fixture
 def store() -> CanonicalTriageStore:
     return CanonicalTriageStore()

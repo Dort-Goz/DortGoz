@@ -1,5 +1,3 @@
-"""Görev 10 deterministik risk ruleset testleri."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -23,7 +21,7 @@ def _event(
 
 def _engine() -> RiskEngine:
     root = Path(__file__).resolve().parents[3]
-    return RiskEngine(load_risk_ruleset(root / "configs" / "risk_rules.yaml"))
+    return RiskEngine(load_risk_ruleset(root / "defaults" / "risk_rules.yaml"))
 
 
 def test_same_event_and_ruleset_always_select_same_rule() -> None:

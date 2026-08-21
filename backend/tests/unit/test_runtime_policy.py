@@ -1,5 +1,3 @@
-"""Patch 2 runtime validation → Ledger/risk/procedure policy testleri."""
-
 from __future__ import annotations
 
 import json
@@ -477,11 +475,13 @@ def test_incident_update_wire_contract_is_unchanged() -> None:
         "risk",
         "detail",
         "thumbnail",
+        "evidence",
         "boxes",
         "needs_review",
         "review_reason",
         "olay_baslangic",
         "olay_bitis",
+        "signals",
     }
 
 

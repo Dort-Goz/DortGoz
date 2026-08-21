@@ -1,5 +1,3 @@
-"""WebSocket bağlantı yöneticisi + mock yeniden oynatma."""
-
 from __future__ import annotations
 
 import asyncio
@@ -24,9 +22,6 @@ class ConnectionManager:
         self._send_locks: dict[WebSocket, asyncio.Lock] = {}
         self._history: deque[Event] = deque(maxlen=self.HISTORY_LIMIT)
         self._seq = 0
-        # Sunucu içi dinleyiciler: her yayınlanan olayı görür (ör. anomali
-        # nöbet kuyruğu incident_update'leri buradan toplar). Senkron ve
-        # hata-yalıtımlı: bozuk bir dinleyici yayını DÜŞÜREMEZ.
         self.observers: list = []
 
     async def connect(self, ws: WebSocket) -> None:
@@ -41,7 +36,7 @@ class ConnectionManager:
         self._send_locks.pop(ws, None)
 
     async def replay_since(self, ws: WebSocket, from_seq: int) -> None:
-        """Eksik olayları tek sokete sırayla gönder ve sonra canlı yayını aç."""
+        """Eksik olayları sırayla gönder ve ardından canlı yayını aç."""
 
         if ws not in self._connections:
             return
@@ -76,8 +71,7 @@ class ConnectionManager:
                     )
                     cursor = history[0].seq - 1
                     reset_sent = True
-                missing = [event for event in history if event.seq > cursor]
-                for event in missing:
+                for event in (item for item in history if item.seq > cursor):
                     await asyncio.wait_for(
                         ws.send_text(event.model_dump_json()),
                         timeout=self.SEND_TIMEOUT,
@@ -87,10 +81,6 @@ class ConnectionManager:
                     self._syncing.discard(ws)
                     return
 
-    # Yavaş/ölü bir istemci koşuyu DURDURMAMALI: gönderimler sırayla ve zaman
-    # aşımsız yapılırken, TCP tamponu dolmuş TEK bir istemci (uyuyan dizüstü,
-    # temiz kapanmayan sekme) `emit`i süresiz askıda bırakıp tüm analizi
-    # kilitleyebiliyordu — 2026-08-05'te 38 sızıntı bağlantıyla canlı görüldü.
     SEND_TIMEOUT = 5.0
 
     async def broadcast(self, event: Event) -> None:
@@ -100,14 +90,13 @@ class ConnectionManager:
         for observer in self.observers:
             try:
                 observer(event)
-            except Exception:  # dinleyici hatası yayını etkilemez
-                LOGGER.exception("websocket observer olayı işleyemedi")
+            except Exception:
+                pass
         if not self._connections:
             return
         data = event.model_dump_json()
 
         async def send(ws: WebSocket) -> bool:
-            """True = gönderildi. Zaman aşımı/hata → False (istemci düşürülür)."""
             try:
                 lock = self._send_locks.setdefault(ws, asyncio.Lock())
                 async with lock:
@@ -116,8 +105,6 @@ class ConnectionManager:
                 return False
             return True
 
-        # Eşzamanlı gönderim: bir istemcinin gecikmesi diğerlerini bekletmesin.
-        # Sonuçlar bağlantı listesiyle EŞLEŞTİRİLİR (tip kontrolüne güvenilmez).
         conns = [ws for ws in self._connections if ws not in self._syncing]
         results = await asyncio.gather(*(send(ws) for ws in conns),
                                        return_exceptions=True)
@@ -128,13 +115,6 @@ class ConnectionManager:
             await asyncio.gather(*(self._close_dropped(ws) for ws in dropped))
 
     async def _close_dropped(self, ws: WebSocket) -> None:
-        """Düşürülen soketi kapat.
-
-        Yönetici kümesinden çıkarmak yetmez: soket açık kalırsa istemcide
-        `onclose` tetiklenmez, arayüz yeniden bağlanmaz ve operatör bayat
-        veriye bakar. Kapatma da zaman aşımlıdır — tıkalı soket yayını
-        yeniden kilitlemesin.
-        """
         try:
             await asyncio.wait_for(ws.close(code=1011), timeout=self.SEND_TIMEOUT)
         except Exception:
@@ -142,11 +122,6 @@ class ConnectionManager:
 
 
 async def replay_jsonl(manager: ConnectionManager, path: Path, speed: float = 1.0) -> None:
-    """Kayıtlı olay akışını (JSONL) gerçekçi gecikmelerle yeniden oynat.
-
-    Her satır bir Event; satırdaki `delay` alanı (sn) varsa ondan, yoksa 0.8 sn
-    sabit aralıktan beklenir. Demo ve GPU'suz arayüz geliştirme için.
-    """
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
@@ -154,8 +129,6 @@ async def replay_jsonl(manager: ConnectionManager, path: Path, speed: float = 1.
         raw = json.loads(line)
         payload = raw.get("payload")
         if isinstance(payload, dict) and payload.get("type") == "run_metrics":
-            # Koşu özeti JSONL artifact'inde kalır; frontend Event union'ına
-            # ve dolayısıyla demo/replay WS sözleşmesine girmez.
             continue
         delay = float(raw.pop("delay", 0.8)) / max(speed, 0.01)
         await asyncio.sleep(delay)

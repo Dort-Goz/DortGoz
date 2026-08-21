@@ -1,5 +1,3 @@
-"""Local screening adapter contract testi (FFmpeg yerine sentetik profile)."""
-
 from __future__ import annotations
 
 from pathlib import Path

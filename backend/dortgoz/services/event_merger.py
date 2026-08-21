@@ -1,5 +1,3 @@
-"""Aynı analizdeki yinelenen doğrulanmış olaylar için saf merge kuralı."""
-
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -28,11 +26,6 @@ class EventMergeResult(BaseModel):
 def merge_confirmed_events(
     events: list[VerifiedEvent], config: EventMergeConfig | None = None
 ) -> EventMergeResult:
-    """Yalnız confirmed, aynı türdeki temporal duplicate'leri birleştirir.
-
-    Girdi listesi ve rejected/human-review kayıtları değiştirilmez; ``duplicate_of``
-    audit katmanının hangi confirmed olayın görünümde birleştiğini izlemesini sağlar.
-    """
 
     active = config or EventMergeConfig()
     merged: list[VerifiedEvent] = []

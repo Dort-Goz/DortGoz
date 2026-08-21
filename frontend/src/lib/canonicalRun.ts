@@ -13,7 +13,6 @@ interface StartCanonicalRunArgs {
   send: (message: OperatorMessage) => void;
 }
 
-/** Tek kullanıcı aksiyonunun yalnız bir canonical WS start mesajı üretmesini sağlar. */
 export function startCanonicalRun({
   selected,
   busy,

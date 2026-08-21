@@ -1,5 +1,3 @@
-"""Video metadata'dan üç terminal agent kararına giden Task 02-04 akışı."""
-
 from __future__ import annotations
 
 from uuid import uuid4

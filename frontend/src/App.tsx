@@ -36,21 +36,17 @@ export default function App() {
   const socketRef = useRef<DortgozSocket | null>(null);
   const [videos, setVideos] = useState<string[]>([]);
   const [selected, setSelected] = useState("");
-  // Deney paneli: model + istem override'ları (boş = henüz yüklenmedi)
   const [interpretCfg, setInterpretCfg] = useState<InterpretConfig | null>(null);
   const [showExperiment, setShowExperiment] = useState(false);
   const [model, setModel] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [taskPrompt, setTaskPrompt] = useState("");
-  // Çalışma kipi (ölçülü cephe, 290 klip): dengeli 99/140@12 · temkinli 86/140@5 · geniş 109/140@16
   const [runMode, setRunMode] = useState<"" | "temkinli" | "genis">("");
   const [demoCount, setDemoCount] = useState(4);
   const startPendingRef = useRef(false);
   const [startPending, setStartPending] = useState(false);
-  // Analiz paketi içe aktarma durumu ("" = sessiz)
   const [importNote, setImportNote] = useState("");
   const importInputRef = useRef<HTMLInputElement | null>(null);
-  // Canlı CCTV ızgarası (5×5) — panel yerleşiminin yerine geçer
   const [liveView, setLiveView] = useState(false);
   const [trainingEventId, setTrainingEventId] = useState("");
   // Sunucu bağlantısı — üst çubuktaki kalıcı rozet
@@ -66,7 +62,6 @@ export default function App() {
     return () => socket.close();
   }, []);
 
-  // İşlenebilir klipler — backend /media altını tarar
   useEffect(() => {
     fetch("/api/videos")
       .then((r) => r.json())
@@ -82,14 +77,13 @@ export default function App() {
       .catch(() => setVideos([]));
   }, []);
 
-  // Deney varsayılanları + localStorage'daki override'lar (iterasyon reload'a dayansın)
   useEffect(() => {
     fetch("/api/interpret_config")
       .then((r) => r.json())
       .then((cfg: InterpretConfig) => {
         setInterpretCfg(cfg);
         let saved: Record<string, string> = {};
-        try { saved = JSON.parse(localStorage.getItem(EXPERIMENT_KEY) ?? "{}"); } catch { /* bozuk kayıt → varsayılan */ }
+        try { saved = JSON.parse(localStorage.getItem(EXPERIMENT_KEY) ?? "{}"); } catch {}
         setModel(saved.model || cfg.default_model);
         setSystemPrompt(saved.system_prompt || cfg.system_prompt);
         setTaskPrompt(saved.task_prompt || cfg.task_prompt);
@@ -98,7 +92,6 @@ export default function App() {
       .catch(() => setInterpretCfg(null));
   }, []);
 
-  // Yalnız varsayılandan sapanlar saklanır — varsayılan değişirse eskisi yapışıp kalmasın
   useEffect(() => {
     if (!interpretCfg) return;
     localStorage.setItem(EXPERIMENT_KEY, JSON.stringify({
@@ -116,11 +109,9 @@ export default function App() {
 
   const feed = state.feeds[state.active] ?? emptyFeed;
   const run = feed.runStatus;
-  // "Durdur" TÜM akışları keser → meşguliyet de tüm akışlara bakar
   const busy = Object.values(state.feeds).some((f) => f.runStatus?.state === "processing");
 
   const overrides = useCallback(() => ({
-    // Yalnız varsayılandan sapan alanlar gönderilir (boş = backend varsayılanı)
     model: interpretCfg && model !== interpretCfg.default_model ? model : "",
     system_prompt:
       interpretCfg && systemPrompt !== interpretCfg.system_prompt ? systemPrompt : "",
@@ -145,14 +136,8 @@ export default function App() {
     if (!run?.state) return;
     startPendingRef.current = false;
     setStartPending(false);
-    // Bağımlılık nesne kimliği: reducer her run_status'ta yeni nesne koyar;
-    // yalnız state string'ine bağlanmak art arda aynı durumda (ör. iki kez
-    // "idle") kilidi asılı bırakıyordu (2026-08-11 bulgu A1).
   }, [run]);
 
-  // Demo: KAM-1..N etiketleriyle EŞZAMANLI koşar (kapasite ~10 @1×).
-  // Uzun `kamera*` kayıtları (make_long_feed üretimi) öncelikli — demo kısa
-  // kliplerle değil, gerçekçi sürekli akışlarla anlamlı.
   const startDemo = useCallback((count: number) => {
     if (busy || videos.length === 0) return;
     const long = videos.filter((v) => v.toLowerCase().startsWith("kamera"));
@@ -167,8 +152,6 @@ export default function App() {
 
   const stopRun = useCallback(() => socketRef.current?.send({ kind: "stop_run" }), []);
 
-  // Paket içe aktarma: zip ham gövde olarak POST edilir; başarıda sohbet
-  // bağlamı backend'de kurulur — operatör içe alınan analizle konuşabilir.
   const importPackage = useCallback(async (file: File) => {
     setImportNote("içe alınıyor…");
     try {
@@ -187,10 +170,6 @@ export default function App() {
 
   return (
     <div className="h-screen flex flex-col gap-2 p-2">
-      {/* Üst çubuk */}
-      {/* Üst çubuk TEK ekrana sığar: sağ grup taşarsa alt satıra SARAR
-          (yatay kaydırma yasak) ve canlı görünümde dosya-koşusu denetimleri
-          (klip/kip/Başlat/demo/deney) GİZLENİR — o kipte işlevleri yok. */}
       <header className="flex items-center flex-wrap gap-x-3 gap-y-1.5 px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-900/60 shrink-0">
         <span className="text-lg font-bold tracking-tight">
           DÖRTGÖZ <span className="text-zinc-500 font-normal text-sm">operatör konsolu</span>
@@ -349,8 +328,6 @@ export default function App() {
                   ⇩ paket
                 </a>
               )}
-              {/* Ayrıntı (dosya yolu + model) İKİNCİL bilgidir: kırpılır,
-                  tamamı araç ipucunda — üst çubuğu taşırmasın */}
               {run.detail && (
                 <span className="text-zinc-500 max-w-56 truncate" title={run.detail}>
                   {run.detail}
@@ -362,7 +339,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Deney paneli — model + istemler, koşu başına (bkz. ExperimentPanel) */}
       {showExperiment && interpretCfg && (
         <ExperimentPanel
           config={interpretCfg}
@@ -376,12 +352,6 @@ export default function App() {
         />
       )}
 
-      {/* Koşunun nihai kararı — hangi sınıf, hangi risk (backend: RunContext.verdict).
-          Renk EN CİDDİ olayın riskini taşır: yeşil kutu içinde "kritik" yazması
-          operatörü yanıltıyordu; olaysız koşu yeşil kalır. */}
-      {/* Çoklu-akış (demo) kamera duvarı — tek akışta görünmez. Canlı
-          görünümde de gizli: ızgara hücreleri aynı bilgiyi zaten taşıyor,
-          üstte İKİNCİ bir akış duvarı yalnız yer yiyordu. */}
       {!liveView && (
         <FeedStrip feeds={state.feeds} active={state.active}
                    onSelect={(f) => dispatch({ kind: "select_feed", feed: f })} />
@@ -408,7 +378,6 @@ export default function App() {
         );
       })()}
 
-      {/* Canlı CCTV ızgarası — 5×5 gerçek akış duvarı, panel yerleşiminin yerine */}
       {liveView && (
         <LiveGrid
           incidents={Object.fromEntries(
@@ -418,10 +387,6 @@ export default function App() {
         />
       )}
 
-      {/* Ana ızgara */}
-      {/* 6 sütun: video 1:1 içerik taşıdığı için DAR bir sütuna oturur (2/6);
-          artan genişlik zaman çizelgesine gider (4/6) — orada okunacak metin var.
-          Alt sıra üçe eşit bölünür. */}
       {!liveView && (
       <div className="flex-1 grid grid-cols-6 grid-rows-2 gap-2 min-h-0">
         <div className="col-span-2 row-span-1 min-h-0">

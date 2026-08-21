@@ -1,5 +1,3 @@
-"""Candidate başına taşınan kontrollü agent durumu."""
-
 from __future__ import annotations
 
 from uuid import uuid4
@@ -20,7 +18,6 @@ from .trace import DecisionTraceItem
 
 
 class EventAgentState(BaseModel):
-    """Her transition'da kopyalanan, sınırları doğrulanan state."""
 
     model_config = ConfigDict(extra="forbid")
 

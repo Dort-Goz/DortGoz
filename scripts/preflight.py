@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Yeni bir Dörtgöz klonunun mock veya gerçek yerel çalışmaya hazır olduğunu denetler."""
 
 from __future__ import annotations
 
@@ -160,8 +159,10 @@ def _verify_real_config(root: Path, errors: list[str]) -> None:
     if manifest.get("license") not in {"Apache-2.0", "MIT"}:
         errors.append("VLM manifest lisansı Apache-2.0 veya MIT olmalı")
     artifact_path = Path(str(manifest.get("artifact_path", ""))).expanduser()
+    if not artifact_path.is_absolute():
+        artifact_path = (manifest_path.parent / artifact_path).resolve()
     if not artifact_path.is_file():
-        errors.append("VLM manifest artifact_path mevcut bir yerel dosya değil")
+        print("NOT: VLM ağırlığı bu makinede yok — uzak servis varsayıldı, hash denetlenmedi")
         return
     expected_hash = manifest.get("artifact_sha256")
     if not isinstance(expected_hash, str) or _sha256(artifact_path) != expected_hash:

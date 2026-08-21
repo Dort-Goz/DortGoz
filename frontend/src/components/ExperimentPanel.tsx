@@ -1,11 +1,3 @@
-/** Deney paneli — model seçimi + sistem/görev istemi düzenleme.
- *
- *  Yorumlama hattının üç serbestlik derecesini koşu başına ayarlar; boş/varsayılan
- *  bırakılan alanlar backend şablonlarına düşer. Görev istemindeki {start}/{end}
- *  yer tutucuları pencere sınırlarıyla doldurulur — silinirse pencere bağlamı
- *  kaybolur, panel bunu uyarıyla gösterir.
- */
-
 export interface InterpretConfig {
   default_model: string;
   models: string[];

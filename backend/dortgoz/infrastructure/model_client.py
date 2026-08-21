@@ -1,5 +1,3 @@
-"""OpenAI-uyumlu fakat yalnız yerel VLM sunucuları için ince istemci sınırı."""
-
 from __future__ import annotations
 
 import asyncio
@@ -29,7 +27,6 @@ class LocalModelClient(Protocol):
 
 
 class OpenAICompatibleLocalClient:
-    """llama.cpp gibi local OpenAI API uçları için adapter."""
 
     def __init__(self, *, base_url: str, api_key: str) -> None:
         self._client = AsyncOpenAI(base_url=base_url, api_key=api_key)

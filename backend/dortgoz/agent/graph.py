@@ -1,20 +1,3 @@
-"""LangGraph ajan çekirdeği — araç kullanan operatör asistanı.
-
-Grafik (ReAct döngüsü):
-
-    agent ──(araç çağrısı var)──▶ tools ──▶ agent
-      │
-      └──(nihai yanıt)──▶ END
-
-Her düğüm geçişi AgentStep, her araç çağrısı ToolCall olayı olarak akar —
-ajan konsolu bu izlerle canlanır (jüri: karar zinciri görünür). Nihai yanıt
-ChatMessage(streaming=True) parçalarıyla verilir.
-
-Araç turlarında akış kapalıdır (llama.cpp tool_calls ayrıştırması gövde
-tamamlanınca güvenilir); "akış hissi" nihai metnin parça parça yayınıyla
-verilir. `parallel_tool_calls: false` — 2026-08-03 kural seti.
-"""
-
 from __future__ import annotations
 
 import html
@@ -24,6 +7,7 @@ from langgraph.graph import END, StateGraph
 
 from ..config import settings
 from ..events import AgentStep, ChatMessage, Event
+from ..pipeline.thinking import thinking_extra, thinking_on
 from ..ws import ConnectionManager
 from . import tools
 from .actuators import registry as actuator_registry
@@ -66,27 +50,17 @@ NO_RUN_HINT = (
     "üst çubuktan bir klip seçip analizi başlatması gerektiğini kısaca hatırlat."
 )
 
-MAX_TOOL_ROUNDS = 5      # emniyet: araç döngüsü sınırsız dönmesin
-HISTORY_LIMIT = 12       # sohbet hafızası (operatör+ajan nihai mesajları)
+MAX_TOOL_ROUNDS = 5
+HISTORY_LIMIT = 12
 
-# Çok turlu sohbet hafızası — araç trafiği DEĞİL, yalnız nihai mesajlar tutulur
-# (bağlam şişmesin; araç sonuçları zaten yanıtın içine işlenmiş olur).
 _history: list[dict[str, str]] = []
 
 
 def reset_history() -> None:
-    """Yeni koşu = yeni bağlam; eski sohbet yeni kayda taşınmaz."""
     _history.clear()
 
 
 def build_system_prompt() -> str:
-    """Sistem istemi = rol + (varsa) koşu bağlam(lar)ı.
-
-    Sohbetin analizden SONRA da anlamlı olmasının yolu bu: koşu bitince
-    `session` bağlamı yaşamaya devam eder, buraya gömülür. Çoklu-akış (demo)
-    kipinde TÜM kameraların brifingi başlıklarla art arda verilir — operatör
-    "3. kamerada ne oldu" diye sorabilir. 256K'lık modelde yer sorunu yok.
-    """
     from .. import session
     ctxs = session.all_contexts()
     if not ctxs:
@@ -131,18 +105,17 @@ def _build_graph(manager: ConnectionManager):
         rounds = state["rounds"]
         await _step(manager, "respond", "start",
                     f"tur {rounds + 1}" if rounds else "")
-        # Tur sınırı aşıldıysa araçsız çağrı — model yanıtını vermek ZORUNDA
         kwargs: dict[str, Any] = {}
         if rounds < MAX_TOOL_ROUNDS:
             kwargs = {"tools": tools.TOOLS, "parallel_tool_calls": False}
+        dusunur = thinking_on(think=False, effort=settings.agent_effort)
         resp = await create_chat(client,
-            model=settings.main_model,
+            model=settings.agent_model or settings.main_model,
             messages=state["messages"],
-            max_tokens=700,
+            max_tokens=2200 if dusunur else 700,
             temperature=0.3,
-            # Düşünme modu açıkken bütçenin tamamı reasoning_content'e gidip
-            # content boş kalabiliyordu → operatör boş yanıt görüyordu.
-            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+            extra_body=thinking_extra(think=False, effort=settings.agent_effort,
+                                      budget=settings.agent_think_budget),
             **kwargs,
         )
         msg = resp.choices[0].message
@@ -185,7 +158,6 @@ async def _step(manager: ConnectionManager, node: str,
 
 
 async def _stream_text(manager: ConnectionManager, text: str) -> None:
-    """Nihai yanıtı parça parça yayınlar (arayüz akış sözleşmesi korunur)."""
     for i in range(0, len(text), 48):
         await manager.broadcast(Event.wrap(
             ChatMessage(role="agent", text=text[i:i + 48], streaming=True)))
@@ -194,7 +166,6 @@ async def _stream_text(manager: ConnectionManager, text: str) -> None:
 
 
 async def run_chat(text: str, manager: ConnectionManager) -> None:
-    """Operatör sohbeti — LangGraph araç döngüsü + çok turlu hafıza."""
     from .. import session
     ctx = session.current()
     await _step(manager, "respond", "start",

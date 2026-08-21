@@ -1,5 +1,3 @@
-"""EvidenceValidationResult JSONL artifact'ından validator güvenlik metrikleri."""
-
 from __future__ import annotations
 
 import argparse

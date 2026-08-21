@@ -1,5 +1,3 @@
-"""E2E local run JSONL artifact'ından critical recall, false alarm ve kaynak KPI'ları."""
-
 from __future__ import annotations
 
 import argparse

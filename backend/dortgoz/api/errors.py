@@ -1,5 +1,3 @@
-"""HTTP hata zarfı ve domain hata eşlemeleri."""
-
 from __future__ import annotations
 
 from uuid import uuid4
@@ -11,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException
 
 from ..domain.video import VideoIngestError
-from ..repositories.errors import (
+from ..errors import (
     RepositoryConflictError,
     RepositoryDuplicateError,
     RepositoryError,
@@ -91,7 +89,6 @@ async def validation_exception_handler(_: Request, exc: RequestValidationError) 
 
 
 async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:
-    """FastAPI'nin varsayılan ``detail`` gövdesini ortak hata zarfına çevirir."""
 
     detail = exc.detail
     message = detail if isinstance(detail, str) else "HTTP isteği tamamlanamadı."

@@ -1,11 +1,3 @@
-"""Önceden üretilmiş Docker imajlarından air-gap bundle oluşturur.
-
-Bu araç image build veya model indirmez. Ağ erişimi olan hazırlık makinesinde
-yalnızca zaten oluşturulmuş imajları ve Git'te izlenen kaynak ağacını taşınabilir
-bir klasöre koyar; hedef makine bundle'ı yükledikten sonra ``--no-build`` ile
-çalıştırır.
-"""
-
 from __future__ import annotations
 
 import argparse

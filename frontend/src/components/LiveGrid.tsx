@@ -2,12 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import type { IncidentUpdate } from "../types/events";
 import TriagePanel from "./TriagePanel";
 
-/** `GET /api/live/status` akış görünümü (backend FeedStatus aynası). */
 interface LiveFeed {
   name: string;
   url: string;
-  desc: string;            // insan-okur kamera adı (boşsa name gösterilir)
-  state: string;           // baslatiliyor | akiyor | isleniyor | hata
+  desc: string;
+  state: string;
   lag_s: number | null;
   dropped_s: number;
   segments_done: number;
@@ -15,7 +14,6 @@ interface LiveFeed {
   snapshot: string;
 }
 
-/** Gecikme rozeti: segment süresi 30 sn → ~45 sn'e kadar "canlıya yetişik". */
 function lagBadge(f: LiveFeed): { text: string; cls: string } {
   if (f.state === "hata") return { text: "KOPUK", cls: "bg-red-700" };
   if (f.lag_s == null) return { text: "başlıyor…", cls: "bg-zinc-700" };
@@ -26,7 +24,6 @@ function lagBadge(f: LiveFeed): { text: string; cls: string } {
 }
 
 export default function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
-  /** Akış adı → olay kartları (WS'ten; hücre rozetinde sayı gösterilir) */
   incidents: Record<string, IncidentUpdate[]>;
   onSelectFeed: (feed: string) => void;
   onOpenTraining: (eventId: string) => void;
@@ -35,9 +32,6 @@ export default function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
   const [active, setActive] = useState(false);
   const [error, setError] = useState("");
   const [zoom, setZoom] = useState<string | null>(null);
-  // Kare tazeleme yoğunluğu: N segmentte 1 kare indirilir (bant genişliği
-  // seçimi — yavaş istemci bağlantısında düşürülür). Sunucu her segmentte
-  // anlık görüntü üretmeye devam eder; bu YALNIZ istemcinin indirme sıklığı.
   const [rate, setRate] = useState<number>(() =>
     Number(localStorage.getItem("dortgoz.canliKareOrani") || 1));
   const changeRate = (v: number) => {
@@ -45,10 +39,6 @@ export default function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
     localStorage.setItem("dortgoz.canliKareOrani", String(v));
   };
 
-  // Izgaranın nabzı: 2 sn'de bir durum tazele. Görüntüler AYRICA tazelenmez:
-  // img önbellek kırıcısı segments_done'a bağlı — tarayıcı bir kareyi yalnız
-  // YENİ anlık görüntü varken indirir (yoksa yavaş bağlantıda 25 img × 2 sn
-  // ≈ 2 Mbps boşa akıyordu ve kareler yarım/bayat yükleniyordu).
   useEffect(() => {
     let alive = true;
     const poll = async () => {
@@ -58,7 +48,7 @@ export default function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
         if (!alive) return;
         setActive(body.active);
         setFeeds(body.feeds);
-      } catch { /* backend geçici kopuk — sonraki turda tekrar */ }
+      } catch {}
     };
     poll();
     const id = setInterval(poll, 2000);
@@ -146,8 +136,10 @@ export default function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
 
       <div className="flex-1 min-h-0 flex gap-2">
       <div
-        className="flex-1 min-h-0 grid gap-1 overflow-auto"
-        style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}
+        className="flex-1 min-h-0 grid gap-1 overflow-auto content-start"
+        style={{
+          gridTemplateColumns: `repeat(${Math.max(1, Math.ceil(Math.sqrt(feeds.length)))}, minmax(0, 1fr))`,
+        }}
       >
         {feeds.map((f) => {
           const badge = lagBadge(f);
@@ -156,7 +148,7 @@ export default function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
             <button
               key={f.name}
               onClick={() => { setZoom(f.name); onSelectFeed(f.name); }}
-              className={`relative rounded overflow-hidden border text-left ${
+              className={`relative aspect-video rounded overflow-hidden border text-left ${
                 inc > 0 ? "border-amber-600" : "border-zinc-800"
               } bg-black hover:border-zinc-500`}
               title={`${f.name} · ${f.state}`}
@@ -200,13 +192,11 @@ export default function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
           );
         })}
         {!active && feeds.length === 0 && (
-          <div className="col-span-5 flex items-center justify-center text-zinc-500 py-20">
+          <div className="col-span-full flex items-center justify-center text-zinc-500 py-20">
             Canlı kip kapalı — config/live_feeds.json'daki akışlarla başlatın.
           </div>
         )}
       </div>
-      {/* Nöbet kuyruğu: tespitler insan hükmüne düşer, doğrulananlar oturum
-          listesine geçer (insan-döngüde karar katmanı) */}
       <TriagePanel
         onSelectFeed={onSelectFeed}
         onOpenTraining={onOpenTraining}

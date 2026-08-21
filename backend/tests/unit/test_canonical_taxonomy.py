@@ -1,5 +1,3 @@
-"""Faz A canonical taxonomy ve compatibility adapter regresyonları."""
-
 from __future__ import annotations
 
 from pathlib import Path

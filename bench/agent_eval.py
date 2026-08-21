@@ -1,8 +1,3 @@
-"""Canonical agent JSONL artifact'ından route/tool/recovery metrikleri üretir.
-
-Her satır terminal candidate state'inin ``model_dump(mode='json')`` görünümüdür.
-"""
-
 from __future__ import annotations
 
 import argparse

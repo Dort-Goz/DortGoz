@@ -1,5 +1,3 @@
-"""Ajan araç katmanı: şema kuralları + dispatcher davranışı (LLM'siz, deterministik)."""
-
 import asyncio
 from pathlib import Path
 
@@ -13,7 +11,6 @@ from dortgoz.events import WindowEvent, WindowReport
 
 
 class FakeManager:
-    """ConnectionManager yerine geçen olay toplayıcı."""
 
     def __init__(self) -> None:
         self.events = []
@@ -44,8 +41,6 @@ def ctx():
     actuator_registry.clear()
 
 
-# ---- şema kuralları (2026-08-03 araç çağırma ölçümleri) ----
-
 def test_tool_schemas_are_strict():
     assert tools.TOOLS, "araç listesi boş olmamalı"
     for t in tools.TOOLS:
@@ -53,13 +48,10 @@ def test_tool_schemas_are_strict():
         params = fn["parameters"]
         assert fn["strict"] is True
         assert params["additionalProperties"] is False
-        # strict mod: TÜM alanlar required
         assert sorted(params["required"]) == sorted(params["properties"])
-        # Qwen'de array<object> parametre yasak (llama.cpp #21771)
         for prop in params["properties"].values():
             assert not (prop.get("type") == "array"
                         and prop.get("items", {}).get("type") == "object"), fn["name"]
-        # açıklanabilirlik: her araç gerekçe ister
         assert "gerekce" in params["properties"], fn["name"]
 
 
@@ -69,7 +61,6 @@ def test_every_tool_call_emits_toolcall_event(ctx):
     calls = m.payloads("tool_call")
     assert len(calls) == 1 and calls[0].tool == "videoya_git"
     assert calls[0].rationale == "göster"
-    # arayüz komutu da gitmiş olmalı
     ui = m.payloads("ui_command")
     assert ui and ui[0].action == "seek_video" and ui[0].args["t"] == 42.0
 
@@ -102,7 +93,7 @@ def test_olayi_vurgula_unknown_id_lists_known(ctx):
     out = asyncio.run(tools.execute("olayi_vurgula",
                                     {"incident_id": "yok", "gerekce": "?"}, m))
     assert "HATA" in out and "abc123" in out
-    assert not m.payloads("ui_command")   # hatalı kimlikte arayüz komutu gitmez
+    assert not m.payloads("ui_command")
 
 
 def test_every_actuator_requires_approval_and_resolution_is_recorded(ctx):
@@ -247,7 +238,6 @@ def test_tool_errors_return_text_not_raise(ctx):
     m = FakeManager()
     out = asyncio.run(tools.execute("bilinmeyen_arac", {"gerekce": "?"}, m))
     assert out.startswith("HATA")
-    # bozuk argüman JSON'ı da patlatmaz
     assert tools.parse_args("{bozuk json") == {}
     assert tools.parse_args('"liste degil"') == {}
 

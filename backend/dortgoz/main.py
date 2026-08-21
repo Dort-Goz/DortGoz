@@ -1,10 +1,3 @@
-"""Dörtgöz backend — FastAPI uygulaması.
-
-Tek süreç: REST + WebSocket + statik dosyalar (medya ve derlenmiş frontend).
-Mock modda (DORTGOZ_MOCK=1) WS'e bağlanan ilk istemciye örnek senaryo akışı
-yeniden oynatılır — GPU/model olmadan uçtan uca arayüz geliştirme.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -33,13 +26,13 @@ from .api.router import router as api_router
 from .api.router import runtime as api_runtime
 from .config import settings
 from .domain.video import VideoIngestError
-from .events import ChatMessage, Event, OperatorMessage, RunStatus
-from .repositories.errors import (
+from .errors import (
     RepositoryConflictError,
     RepositoryDuplicateError,
     RepositoryError,
     RepositoryNotFoundError,
 )
+from .events import ChatMessage, Event, OperatorMessage, RunStatus
 from .services.analysis_job import (
     AnalysisJobExecutionDisabled,
     AnalysisJobNotReady,
@@ -55,23 +48,17 @@ from .ws import ConnectionManager, replay_jsonl
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Uygulama ömrü: açılışta kalıcı iş uzlaştırması, kapanışta temiz durdurma.
-
-    Gövdedeki adlar (uzlaştırma servisi, canlı kip servisi) modülün ilerisinde
-    kurulur; bu bağlam yöneticisi ancak uygulama ayağa kalkarken çalışır.
-    """
-
     _reconcile_persistent_work_on_startup()
     try:
         yield
     finally:
-        # 7/24 temiz kapanış: ffmpeg çekicileri süreçle birlikte ölsün.
         if live_cctv.active:
             await live_cctv.stop()
 
 
 app = FastAPI(title="Dörtgöz", version="0.1.0", lifespan=lifespan)
 manager = ConnectionManager()
+LOGGER = logging.getLogger(__name__)
 
 app.include_router(api_router)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
@@ -88,20 +75,17 @@ app.add_exception_handler(Exception, domain_exception_handler)
 
 MOCK_EVENTS = Path(__file__).parent / "mock" / "sample_events.jsonl"
 _mock_replay_task: asyncio.Task[None] | None = None
-LOGGER = logging.getLogger(__name__)
 
 
 def _observe_mock_replay(task: asyncio.Task[None]) -> None:
-    """Arka plan replay hatasını tüket, kaydet ve sonraki bağlantıda tekrar dene."""
-
     global _mock_replay_task
     try:
         task.result()
     except asyncio.CancelledError:
-        if _mock_replay_task is task:
-            _mock_replay_task = None
+        pass
     except Exception:
         LOGGER.exception("mock replay görevi başarısız oldu")
+    finally:
         if _mock_replay_task is task:
             _mock_replay_task = None
 
@@ -121,8 +105,6 @@ app.state.startup_reconciliation = startup_reconciliation
 
 
 def _reconcile_persistent_work_on_startup() -> None:
-    """Çöken eğitim işlerini terminal yap; canlı iş sahibine dokunma."""
-
     report = startup_reconciliation.reconcile()
     if report.training_interrupted or report.training_conflicts:
         LOGGER.warning(
@@ -134,20 +116,14 @@ def _reconcile_persistent_work_on_startup() -> None:
 
 
 async def ensure_analysis_ready() -> None:
-    """Yarışma profilinde eksik bileşenle gerçek analiz başlatma."""
-
     if settings.runtime_profile != "competition-real":
         return
     report = await deployment_readiness.inspect()
     if not report.ready:
-        detail = "; ".join(report.blocking_reasons())
-        raise AnalysisJobNotReady(f"competition-real analiz kapısı kapalı: {detail}")
+        raise AnalysisJobNotReady(
+            "competition-real analiz kapısı kapalı: " + "; ".join(report.blocking_reasons())
+        )
 
-# Sınır = şartnamedeki 24 kamera senaryosu (+1 pay 5×5 canlı ızgara). Prova
-# ölçümü (2026-08-14, 24 akış × 20 dk gerçekçi kayıt): 24/24 tamamlandı, hız
-# medyanı 0,85× — sistem yavaşlar ama düşmez, RunStatus.speed dürüst ölçümü
-# taşır. Gerçekçi içerikte ~17 akış @1×; olay-yoğun en kötü durumda ~10
-# (bench/kapasite_provasi.py). DORTGOZ_MAX_FEEDS ile ayarlanır.
 analysis_jobs = CanonicalAnalysisJobService(
     manager,
     runs_dir=settings.runs_dir,
@@ -157,8 +133,6 @@ analysis_jobs = CanonicalAnalysisJobService(
     pre_start=ensure_analysis_ready,
     execution_coordinator=execution_coordinator,
 )
-# REST ve WS bu app composition sınırındaki aynı canonical job instance'ını kullanır;
-# router servisi ``app.state`` üzerinden alır ve ``main`` modülünü import etmez.
 app.state.analysis_jobs = analysis_jobs
 
 
@@ -169,8 +143,6 @@ async def health() -> dict:
 
 @app.get("/ready")
 async def readiness() -> JSONResponse:
-    """Profilin gerçek bağımlılıklarını ayrı ayrı gösteren hazır olma kapısı."""
-
     report = await deployment_readiness.inspect(force=True)
     return JSONResponse(
         status_code=200 if report.ready else 503,
@@ -187,7 +159,6 @@ async def list_runs() -> list[str]:
 
 @app.get("/api/runs/{run_id}")
 async def get_run(run_id: str) -> list[dict]:
-    """Kayıtlı koşunun olay akışı — arayüz yeniden bağlandığında geçmişi çeker."""
     from .pipeline.runner import load_run
 
     try:
@@ -201,9 +172,6 @@ async def get_run(run_id: str) -> list[dict]:
 
 @app.get("/api/runs/{run_id}/export")
 async def export_run(run_id: str) -> FileResponse:
-    """Analizi taşınabilir pakete (zip) çıkarır: akış + meta + özet + video +
-    kanıt kareleri. Paket başka bir Dörtgöz kurulumuna içe alındığında ajan
-    sohbeti tam yetenekle çalışır."""
     from .services.analysis_package import export_with_evidence
 
     try:
@@ -214,13 +182,10 @@ async def export_run(run_id: str) -> FileResponse:
     return FileResponse(pkg, filename=pkg.name, media_type="application/zip")
 
 
-# Paket = kaynak video + olay akışı + kanıt kareleri. Video sınırının üstüne
-# akış/kanıt payı bırakılır; daha büyük gövde belleğe alınmadan reddedilir.
 IMPORT_MAX_BYTES = settings.video_max_bytes + 256 * 1024 * 1024
 
 
 def _stage_import_package(data: bytes) -> Path:
-    """Yüklenen paketi geçici dosyaya yazar (bloklayan G/Ç; thread'de çağrılır)."""
     with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
         tmp.write(data)
         return Path(tmp.name)
@@ -228,13 +193,7 @@ def _stage_import_package(data: bytes) -> Path:
 
 @app.post("/api/runs/import")
 async def import_run(request: Request) -> dict:
-    """Dışa aktarılmış paketi (zip, ham gövde) geri yükler.
 
-    Gövde `application/zip` olarak POST edilir (multipart bağımlılığı yok).
-    Başarıda oturum bağlamı kurulur — sohbet içe alınan analiz üzerinde çalışır.
-    Zip açma ve sağlama toplamı bloklayan iştir: ayrı thread'de koşar, yoksa tek
-    içe aktarma canlı ızgarayı on saniyelerce dondurur.
-    """
     from .services.analysis_package import import_analysis
 
     data = bytearray()
@@ -248,7 +207,6 @@ async def import_run(request: Request) -> dict:
     try:
         ctx = await asyncio.to_thread(import_analysis, tmp_path)
     except (ValueError, zipfile.BadZipFile, KeyError) as exc:
-        # Bozuk/eksik zip istemci hatasıdır; 500 değil 422 döner.
         raise HTTPException(status_code=422, detail=f"geçersiz paket: {exc}")
     finally:
         await asyncio.to_thread(tmp_path.unlink, missing_ok=True)
@@ -256,25 +214,25 @@ async def import_run(request: Request) -> dict:
             "incidents": len(ctx.incidents), "reports": len(ctx.reports)}
 
 
-# ---- Canlı CCTV kipi (services/live_cctv) ----
-from .services.live_cctv import LiveCctvService, load_feeds  # noqa: E402
-
-live_cctv = LiveCctvService(manager, execution_coordinator=execution_coordinator)
-app.state.live_cctv = live_cctv
-
-# ---- Anomali nöbet kuyruğu (services/triage): insan-döngüde karar katmanı ----
-from .services import triage  # noqa: E402
 from .services.analysis_projection import RuntimeAnalysisProjection  # noqa: E402
+from .services.live_cctv import LiveCctvService, load_feeds  # noqa: E402
 
 runtime_projection = RuntimeAnalysisProjection(
     api_runtime.repository,
     settings.runs_dir,
     allow_virtual_sources=settings.mock,
 )
-live_cctv.prepare_run = runtime_projection.register_runtime_source
-live_cctv.finalize_run = api_runtime.incident_media.finalize_analysis
-# Projection önce çalışır. Böylece nöbet kartı aynı yayın turunda kalıcı event_id
-# alır ve operatör kararı JSONL yerine canonical SQLite review'a bağlanır.
+live_cctv = LiveCctvService(
+    manager,
+    prepare_run=runtime_projection.register_runtime_source,
+    finalize_run=api_runtime.incident_media.finalize_analysis,
+    execution_coordinator=execution_coordinator,
+)
+app.state.live_cctv = live_cctv
+
+from .services import triage  # noqa: E402
+
+# Projection ilk observer'dır. Triage aynı yayın turunda kalıcı event_id alır.
 triage.store.configure(
     api_runtime.repository,
     api_runtime.events,
@@ -286,22 +244,18 @@ manager.observers.append(triage.store.observe)
 
 @app.get("/api/triage")
 async def triage_snapshot() -> dict:
-    """Nöbet kuyruğu: bekleyen olaylar + bu oturumda doğrulanan anomaliler."""
     return triage.store.snapshot()
 
 
 @app.post("/api/triage/rules/{proposal_id}/approve")
 async def triage_approve_rule(proposal_id: str, body: dict) -> dict:
-    """Öneriyi süreli etkinleştir; ayrı operatör kararı zorunludur."""
     try:
         triage.store.approve_rule(
             proposal_id,
             body.get("reviewer", "operator-console"),
             int(body.get("duration_hours", triage.DEFAULT_RULE_HOURS)),
             expected_revision=(
-                int(body["revision"])
-                if body.get("revision") is not None
-                else None
+                int(body["revision"]) if body.get("revision") is not None else None
             ),
         )
     except KeyError as exc:
@@ -313,7 +267,6 @@ async def triage_approve_rule(proposal_id: str, body: dict) -> dict:
 
 @app.post("/api/triage/rules/{proposal_id}/reject")
 async def triage_reject_rule(proposal_id: str, body: dict) -> dict:
-    """Kural önerisini uygulatmadan reddet."""
     try:
         triage.store.reject_rule(
             proposal_id, body.get("reviewer", "operator-console")
@@ -327,7 +280,6 @@ async def triage_reject_rule(proposal_id: str, body: dict) -> dict:
 
 @app.post("/api/triage/rules/{proposal_id}/revoke")
 async def triage_revoke_rule(proposal_id: str, body: dict) -> dict:
-    """Toplanan, önerilen veya etkin kuralı geri al."""
     try:
         triage.store.revoke_rule(
             proposal_id, body.get("reviewer", "operator-console")
@@ -341,7 +293,6 @@ async def triage_revoke_rule(proposal_id: str, body: dict) -> dict:
 
 @app.post("/api/triage/decide")
 async def triage_decide(body: TriageDecisionInput) -> dict:
-    """Yapılandırılmış operatör kararını canonical review olarak kaydet."""
     try:
         item = triage.store.decide(
             body.key,
@@ -360,10 +311,7 @@ async def triage_decide(body: TriageDecisionInput) -> dict:
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
-    except triage.TriagePersistenceError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
-    except RepositoryError as exc:
-        # Canonical kayıt yazılamadı: karar kaydedilmedi, operatör tekrar dener.
+    except (triage.TriagePersistenceError, RepositoryError) as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     from dataclasses import asdict
     return asdict(item)
@@ -371,14 +319,10 @@ async def triage_decide(body: TriageDecisionInput) -> dict:
 
 @app.post("/api/live/start")
 async def live_start(body: dict | None = None) -> list[dict]:
-    """Canlı kip: config/live_feeds.json'daki akışları çekmeye + işlemeye başlar."""
     if settings.mock:
         raise HTTPException(status_code=409, detail="mock kipte canlı akış çekilmez")
     try:
-        await ensure_analysis_ready()
         statuses = await live_cctv.start(mode=(body or {}).get("mode", ""))
-    except AnalysisJobNotReady as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
     except (RuntimeError, FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     return [vars(s) for s in statuses]
@@ -392,14 +336,12 @@ async def live_stop() -> dict:
 
 @app.get("/api/live/status")
 async def live_status() -> dict:
-    """Izgaranın nabzı: akış başına durum + gecikme + anlık görüntü URL'si."""
     return {"active": live_cctv.active,
             "feeds": [vars(s) for s in live_cctv.status()]}
 
 
 @app.get("/api/live/feeds")
 async def live_feed_list() -> list[dict]:
-    """Yapılandırılmış akış listesi (başlatmadan önizleme)."""
     try:
         return load_feeds()
     except (FileNotFoundError, ValueError) as exc:
@@ -408,12 +350,6 @@ async def live_feed_list() -> list[dict]:
 
 @app.get("/api/interpret_config")
 async def interpret_config() -> dict:
-    """Deney paneli verisi: seçilebilir modeller + varsayılan istemler.
-
-    Model listesi model sunucusu `/v1/models`'ten canlı çekilir (erişim kapısı da
-    bu yolu açık tutar); sunucuya ulaşılamazsa veya mock moddaysak liste
-    varsayılan modelden ibaret kalır — panel yine çalışır.
-    """
     from .pipeline.interpret import SYSTEM_TR, TASK_TR
 
     models = [settings.main_model]
@@ -426,7 +362,7 @@ async def interpret_config() -> dict:
             if ids:
                 models = ([settings.main_model] if settings.main_model not in ids else []) + ids
         except Exception:
-            pass  # liste süsleme; varsayılanla devam
+            pass
     return {
         "default_model": settings.main_model,
         "models": models,
@@ -437,7 +373,6 @@ async def interpret_config() -> dict:
 
 @app.get("/api/videos")
 async def list_videos() -> list[str]:
-    """`/media` altındaki işlenebilir videolar — start_run bunlardan birini alır."""
     if not settings.media_dir.exists():
         return []
     return sorted(
@@ -472,11 +407,6 @@ async def websocket_endpoint(ws: WebSocket) -> None:
 
 
 async def handle_operator_message(msg: OperatorMessage, *, ws: WebSocket | None = None) -> None:
-    """Operatör mesajlarını yönlendir.
-
-    Gerçek modda `chat` ajan grafiğine gider (agent.graph.run_chat);
-    mock modda basit yankı ile arayüz sözleşmesi doğrulanır.
-    """
     if msg.kind == "sync":
         if ws is not None:
             await manager.replay_since(ws, msg.from_seq)
@@ -493,7 +423,7 @@ async def handle_operator_message(msg: OperatorMessage, *, ws: WebSocket | None 
                 )
             )
         else:
-            from .agent.graph import run_chat  # geç import: mock modda langgraph gerekmez
+            from .agent.graph import run_chat
 
             await run_chat(msg.text, manager)
     elif msg.kind == "actuator_response":
@@ -514,12 +444,6 @@ async def handle_operator_message(msg: OperatorMessage, *, ws: WebSocket | None 
 
 
 async def start_run(msg: OperatorMessage) -> None:
-    """Video işleme hattını arka plan görevi olarak başlatır.
-
-    HTTP/WS isteği içinde koşmaz (A4: uzun analiz istek döngüsünü bloklamamalı);
-    ilerleme RunStatus, ara sonuçlar WindowReport olarak akar. Deney seçenekleri
-    (model/istem override'ları) koşuya aynen taşınır.
-    """
     jobs: CanonicalAnalysisJobService = app.state.analysis_jobs
     try:
         await jobs.start(
@@ -531,10 +455,6 @@ async def start_run(msg: OperatorMessage) -> None:
             mode=msg.mode,
         )
     except AnalysisJobExecutionDisabled:
-        # Mock WS bağlantısı fixture'ı zaten oynatıyor. start_run'ın ayrıca gerçek
-        # runner/model yolunu açması çift akış ve GPU erişimi üretmemeli. Sessiz
-        # dönüş UI'daki başlatma kilidini süresiz bırakıyordu (2026-08-11 bulgu
-        # A1) — durum yayını kilidi çözer.
         await manager.broadcast(
             Event.wrap(
                 RunStatus(run_id="-", state="idle",
@@ -544,8 +464,6 @@ async def start_run(msg: OperatorMessage) -> None:
         )
         return
     except AnalysisJobStartError as exc:
-        # `feed` Event.wrap'ın parametresi; broadcast'e geçirilirse TypeError
-        # bağlantıyı düşürüyordu (2026-08-11 bulgu BUG-1).
         await manager.broadcast(
             Event.wrap(RunStatus(run_id="-", state="error", detail=str(exc)),
                        feed=msg.feed)
@@ -553,12 +471,10 @@ async def start_run(msg: OperatorMessage) -> None:
 
 
 async def stop_run() -> None:
-    """TÜM etkin koşuları durdurur — demo kipinde tek 'durdur' hepsini keser."""
     jobs: CanonicalAnalysisJobService = app.state.analysis_jobs
     await jobs.cancel_all()
 
 
-# Statik servisler — medya ve (varsa) derlenmiş frontend
 settings.media_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
 

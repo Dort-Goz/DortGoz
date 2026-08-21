@@ -1,5 +1,3 @@
-"""Context clip, keyframe ve yoğun CV analiz sözleşmeleri."""
-
 from __future__ import annotations
 
 from pathlib import PurePosixPath, PureWindowsPath

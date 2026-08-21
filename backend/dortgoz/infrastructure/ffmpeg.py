@@ -1,5 +1,3 @@
-"""Güvenli ffprobe çalıştırma ve normalize metadata ayrıştırma."""
-
 from __future__ import annotations
 
 import asyncio
@@ -86,7 +84,6 @@ def parse_probe_json(data: dict[str, Any]) -> VideoProbe:
 
 
 async def probe_video(path: Path, timeout_seconds: float = 30.0) -> VideoProbe:
-    """Shell kullanmadan ffprobe çalıştırır; timeout ve typed hata uygular."""
     try:
         process = await asyncio.create_subprocess_exec(
             "ffprobe",
@@ -123,7 +120,6 @@ async def probe_video(path: Path, timeout_seconds: float = 30.0) -> VideoProbe:
 
 
 async def check_decode(path: Path, timeout_seconds: float = 120.0) -> None:
-    """Tüm video stream'ini shell kullanmadan decode ederek bozuk girdiyi reddeder."""
 
     try:
         process = await asyncio.create_subprocess_exec(

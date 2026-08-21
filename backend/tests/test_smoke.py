@@ -1,5 +1,3 @@
-"""Duman testi: uygulama ayağa kalkıyor, sözleşme tutarlı, mock akış çalışıyor."""
-
 import json
 from pathlib import Path
 
@@ -40,12 +38,11 @@ def test_readiness_separates_local_components():
     assert response.status_code == 503
     body = response.json()
     assert body["components"]["storage"]["ready"] is True
-    assert body["components"]["event_store"]["mode"] == "memory"
+    assert body["components"]["video_store"]["mode"] == "memory"
     assert body["components"]["model"]["mode"] == "local_vlm"
 
 
 def test_mock_events_validate_against_contract():
-    """Mock akıştaki her satır Event şemasına uymalı — sözleşme bozulursa burada kırılır."""
     lines = [
         line
         for line in MOCK.read_text(encoding="utf-8").splitlines()
@@ -59,10 +56,9 @@ def test_mock_events_validate_against_contract():
 
 
 def test_websocket_chat_roundtrip(monkeypatch):
-    """Mock modda: operatör chat mesajı yankı + ajan yanıtı üretmeli."""
     from dortgoz.config import settings
     monkeypatch.setattr(settings, "mock", True)
-    monkeypatch.setattr(settings, "mock_speed", 1000.0)  # replay'i hızlandır
+    monkeypatch.setattr(settings, "mock_speed", 1000.0)
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as ws:
             ws.send_text(json.dumps({"kind": "sync", "from_seq": 0}))
@@ -81,7 +77,6 @@ def test_websocket_chat_roundtrip(monkeypatch):
 
 
 def test_interpret_config_mock(monkeypatch):
-    """Deney paneli verisi mock modda da (model sunucusu'sız) çalışmalı."""
     from dortgoz.config import settings
     monkeypatch.setattr(settings, "mock", True)
     with TestClient(app) as client:
@@ -94,13 +89,12 @@ def test_interpret_config_mock(monkeypatch):
 
 
 def test_broadcast_survives_a_stalled_client():
-    """Askıda kalan tek istemci yayını (dolayısıyla koşuyu) kilitlememeli."""
     import asyncio
 
     from dortgoz.events import ChatMessage, Event
     from dortgoz.ws import ConnectionManager
 
-    class Stalled:                      # asla tamamlanmayan send_text
+    class Stalled:
         async def send_text(self, _):
             await asyncio.sleep(3600)
 
@@ -109,7 +103,7 @@ def test_broadcast_survives_a_stalled_client():
         async def send_text(self, d): self.got.append(d)
 
     mgr = ConnectionManager()
-    mgr.SEND_TIMEOUT = 0.05             # testi hızlandır
+    mgr.SEND_TIMEOUT = 0.05
     stalled, good = Stalled(), Good()
     mgr._connections.update({stalled, good})
 

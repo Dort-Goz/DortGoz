@@ -1,5 +1,3 @@
-"""Hafif tarama ve candidate interval domain modelleri."""
-
 from __future__ import annotations
 
 from enum import StrEnum
@@ -34,10 +32,10 @@ class ScreeningSample(BaseModel):
     image_quality: float = Field(default=1, ge=0, le=1)
     source_model: str = Field(min_length=1)
     feature_ref: str | None = None
+    embedding: list[float] | None = None
 
 
 class CandidateEvent(BaseModel):
-    """Kesin hüküm değil; pahalı analiz gerektiren zaman aralığı."""
 
     model_config = ConfigDict(extra="forbid")
 

@@ -1,11 +1,3 @@
-"""Yerel, path-safe screening feature cache.
-
-Cache yalnızca normalize edilmiş ``ScreeningSample`` değerlerini saklar;
-tensor/ham frame API'ye veya rapora sızmaz. Aynı video hash + model + feature
-version anahtarı aynı JSON dosyasını üretir ve process restart sonrasında da
-tekrar kullanılabilir.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -40,7 +32,6 @@ class FeatureCacheEntry(BaseModel):
 
 
 class JsonFeatureCache:
-    """Atomic JSON cache; kök dışına yazma ve key traversal engellenir."""
 
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()

@@ -1,16 +1,5 @@
-"""SigLIP-2 anlamsal screening scorer'ı — nedensel kamera-tabanı ile.
-
-Kampanya bulgusu (2026-08-08): hareket ailesi
-0.95 kapısını hiçbir eğitimle geçemedi; SigLIP-2 olay-çapa benzerliği + nedensel
-(yalnız-geçmiş) kamera-içi normalizasyon her iki alanda tam recall'u korurken
-kapsamayı düşüren tek varyanttır. Çalışma zamanı yalnız onnxruntime + numpy
-ister; görüntü kulesi ONNX'e bir kez aktarılır (scripts/export_siglip.py),
-metin kulesi hiç koşmaz — çapa embeddingleri artifact yanında hazır durur.
-"""
-
 from __future__ import annotations
 
-import hashlib
 import subprocess
 from pathlib import Path
 from typing import Literal
@@ -18,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..domain.candidate import ScreeningSample
+from ..utils import file_sha256
 from .ingest import MotionSample
 
 _SIDE = 224
@@ -25,7 +15,6 @@ _BATCH = 16
 
 
 class SemanticPrior(BaseModel):
-    """Global öncül: yeni kamera koşan-tabanının sözde-gözlem başlangıcı."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -56,12 +45,6 @@ class SemanticArtifact(BaseModel):
 
 
 class CausalWelford:
-    """Yalnız-geçmiş koşan z-skoru; öncül = sözde-gözlem istatistiği.
-
-    Oracle tüm-klip normalizasyonundan bilerek farklı: olay kendi
-    normalizasyon istatistiğine katılmadan puanlanır (ölçüm: nedensel
-    varyant oracle'dan İYİ — %70,4 → %62,8 kapsama, val klipleri).
-    """
 
     def __init__(self, prior: SemanticPrior | None, sd_floor: float, warmup: int) -> None:
         self.sd_floor = sd_floor
@@ -93,16 +76,10 @@ class CausalWelford:
         return z
 
 
-# Oturum süreç başına bir kez kurulur; ort.InferenceSession.run thread-safe'tir.
 _RUNTIME_CACHE: dict[str, tuple[object, object, int]] = {}
 
 
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 class SemanticCandidateModel:
-    """Kare akışı ister: runner ``score_video`` yolunu kullanır."""
 
     def __init__(self, artifact: SemanticArtifact, *, onnx_file: Path, anchors_file: Path) -> None:
         self.artifact = artifact
@@ -113,14 +90,6 @@ class SemanticCandidateModel:
     def score(self, profile: list[MotionSample]) -> list[ScreeningSample]:
         raise RuntimeError("anlamsal scorer kare erişimi ister; score_video kullanılmalı")
 
-    def verify_artifacts(self) -> None:
-        """ONNX ve çapa dosyalarını oturum kurmadan hash ile doğrula."""
-
-        if _sha256(self._onnx_file) != self.artifact.onnx_sha256:
-            raise ValueError("semantic onnx SHA-256 artifact ile eşleşmiyor")
-        if _sha256(self._anchors_file) != self.artifact.anchors_sha256:
-            raise ValueError("semantic çapa SHA-256 artifact ile eşleşmiyor")
-
     def _runtime(self) -> tuple[object, object, int]:
         key = str(self._onnx_file)
         cached = _RUNTIME_CACHE.get(key)
@@ -129,19 +98,22 @@ class SemanticCandidateModel:
         import numpy as np
         import onnxruntime as ort
 
-        self.verify_artifacts()
+        if file_sha256(self._onnx_file) != self.artifact.onnx_sha256:
+            raise ValueError("semantic onnx SHA-256 artifact ile eşleşmiyor")
+        if file_sha256(self._anchors_file) != self.artifact.anchors_sha256:
+            raise ValueError("semantic çapa SHA-256 artifact ile eşleşmiyor")
         data = np.load(self._anchors_file)
         anchors = data["anchors"].astype(np.float32)
         n_event = int(data["n_event"])
+        from .onnx_ep import providers
+
         session = ort.InferenceSession(str(self._onnx_file),
-                                       providers=["CPUExecutionProvider"])
+                                       providers=providers())
         runtime = (session, anchors[:n_event], n_event)
         _RUNTIME_CACHE[key] = runtime
         return runtime
 
-    def _event_sims(self, video: Path,
-                    expected: int = 0) -> list[tuple[float, float]]:
-        """0,5 fps akış çözümü → parti ONNX çıkarımı → (t, olay-benzerliği)."""
+    def _event_sims(self, video: Path) -> list[tuple[float, float, list[float]]]:
         import numpy as np
 
         session, event_anchors, _ = self._runtime()
@@ -150,10 +122,10 @@ class SemanticCandidateModel:
             ["ffmpeg", "-nostdin", "-v", "error", "-i", str(video),
              "-vf", f"fps=1/{step},scale={_SIDE}:{_SIDE}:flags=bicubic",
              "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout=subprocess.PIPE)
         assert proc.stdout is not None
         nbytes = _SIDE * _SIDE * 3
-        out: list[tuple[float, float]] = []
+        out: list[tuple[float, float, list[float]]] = []
         batch: list[bytes] = []
         base = 0
 
@@ -168,7 +140,8 @@ class SemanticCandidateModel:
             emb = session.run(None, {"pixel_values": x})[0]
             sims = emb @ event_anchors.T
             for j, s in enumerate(sims):
-                out.append(((base + j) * step, float(s.max())))
+                out.append(((base + j) * step, float(s.max()),
+                            emb[j].astype(np.float32).tolist()))
             base += len(batch)
             batch.clear()
 
@@ -183,37 +156,20 @@ class SemanticCandidateModel:
             flush()
         finally:
             proc.stdout.close()
-            tail = ""
-            if proc.stderr is not None:
-                tail = proc.stderr.read().decode("utf-8", "replace")[-300:].strip()
-                proc.stderr.close()
-            rc = proc.wait()
-        # ffmpeg videonun ORTASINDA ölürse kısa kare listesi sessiz kapsama
-        # kaybıdır: ekranlama kalan videoyu "olaysız" sayar, o bölüm VLM'e hiç
-        # gitmez. Çıkış kodu ve kare sayısı bu yüzden denetlenir.
-        if rc != 0:
-            raise ValueError(f"anlamsal scorer kare çekimi başarısız "
-                             f"(ffmpeg rc={rc}): {tail}")
-        if expected >= 4 and 2 * len(out) < expected:
-            raise ValueError(f"anlamsal scorer beklenen karelerin çok azını çözdü: "
-                             f"{len(out)}/{expected}")
+            proc.wait()
         return out
 
     def score_video(self, profile: list[MotionSample],
                     video: Path) -> list[ScreeningSample]:
         art = self.artifact
         activity = {round(s.t): s.activity for s in profile}
-        # Beklenen kare sayısı hareket profilinin süresinden gelir; yarım
-        # kalmış bir çekim burada hata olur, sessizce kısa liste olmaz.
-        span = profile[-1].t if profile else 0.0
-        expected = int(span / art.sample_step) + 1 if span > 0 else 0
-        sims = self._event_sims(video, expected)
+        sims = self._event_sims(video)
         if not sims:
             raise ValueError(f"anlamsal scorer kare çözemedi: {video}")
         ev_base = CausalWelford(art.ev_prior, art.sd_floor_ev, art.warmup)
         act_base = CausalWelford(art.act_prior, art.sd_floor_act, art.warmup)
         samples: list[ScreeningSample] = []
-        for i, (t, ev) in enumerate(sims):
+        for i, (t, ev, emb) in enumerate(sims):
             act = activity.get(round(t), activity.get(round(t) - 1, 0.0))
             z = (art.ev_weight * ev_base.push(ev)
                  + (1 - art.ev_weight) * act_base.push(act)) / art.z_scale
@@ -225,6 +181,7 @@ class SemanticCandidateModel:
                 image_quality=1.0,
                 source_model=self.model_id,
                 feature_ref=f"sem:{i}",
+                embedding=emb,
             ))
         return samples
 

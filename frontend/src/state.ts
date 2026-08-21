@@ -10,7 +10,6 @@ export interface TraceEntry {
   tool?: ToolCall;
 }
 
-/** Tek bir akışın (kameranın) durumu. Tek-akış kipinde anahtar "" kullanılır. */
 export interface FeedState {
   incidents: IncidentUpdate[];
   reports: WindowReport[];
@@ -31,9 +30,6 @@ export const emptyFeed: FeedState = {
   video: null,
 };
 
-/** Konsol durumu: akış başına kova + akışlar-üstü sohbet/aksiyonlar.
- *  Sohbet küresel çünkü ajan TÜM kameraların brifingiyle konuşur (demo kipi);
- *  aktüatör istek/sonuçları da akıştan bağımsız operatör kuyruğudur. */
 export interface ConsoleState {
   feeds: Record<string, FeedState>;
   active: string;
@@ -50,18 +46,14 @@ export const initialState: ConsoleState = {
   actuatorResults: [],
 };
 
-// 7/24 kesintisiz konsolda state sınırsız büyür ve sekme şişer (2026-08-14
-// dayanıklılık incelemesi). Sınırlar SON N kaydı tutar; tam kayıt backend'de
-// (runs/*.jsonl). 24 akış × 2 pencere/dk'da 400 rapor ≈ son ~3 saat.
 export const CAPS = {
-  reports: 400,        // akış başına zaman çizelgesi penceresi
-  trace: 300,          // akış başına ajan izi girdisi
-  incidents: 200,      // akış başına olay kartı
-  chat: 200,           // sohbet mesajı (akışlar-üstü)
-  actuators: 100,      // aksiyon isteği/sonucu
+  reports: 400,
+  trace: 300,
+  incidents: 200,
+  chat: 200,
+  actuators: 100,
 } as const;
 
-/** Diziyi son `n` öğeye indirir (kopyasız hızlı yol: sınır aşılmadıysa aynen). */
 function cap<T>(arr: T[], n: number): T[] {
   return arr.length > n ? arr.slice(arr.length - n) : arr;
 }
@@ -76,8 +68,6 @@ export type Action =
 function withFeed(state: ConsoleState, feed: string,
                   patch: (f: FeedState) => FeedState): ConsoleState {
   const cur = state.feeds[feed] ?? emptyFeed;
-  // İlk kova açılırken etkin akış boşsa oraya odaklan (yenilenen sayfa,
-  // 2. operatör: olaylar hangi akıştan geliyorsa onu göster)
   const active = state.feeds[state.active] || state.active === feed
     ? state.active : feed;
   return { ...state, active, feeds: { ...state.feeds, [feed]: patch(cur) } };
@@ -91,14 +81,11 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
     return { ...state, active: action.feed };
   }
   if (action.kind === "select_incident") {
-    // Operatör olaya tıkladı → videoyu o ana sar + kutuları vurgula.
-    // (Ajan da aynı duruma `ui_command` ile ulaşır — iki yol tek state'e bağlı.)
     return withFeed(state, state.active, (f) => ({
       ...f, highlight: action.incident, seekTo: action.incident.t,
     }));
   }
   if (action.kind === "run_started") {
-    // Yeni koşu önceki koşunun kalıntılarını taşımamalı (akış bazında)
     return {
       ...withFeed(state, action.feed, () => ({ ...emptyFeed, video: action.video })),
       active: action.feed,
@@ -125,12 +112,10 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
         ...f, trace: cap([...f.trace, { seq, kind: "step" as const, step: p }], CAPS.trace),
       }));
     case "tool_call":
-      // Araç çağrıları sohbet ajanından gelir (akışsız) → etkin akışın izine
       return withFeed(state, feed || state.active, (f) => ({
         ...f, trace: cap([...f.trace, { seq, kind: "tool" as const, tool: p }], CAPS.trace),
       }));
     case "chat_message": {
-      // streaming: son ajan mesajına parça ekle
       if (p.streaming && p.role === "agent") {
         const chat = [...state.chat];
         const last = chat[chat.length - 1];
@@ -141,7 +126,6 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
         return { ...state, chat: cap([...chat, p], CAPS.chat) };
       }
       if (!p.streaming && p.text === "" && p.role === "agent") {
-        // akış sonu işareti: son mesajı kalıcılaştır
         const chat = [...state.chat];
         const last = chat[chat.length - 1];
         if (last?.streaming) chat[chat.length - 1] = { ...last, streaming: false };
@@ -155,8 +139,6 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
       return { ...state, actuatorResults: cap([...state.actuatorResults, p], CAPS.actuators) };
     case "run_status":
       return withFeed(state, feed, (f) => {
-        // Koşuyu BAŞLATMAYAN istemci (sayfa yenileme, 2. operatör) videoyu ve
-        // yeni koşuyu buradan öğrenir (2026-08-05 QA bulgusu).
         const newRun = p.run_id !== "-" && p.run_id !== f.runStatus?.run_id;
         if (newRun) {
           return { ...emptyFeed, video: p.video || null, runStatus: p };
@@ -164,7 +146,6 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
         return { ...f, runStatus: p, video: f.video ?? (p.video || null) };
       });
     case "ui_command": {
-      // Ajan araçları etkin akışın konsolunu yönlendirir
       const target = feed || state.active;
       if (p.action === "seek_video") {
         return withFeed(state, target, (f) => ({ ...f, seekTo: Number(p.args.t ?? 0) }));

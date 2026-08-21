@@ -1,11 +1,3 @@
-"""Canonical olay taksonomisi ve geriye uyumlu adapterlar.
-
-Production kararları yalnız ``CanonicalEventType`` ile ifade edilir. Eski REST
-domain değerleri ve WebSocket tel değerleri korunur; bunlar canonical tipe açık
-adapterlarla bağlanır. Ham veri kümesi etiketi hiçbir zaman internal event type
-yerine yazılmaz.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -13,7 +5,6 @@ from enum import StrEnum
 
 
 class CanonicalEventType(StrEnum):
-    """Production'da desteklenen internal olay tipleri."""
 
     NORMAL = "normal"
     UNCERTAIN = "uncertain"
@@ -29,16 +20,13 @@ class CanonicalEventType(StrEnum):
 
 
 PRODUCTION_SUPPORTED_EVENT_TYPES = frozenset(CanonicalEventType)
-"""Bugünün gerçek runner'ının üretebileceği production taxonomy kümesi."""
 
 REQUIRES_HUMAN_REVIEW_EVENT_TYPES = frozenset(
     {CanonicalEventType.POSSIBLE_ARMED_INCIDENT}
 )
-"""Evidence geçse bile otomatik confirmed olamayacak hassas tipler."""
 
 
 class LegacyWsEventType(StrEnum):
-    """Mevcut WebSocket sözleşmesindeki Türkçe, makine-okunur değerler."""
 
     FIGHT = "kavga"
     ASSAULT = "saldiri"
@@ -53,11 +41,6 @@ class LegacyWsEventType(StrEnum):
 
 
 class VerifiedEventType(StrEnum):
-    """Canonical değerler ve okunabilir eski REST/domain değerleri.
-
-    Legacy üyeler serialization ve eski kayıt uyumluluğu için tutulur. Yeni
-    production davranışı yalnız ``CanonicalEventType`` kümesini destekler.
-    """
 
     NORMAL = CanonicalEventType.NORMAL.value
     UNCERTAIN = CanonicalEventType.UNCERTAIN.value
@@ -107,7 +90,6 @@ CANONICAL_TO_LEGACY_WS: dict[CanonicalEventType, LegacyWsEventType] = {
     CanonicalEventType.VEHICLE_COLLISION: LegacyWsEventType.VEHICLE_COLLISION,
     CanonicalEventType.VANDALISM: LegacyWsEventType.VANDALISM,
 }
-"""Canonical VLM kararını mevcut WS tel değerine indiren uyumluluk adapter'ı."""
 
 _DOMAIN_TO_CANONICAL: dict[VerifiedEventType, CanonicalEventType] = {
     VerifiedEventType.NORMAL: CanonicalEventType.NORMAL,
@@ -121,8 +103,6 @@ _DOMAIN_TO_CANONICAL: dict[VerifiedEventType, CanonicalEventType] = {
     VerifiedEventType.EXPLOSION: CanonicalEventType.EXPLOSION,
     VerifiedEventType.VEHICLE_COLLISION: CanonicalEventType.VEHICLE_COLLISION,
     VerifiedEventType.VANDALISM: CanonicalEventType.VANDALISM,
-    # Eski değerler yeni detection capability iddiası değildir. Kaynak değer
-    # korunur; canonical üretimde bunlar bilinmeyen/human-review yoluna iner.
     VerifiedEventType.NORMAL_INTERACTION: CanonicalEventType.NORMAL,
     VerifiedEventType.PLAY_FIGHTING: CanonicalEventType.UNCERTAIN,
     VerifiedEventType.FALL: CanonicalEventType.UNKNOWN_ANOMALY,
@@ -163,12 +143,11 @@ CANONICAL_UI_LABEL_TR: dict[CanonicalEventType, str] = {
 
 
 class UnknownEventTypeError(ValueError):
-    """Bilinmeyen label için çağıranın seçebileceği typed hata."""
+    pass
 
 
 @dataclass(frozen=True)
 class DatasetEventMapping:
-    """Ham veri kümesi label'ı ile internal tipi ayrı taşıyan sonuç."""
 
     source_label: str
     event_type: CanonicalEventType
@@ -178,7 +157,6 @@ class DatasetEventMapping:
 def canonical_event_type_from_ws_label(
     label: str | LegacyWsEventType, *, strict: bool = False
 ) -> CanonicalEventType:
-    """Türkçe WS değerini canonical tipe çevirir."""
 
     try:
         return LEGACY_WS_TO_CANONICAL[LegacyWsEventType(label)]
@@ -191,7 +169,6 @@ def canonical_event_type_from_ws_label(
 def legacy_ws_label_from_canonical(
     event_type: str | CanonicalEventType,
 ) -> LegacyWsEventType:
-    """Canonical production tipini mevcut Türkçe WS değerine çevirir."""
 
     try:
         return CANONICAL_TO_LEGACY_WS[CanonicalEventType(event_type)]
@@ -204,7 +181,6 @@ def legacy_ws_label_from_canonical(
 def canonical_event_type_from_domain(
     event_type: str | VerifiedEventType, *, strict: bool = False
 ) -> CanonicalEventType:
-    """Eski REST/domain enumunu canonical production ailesine çevirir."""
 
     try:
         return _DOMAIN_TO_CANONICAL[VerifiedEventType(event_type)]
@@ -215,7 +191,6 @@ def canonical_event_type_from_domain(
 
 
 def map_dataset_source_label(source_label: str) -> DatasetEventMapping:
-    """Dataset label'ını korur ve bilinen aileyi ayrı alanda verir."""
 
     original = source_label.strip()
     if not original:
@@ -229,7 +204,6 @@ def map_dataset_source_label(source_label: str) -> DatasetEventMapping:
 
 
 def is_production_supported(event_type: str | VerifiedEventType) -> bool:
-    """Domain değerinin güncel production taxonomy içinde olup olmadığını bildirir."""
 
     try:
         return VerifiedEventType(event_type).value in {
@@ -240,7 +214,6 @@ def is_production_supported(event_type: str | VerifiedEventType) -> bool:
 
 
 def requires_human_review(event_type: str | VerifiedEventType) -> bool:
-    """Hassas canonical tiplerin otomatik confirmed olmasını engeller."""
 
     return canonical_event_type_from_domain(event_type) in REQUIRES_HUMAN_REVIEW_EVENT_TYPES
 

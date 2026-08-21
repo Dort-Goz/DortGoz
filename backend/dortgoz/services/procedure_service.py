@@ -1,12 +1,10 @@
-"""Risk sonucu için yalnız kaynaklı yerel prosedür önerileri."""
-
 from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..domain.event import ProcedureAction, RiskAssessment, RiskLevel, VerifiedEvent
 from ..domain.provenance import ProcedureSource
-from ..repositories.procedure_index import LocalProcedureIndex
+from .procedure_index import LocalProcedureIndex
 
 
 class ProcedureRecommendation(BaseModel):
@@ -32,7 +30,6 @@ class ProcedureService:
 
     @staticmethod
     def recommend_runtime(risk: RiskAssessment) -> ProcedureRecommendation:
-        """Patch 2 runtime'ında yalnız review/undetermined no-action guard'ı."""
 
         if risk.review_required or risk.level in {
             RiskLevel.REVIEW_REQUIRED,

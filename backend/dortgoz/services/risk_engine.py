@@ -1,5 +1,3 @@
-"""Sürümlü, deterministik event risk değerlendirmesi."""
-
 from __future__ import annotations
 
 import json
@@ -13,7 +11,6 @@ from ..domain.evidence import VerifiedEventType
 
 
 class RuntimeRiskDisposition(StrEnum):
-    """Canonical event uydurmadan runtime evidence kapısının dar girdisi."""
 
     PROVISIONAL_GROUNDED = "provisional_grounded"
     INVALID_EVIDENCE = "invalid_evidence"
@@ -62,7 +59,6 @@ class RiskEngine:
 
     @staticmethod
     def assess_runtime(disposition: RuntimeRiskDisposition) -> RiskAssessment:
-        """Eksik confirmation contract'ında yalnız güvenli guard sonucu üret."""
 
         if disposition == RuntimeRiskDisposition.PROVISIONAL_GROUNDED:
             return RiskAssessment(
@@ -85,7 +81,6 @@ class RiskEngine:
 
 
 def load_risk_ruleset(path: Path) -> RiskRuleset:
-    """JSON, YAML'in geçerli alt kümesidir; ekstra parser/dependency gerekmez."""
 
     try:
         return RiskRuleset.model_validate(json.loads(path.read_text(encoding="utf-8")))
