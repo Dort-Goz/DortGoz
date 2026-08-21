@@ -24,6 +24,11 @@ class Calibration:
     def apply(self, durum_p: float) -> float:
         return _sigmoid(self.a * _logit(durum_p) + self.b)
 
+    def raw_for(self, target: float) -> float | None:
+        if self.a <= 0.0 or not 0.0 < target < 1.0:
+            return None
+        return _sigmoid((_logit(target) - self.b) / self.a)
+
 
 class NotEnoughLabels(Exception):
     pass

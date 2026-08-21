@@ -27,6 +27,7 @@ from ..events import (
     WindowReport,
     WindowSignals,
 )
+from ..services import escalation_policy
 from ..services.runtime_metrics import CanonicalRunMetrics
 from ..services.runtime_policy import decide_runtime_policy
 from ..services.runtime_postprocess import RuntimeEvidenceScope, postprocess_finalized_report
@@ -559,8 +560,17 @@ async def run_video(
                     metrics.record_qwen_timing(qwen_timing)
 
                 escalated = ""
-                if (settings.escalate_p and not report.events
-                        and call.get("durum_p", 0.0) >= settings.escalate_p):
+                esc_gate = escalation_policy.resolve()
+                esc_hit = (esc_gate.value and not report.events
+                           and call.get("durum_p", 0.0) >= esc_gate.value)
+                if esc_hit and not esc_gate.acts:
+                    await rec.emit(AgentStep(
+                        node="interpret", status="end",
+                        detail=(f"gölge tırmandırma {start:.0f}-{end:.0f} sn: "
+                                f"P(dikkat)={call.get('durum_p', 0.0):.4f} "
+                                f"≥ {esc_gate.value:.4f} — {esc_gate.detail}"),
+                    ))
+                if esc_hit and esc_gate.acts:
                     escalation_timing: dict[str, float | int] = {}
                     try:
                         escalation_frames = {}
