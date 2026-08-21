@@ -177,7 +177,7 @@ export default function App() {
     <div className="h-screen flex flex-col gap-2 p-2">
       {fixtureMode && (
         <div className="rounded border border-amber-700 bg-amber-950/50 px-3 py-1.5 text-center text-xs font-bold text-amber-200">
-          ARAYÜZ TEST AKIŞI · VİDEO ANALİZİ ÇALIŞTIRILMADI
+          ARAYÜZ TEST AKIŞI · VİDEOYU SEÇİP “BAŞLAT”A BASIN · VİDEO ANALİZ EDİLMEZ
         </div>
       )}
       <header className="flex items-center flex-wrap gap-x-3 gap-y-1.5 px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-900/60 shrink-0">
@@ -185,7 +185,7 @@ export default function App() {
           DÖRTGÖZ <span className="text-zinc-500 font-normal text-sm">operatör konsolu</span>
         </span>
         <div className="ml-auto flex items-center flex-wrap gap-x-3 gap-y-1.5 text-xs text-zinc-400">
-          <button
+          {!fixtureMode && <button
             onClick={() => setLiveView((v) => !v)}
             title="Canlı CCTV ızgarası: config/live_feeds.json'daki gerçek akışlar, işlenme durumu ve gecikme rozetleriyle"
             className={`rounded px-2 py-1 border ${
@@ -195,8 +195,8 @@ export default function App() {
             }`}
           >
             📡 canlı
-          </button>
-          {interpretCfg && !liveView && (
+          </button>}
+          {interpretCfg && !liveView && !fixtureMode && (
             <button
               onClick={() => setShowExperiment((s) => !s)}
               title="Model ve istem deneyleri"
@@ -258,7 +258,7 @@ export default function App() {
             {videos.length === 0 && <option value="">media/ boş</option>}
             {videos.map((v) => <option key={v} value={v}>{v}</option>)}
           </select>
-          <select
+          {!fixtureMode && <select
             value={runMode}
             onChange={(e) => setRunMode(e.target.value as "" | "temkinli" | "genis")}
             disabled={busy}
@@ -268,7 +268,7 @@ export default function App() {
             <option value="">dengeli</option>
             <option value="temkinli">temkinli</option>
             <option value="genis">geniş</option>
-          </select>
+          </select>}
           <button
             onClick={busy ? stopRun : startRun}
             disabled={(!selected && !busy) || (startPending && !busy)}
@@ -278,7 +278,7 @@ export default function App() {
           >
             {busy ? "Durdur" : startPending ? "Başlatılıyor…" : "Başlat"}
           </button>
-          {!busy && videos.length > 1 && (
+          {!fixtureMode && !busy && videos.length > 1 && (
             <span className="flex items-center gap-1">
               <button
                 onClick={() => startDemo(demoCount)}
@@ -306,7 +306,7 @@ export default function App() {
                 />
               </div>
               <span className={busy ? "text-emerald-400" : ""}>{run.state}</span>
-              {run.state === "done" && run.run_id !== "-" && (
+              {!fixtureMode && run.state === "done" && run.run_id !== "-" && (
                 <a
                   href={`/api/runs/${run.run_id}/export`}
                   download
@@ -327,7 +327,7 @@ export default function App() {
         </div>
       </header>
 
-      {showExperiment && interpretCfg && (
+      {!fixtureMode && showExperiment && interpretCfg && (
         <ExperimentPanel
           config={interpretCfg}
           model={model}
@@ -404,7 +404,6 @@ export default function App() {
             requests={state.actuatorRequests}
             results={state.actuatorResults}
             onRespond={send.actuator}
-            readOnly={fixtureMode}
           />
         </div>
       </div>

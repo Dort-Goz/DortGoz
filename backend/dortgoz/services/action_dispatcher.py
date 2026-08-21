@@ -144,6 +144,50 @@ class ActionDispatcher:
             self._append(record)
             return request, True
 
+    def register_ui_fixture(
+        self, request: ActuatorRequest
+    ) -> tuple[ActuatorRequest, bool]:
+        """Register one explicit UI-only preview without bypassing the real incident gate."""
+        with self._lock:
+            self._ensure_loaded()
+            if not request.run_id.startswith("fixture-ui-"):
+                raise ValueError("arayüz test isteği fixture koşusuna bağlı olmalı")
+            if not request.request_id.startswith("fixture-req-"):
+                raise ValueError("arayüz test isteğinin kimliği geçersiz")
+            if not request.incident_id:
+                raise ValueError("arayüz test isteği olay kimliği taşımalı")
+            spec = self._spec(request.actuator)
+            if request.anomaly_type not in spec.allowed_types:
+                raise ValueError(
+                    f"{spec.label.lower()} bu olay türü için uygun değil: "
+                    f"{request.anomaly_type}"
+                )
+            if request.risk is None or (
+                RISK_ORDER.index(request.risk) < RISK_ORDER.index(spec.min_risk)
+            ):
+                raise ValueError(
+                    f"{spec.label.lower()} için risk en az {spec.min_risk} olmalı"
+                )
+            evidence = sorted({round(t, 3) for t in request.evidence_timestamps})
+            if not evidence:
+                raise ValueError("arayüz test isteğinin video kanıt zamanı yok")
+            safe_request = request.model_copy(update={
+                "action_label": spec.label,
+                "reason": _clean_text(request.reason, 500),
+                "incident_title": _clean_text(request.incident_title, 300),
+                "evidence_timestamps": evidence,
+                "requested_at": request.requested_at or time.time(),
+            })
+            existing = self._records.get(safe_request.request_id)
+            if existing is not None:
+                if existing.request != safe_request:
+                    raise ValueError("arayüz test aksiyon kimliği başka bir isteğe ait")
+                return existing.request, False
+            record = ActionRecord(request=safe_request)
+            self._records[safe_request.request_id] = record
+            self._append(record)
+            return safe_request, True
+
     def resolve(self, request_id: str, approved: bool, operator: str = "") -> ActuatorResult:
         with self._lock:
             self._ensure_loaded()
@@ -223,10 +267,22 @@ class ActionDispatcher:
         path = await export_with_evidence(ctx.run_id)
         return path, f"/api/runs/{ctx.run_id}/export"
 
-    def snapshot(self, limit: int = 500) -> dict[str, list[dict]]:
+    def snapshot(
+        self,
+        limit: int = 500,
+        *,
+        fixture_only: bool | None = None,
+    ) -> dict[str, list[dict]]:
         with self._lock:
             self._ensure_loaded()
-            records = list(self._records.values())[-limit:]
+            records = list(self._records.values())
+            if fixture_only is not None:
+                records = [
+                    record
+                    for record in records
+                    if record.request.run_id.startswith("fixture-ui-") == fixture_only
+                ]
+            records = records[-limit:]
             return {
                 "requests": [r.request.model_dump(mode="json") for r in records],
                 "results": [

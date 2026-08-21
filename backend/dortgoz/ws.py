@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 from fastapi import WebSocket
@@ -51,7 +52,13 @@ class ConnectionManager:
                 self.disconnect(ws)
 
 
-async def replay_jsonl(manager: ConnectionManager, path: Path, speed: float = 1.0) -> None:
+async def replay_jsonl(
+    manager: ConnectionManager,
+    path: Path,
+    speed: float = 1.0,
+    *,
+    transform: Callable[[Event], Event] | None = None,
+) -> None:
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
@@ -62,4 +69,7 @@ async def replay_jsonl(manager: ConnectionManager, path: Path, speed: float = 1.
             continue
         delay = float(raw.pop("delay", 0.8)) / max(speed, 0.01)
         await asyncio.sleep(delay)
-        await manager.broadcast(Event.model_validate(raw))
+        event = Event.model_validate(raw)
+        if transform is not None:
+            event = transform(event)
+        await manager.broadcast(event)

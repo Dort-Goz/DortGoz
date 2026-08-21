@@ -78,9 +78,9 @@ describe("aksiyon günlüğü", () => {
     const appSource = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
     expect(source).toContain("DEMO MODU · DIŞ KURUMA İLETİLMEDİ");
     expect(source).toContain("Bildirimi hazırla");
-    expect(source).toContain("Arayüz test akışında işlem düğmeleri kapalıdır.");
+    expect(source).not.toContain('request.run_id.startsWith("fixture-")');
     expect(source).not.toContain("{req.actuator}()");
-    expect(appSource).toContain("ARAYÜZ TEST AKIŞI · VİDEO ANALİZİ ÇALIŞTIRILMADI");
-    expect(appSource).toContain("readOnly={fixtureMode}");
+    expect(appSource).toContain("ARAYÜZ TEST AKIŞI · VİDEOYU SEÇİP “BAŞLAT”A BASIN");
+    expect(appSource).not.toContain("readOnly={fixtureMode}");
   });
 });

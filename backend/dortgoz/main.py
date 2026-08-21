@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
@@ -25,7 +27,7 @@ from .errors import (
     RepositoryError,
     RepositoryNotFoundError,
 )
-from .events import ChatMessage, Event, OperatorMessage, RunStatus
+from .events import ActuatorRequest, ChatMessage, Event, OperatorMessage, RunStatus
 from .infrastructure import vlm_manifest
 from .services.action_dispatcher import dispatcher as action_dispatcher
 from .services.analysis_job import (
@@ -61,10 +63,93 @@ def _observe_ui_replay(task: asyncio.Task[None]) -> None:
     try:
         task.result()
     except asyncio.CancelledError:
-        _ui_replay_task = None
+        pass
     except Exception:
         LOGGER.exception("UI replay akışı başarısız oldu")
-        _ui_replay_task = None
+    finally:
+        if _ui_replay_task is task:
+            _ui_replay_task = None
+
+
+def _ui_replay_transform(
+    *,
+    video: str,
+    feed: str,
+    run_id: str,
+    request_id: str,
+):
+    def transform(event: Event) -> Event:
+        transformed = event.model_copy(deep=True)
+        transformed.feed = feed
+        payload = transformed.payload
+        if isinstance(payload, RunStatus):
+            transformed.payload = payload.model_copy(update={
+                "run_id": run_id,
+                "video": video,
+            })
+        elif isinstance(payload, ActuatorRequest):
+            request = payload.model_copy(update={
+                "request_id": request_id,
+                "run_id": run_id,
+                "feed": feed,
+                "requested_at": time.time(),
+            })
+            registered, _ = action_dispatcher.register_ui_fixture(request)
+            transformed.payload = registered
+        elif payload.type == "tool_call":
+            args = dict(payload.args)
+            args["feed"] = feed
+            payload.args = args
+        return transformed
+
+    return transform
+
+
+async def _start_ui_replay(video: str, feed: str) -> None:
+    global _ui_replay_task
+    if _ui_replay_task is not None and not _ui_replay_task.done():
+        await manager.broadcast(Event.wrap(
+            RunStatus(
+                run_id="-",
+                state="processing",
+                detail="Arayüz test akışı zaten çalışıyor.",
+                video=video,
+            ),
+            feed=feed,
+        ))
+        return
+    safe_name = Path(video).name
+    video_path = (settings.media_dir / safe_name).resolve()
+    media_root = settings.media_dir.resolve()
+    if not video or safe_name != video or video_path.parent != media_root or not video_path.is_file():
+        await manager.broadcast(Event.wrap(
+            RunStatus(
+                run_id="-",
+                state="error",
+                detail="Arayüz test akışı için media/ içinden geçerli bir video seçin.",
+                video=safe_name,
+            ),
+            feed=feed,
+        ))
+        return
+    token = uuid4().hex[:10]
+    run_id = f"fixture-ui-crime-{token}"
+    request_id = f"fixture-req-{token}"
+    _ui_replay_task = asyncio.create_task(
+        replay_jsonl(
+            manager,
+            UI_REPLAY_EVENTS,
+            settings.mock_speed,
+            transform=_ui_replay_transform(
+                video=safe_name,
+                feed=feed,
+                run_id=run_id,
+                request_id=request_id,
+            ),
+        ),
+        name="dortgoz-ui-replay",
+    )
+    _ui_replay_task.add_done_callback(_observe_ui_replay)
 
 analysis_jobs = CanonicalAnalysisJobService(
     manager,
@@ -305,7 +390,7 @@ async def list_videos() -> list[str]:
 
 @app.get("/api/actions")
 async def action_snapshot() -> dict:
-    return action_dispatcher.snapshot()
+    return action_dispatcher.snapshot(fixture_only=settings.mock)
 
 
 @app.get("/api/actions/{request_id}/artifact")
@@ -319,14 +404,7 @@ async def action_artifact(request_id: str) -> FileResponse:
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket) -> None:
-    global _ui_replay_task
     await manager.connect(ws)
-    if settings.mock and _ui_replay_task is None:
-        _ui_replay_task = asyncio.create_task(
-            replay_jsonl(manager, UI_REPLAY_EVENTS, settings.mock_speed),
-            name="dortgoz-ui-replay",
-        )
-        _ui_replay_task.add_done_callback(_observe_ui_replay)
     try:
         while True:
             raw = await ws.receive_text()
@@ -371,6 +449,9 @@ async def handle_operator_message(msg: OperatorMessage) -> None:
 
 
 async def start_run(msg: OperatorMessage) -> None:
+    if settings.mock:
+        await _start_ui_replay(msg.video, msg.feed)
+        return
     jobs: CanonicalAnalysisJobService = app.state.analysis_jobs
     try:
         await jobs.start(
@@ -398,6 +479,17 @@ async def start_run(msg: OperatorMessage) -> None:
 
 
 async def stop_run() -> None:
+    global _ui_replay_task
+    if settings.mock:
+        task = _ui_replay_task
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        _ui_replay_task = None
+        await manager.broadcast(Event.wrap(
+            RunStatus(run_id="-", state="idle", detail="Arayüz test akışı durduruldu.")
+        ))
+        return
     jobs: CanonicalAnalysisJobService = app.state.analysis_jobs
     await jobs.cancel_all()
 

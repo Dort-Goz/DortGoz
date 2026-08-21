@@ -47,7 +47,7 @@ export default function ActionLog({
         )}
         {requests.map((request) => {
           const result = resolved.get(request.request_id);
-          const cardReadOnly = readOnly || request.run_id.startsWith("fixture-");
+          const cardReadOnly = readOnly;
           const label = request.action_label || FALLBACK_LABELS[request.actuator] || "Aksiyon taslağı";
           const state = result ? resultLabel(result) : null;
           const submitLabel = request.actuator.includes("bildirimi")

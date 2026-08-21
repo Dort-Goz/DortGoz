@@ -38,8 +38,10 @@ def test_ui_replay_events_validate_against_contract():
     assert "forklift" not in joined.casefold()
     assert "RTMPose" not in joined
     assert "MiniCPM" not in joined
-    assert "VİDEO ANALİZİ ÇALIŞTIRILMADI" in joined
-    assert '"delivered":false' in joined
+    assert "VİDEO ANALİZ EDİLMEDİ" in joined
+    assert "arayuz_test_akisi.mp4" not in joined
+    assert '"type":"actuator_result"' not in joined
+    assert '"status":"pending"' in joined
     for line in lines:
         raw = json.loads(line)
         raw.pop("delay", None)

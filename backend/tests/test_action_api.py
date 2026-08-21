@@ -22,6 +22,7 @@ class FakeManager:
 @pytest.fixture()
 def pending_action(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "runs_dir", tmp_path / "runs")
+    monkeypatch.setattr(settings, "mock", False)
     dispatcher.reset_memory()
     session.clear()
     triage.store.clear()

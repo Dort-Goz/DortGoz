@@ -4,7 +4,7 @@ import pytest
 
 from dortgoz import session
 from dortgoz.agent.memory import Incident
-from dortgoz.events import Event, IncidentUpdate, RunStatus
+from dortgoz.events import ActuatorRequest, Event, IncidentUpdate, RunStatus
 from dortgoz.services import triage
 from dortgoz.services.action_dispatcher import ActionDispatcher
 
@@ -126,6 +126,47 @@ def test_approval_writes_local_preview_without_delivery(tmp_path):
         "delivered": False,
         "external_side_effect": False,
     }
+
+
+def test_ui_fixture_uses_same_local_preview_and_stays_separate(tmp_path):
+    service = ActionDispatcher(tmp_path)
+    request, created = service.register_ui_fixture(ActuatorRequest(
+        request_id="fixture-req-demo123",
+        actuator="emniyet_bildirimi_hazirla",
+        reason="Arayüz onay akışını sınar",
+        incident_id="FIX-INC-001",
+        incident_title="Zorla giriş şüphesi",
+        run_id="fixture-ui-crime-demo123",
+        feed="KAM-TEST",
+        anomaly_type="hirsizlik",
+        risk="yuksek",
+        evidence_timestamps=[12.0],
+    ))
+
+    result = service.resolve(request.request_id, True, "Operatör 1")
+
+    assert created is True
+    assert result.status == "prepared"
+    assert result.delivered is False
+    assert result.external_side_effect is False
+    assert service.artifact(request.request_id).is_file()
+    assert service.snapshot(fixture_only=True)["requests"][0]["request_id"] == request.request_id
+    assert service.snapshot(fixture_only=False)["requests"] == []
+
+
+def test_ui_fixture_registration_rejects_real_run_id(tmp_path):
+    service = ActionDispatcher(tmp_path)
+    with pytest.raises(ValueError, match="fixture koşusuna"):
+        service.register_ui_fixture(ActuatorRequest(
+            request_id="fixture-req-demo123",
+            actuator="emniyet_bildirimi_hazirla",
+            reason="geçersiz",
+            incident_id="inc-1",
+            run_id="real-run",
+            anomaly_type="hirsizlik",
+            risk="yuksek",
+            evidence_timestamps=[12.0],
+        ))
 
 
 def test_resolution_is_restart_safe_and_conflicts_are_rejected(tmp_path):
