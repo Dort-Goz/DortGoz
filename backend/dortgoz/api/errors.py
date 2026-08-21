@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException
 
 from ..domain.video import VideoIngestError
-from ..repositories.errors import (
+from ..errors import (
     RepositoryConflictError,
     RepositoryDuplicateError,
     RepositoryError,

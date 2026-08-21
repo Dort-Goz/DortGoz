@@ -90,9 +90,17 @@ class CanonicalApi:
         return self.runtime.repository.create_video(video)
 
 
+def assert_no_event_store(repository) -> None:
+    for attr in ("get_analysis", "snapshot_metrics", "save_event", "list_events",
+                 "save_review", "save_trace_item", "save_agent_bundle"):
+        assert not hasattr(repository, attr), f"legacy event store geri geldi: {attr}"
+    assert repository.persistence_mode in {"memory", "json"}
+
+
+
 @pytest.fixture
 async def canonical_api(monkeypatch, tmp_path: Path) -> AsyncIterator[CanonicalApi]:
-    monkeypatch.setattr(api_module.settings, "event_store_path", None)
+    monkeypatch.setattr(api_module.settings, "video_store_path", None)
     runtime = ApiRuntime()
     runner = BlockingRunner()
     jobs = CanonicalAnalysisJobService(
@@ -150,11 +158,8 @@ async def test_rest_start_uses_canonical_job_and_writes_no_legacy_analysis(
     assert canonical_api.runner.calls[0][1] == analysis_id
     assert payload["status_url"] == f"/api/analyses/{analysis_id}/status"
     assert payload["result_url"] == f"/api/runs/{analysis_id}"
-    assert canonical_api.runtime.repository.get_analysis(analysis_id) is None
     assert canonical_api.runtime.jobs == {}
-    metrics = canonical_api.runtime.repository.snapshot_metrics()
-    assert metrics["total_analyses"] == 0
-    assert metrics["total_events"] == 0
+    assert_no_event_store(canonical_api.runtime.repository)
 
     status = await canonical_api.client.get(payload["status_url"])
     assert status.status_code == 200
@@ -399,7 +404,5 @@ async def test_rest_errors_are_typed_and_never_fall_back_to_legacy(
     assert missing_cancel.status_code == 404
     assert missing_cancel.json()["error"]["code"] == "ANALYSIS_NOT_FOUND"
     assert legacy_calls == 0
-    metrics = canonical_api.runtime.repository.snapshot_metrics()
-    assert metrics["total_analyses"] == 0
-    assert metrics["total_events"] == 0
+    assert_no_event_store(canonical_api.runtime.repository)
     assert canonical_api.runner.calls == []

@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..domain.event import ProcedureAction, RiskAssessment, RiskLevel, VerifiedEvent
 from ..domain.provenance import ProcedureSource
-from ..repositories.procedure_index import LocalProcedureIndex
+from .procedure_index import LocalProcedureIndex
 
 
 class ProcedureRecommendation(BaseModel):

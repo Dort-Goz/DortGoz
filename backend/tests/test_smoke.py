@@ -23,7 +23,7 @@ def test_readiness_separates_local_components():
     assert response.status_code == 503
     body = response.json()
     assert body["components"]["storage"]["ready"] is True
-    assert body["components"]["event_store"]["mode"] == "memory"
+    assert body["components"]["video_store"]["mode"] == "memory"
     assert body["components"]["model"]["mode"] == "local_vlm"
 
 

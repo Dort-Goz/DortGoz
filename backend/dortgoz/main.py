@@ -18,14 +18,14 @@ from .api.router import router as api_router
 from .api.router import runtime as api_runtime
 from .config import settings
 from .domain.video import VideoIngestError
-from .events import ActuatorResult, ChatMessage, Event, OperatorMessage, RunStatus
-from .infrastructure import vlm_manifest
-from .repositories.errors import (
+from .errors import (
     RepositoryConflictError,
     RepositoryDuplicateError,
     RepositoryError,
     RepositoryNotFoundError,
 )
+from .events import ActuatorResult, ChatMessage, Event, OperatorMessage, RunStatus
+from .infrastructure import vlm_manifest
 from .services.analysis_job import (
     AnalysisJobExecutionDisabled,
     AnalysisJobStartError,
@@ -77,11 +77,11 @@ async def readiness() -> JSONResponse:
         storage_ready = False
         storage_detail = f"{type(exc).__name__}: {exc}"
 
-    event_store_path = settings.event_store_path
-    event_store = {
+    video_store_path = settings.video_store_path
+    video_store = {
         "ready": True,
         "mode": getattr(api_runtime.repository, "persistence_mode", "memory"),
-        "path": str(event_store_path) if event_store_path is not None else None,
+        "path": str(video_store_path) if video_store_path is not None else None,
     }
     if settings.mock:
         model = {"ready": True, "mode": "mock", "endpoint_checked": False}
@@ -89,7 +89,7 @@ async def readiness() -> JSONResponse:
         model = vlm_manifest.readiness(settings.vlm_manifest_path)
     components = {
         "storage": {"ready": storage_ready, "detail": storage_detail},
-        "event_store": event_store,
+        "video_store": video_store,
         "model": model,
     }
     ready = all(component["ready"] for component in components.values())

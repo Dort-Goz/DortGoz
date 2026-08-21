@@ -11,13 +11,8 @@ from fastapi.responses import JSONResponse
 
 from ..config import settings
 from ..domain.video import VideoMetadata
+from ..errors import RepositoryNotFoundError
 from ..infrastructure.storage import LocalVideoStorage
-from ..pipeline.candidate_model import CandidateScorer, load_candidate_scorer
-from ..pipeline.feature_cache import JsonFeatureCache
-from ..repositories.errors import RepositoryNotFoundError
-from ..repositories.memory import InMemoryEventRepository
-from ..repositories.procedure_index import LocalProcedureIndex
-from ..repositories.sqlite import SqliteEventRepository
 from ..services.analysis_job import (
     AnalysisJobCapacityError,
     AnalysisJobConflict,
@@ -26,8 +21,7 @@ from ..services.analysis_job import (
     CanonicalAnalysisJobService,
 )
 from ..services.ingest_service import VideoIngestService
-from ..services.procedure_service import ProcedureService
-from ..services.risk_engine import RiskEngine, load_risk_ruleset
+from ..services.video_registry import VideoRegistry
 from .contracts import (
     AnalysisAccepted,
     AnalysisProgress,
@@ -39,30 +33,12 @@ from .errors import error_response
 class ApiRuntime:
 
     def __init__(self) -> None:
-        self.repository = (
-            SqliteEventRepository(settings.event_store_path)
-            if settings.event_store_path is not None
-            else InMemoryEventRepository()
-        )
+        self.repository = VideoRegistry(settings.video_store_path)
         self.storage = LocalVideoStorage(
             settings.media_dir,
             max_bytes=settings.video_max_bytes,
         )
         self.ingest = VideoIngestService(self.storage)
-        self.candidate_scorer: CandidateScorer = load_candidate_scorer(
-            settings.candidate_manifest_path
-        )
-        self.candidate_cache = JsonFeatureCache(settings.candidate_cache_dir)
-        project_root = settings.media_dir.parent
-        self.risk_engine = RiskEngine(
-            load_risk_ruleset(project_root / "defaults" / "risk_rules.yaml")
-        )
-        self.procedure_service = ProcedureService(
-            LocalProcedureIndex.load(
-                project_root / "data" / "procedures",
-                project_root / "data" / "procedures" / "manifest.json",
-            )
-        )
         self.jobs: dict[str, asyncio.Task[None]] = {}
 
 
