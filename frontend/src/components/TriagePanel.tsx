@@ -114,35 +114,36 @@ function PendingCard({ item, categories, feedLabel, onDecide }: {
 
   return (
     <div className="rounded border border-zinc-700 bg-zinc-900/70 p-2 space-y-1.5 text-xs">
-      <div className="flex items-center gap-2">
+      <div className="space-y-1.5">
         {item.evidence ? (
           <video
             src={item.evidence}
             controls
             preload="metadata"
-            className="w-40 rounded bg-black"
+            className="w-full aspect-video rounded bg-black"
             title="kanıt klibi — olay penceresi"
           />
         ) : item.thumbnail ? (
-          <img src={item.thumbnail} alt="" className="w-14 h-10 object-cover rounded" />
+          <img src={item.thumbnail} alt=""
+               className="w-full aspect-video object-cover rounded" />
         ) : null}
         <div className="min-w-0">
-          <div className="font-medium truncate">{item.title}</div>
-          <div className="text-zinc-400">
+          <div className="font-medium">{item.title}</div>
+          <div className="text-zinc-400 truncate" title={feedLabel}>
             {feedLabel} · video {clock(item.t)} · {wallClock(item.wall)}
           </div>
-          <div className="flex gap-1 mt-0.5">
+          <div className="flex flex-wrap gap-1 mt-1">
             {item.sample ? (
-              <span className="rounded px-1 bg-sky-900 text-sky-200"
+              <span className="rounded px-1 whitespace-nowrap bg-sky-900 text-sky-200"
                     title="Rastgele denetim örneği: model bu pencerede olay görmedi. ‘Sorun değil’ = model haklı. Kategori seçmek = model olayı KAÇIRMIŞ.">
                 denetim örneği
               </span>
             ) : (
-              <span className={`rounded px-1 ${RISK_CLS[item.risk] ?? "bg-zinc-800"}`}>
+              <span className={`rounded px-1 whitespace-nowrap ${RISK_CLS[item.risk] ?? "bg-zinc-800"}`}>
                 {item.risk}
               </span>
             )}
-            <span className="rounded px-1 bg-zinc-800 text-zinc-300">
+            <span className="rounded px-1 whitespace-nowrap bg-zinc-800 text-zinc-300">
               model: {CATEGORY_TR[item.model_category] ?? item.model_category}
             </span>
             {item.tekrar > 1 && (
@@ -203,32 +204,34 @@ function PendingCard({ item, categories, feedLabel, onDecide }: {
           )}
         </div>
       )}
-      <div className="flex items-center gap-1">
+      <div className="space-y-1">
         <select
           value={cat}
           onChange={(e) => setCat(e.target.value)}
-          className="flex-1 min-w-0 bg-zinc-800 border border-zinc-700 rounded px-1 py-0.5"
+          className="w-full bg-zinc-800 border border-zinc-700 rounded px-1 py-0.5"
           title="Doğrulanan anomalinin kategorisi (model önerisini düzeltebilirsiniz)"
         >
           {categories.map((c) => (
             <option key={c} value={c}>{CATEGORY_TR[c] ?? c}</option>
           ))}
         </select>
-        <button
-          onClick={confirm}
-          disabled={!timesValid}
-          className="rounded px-2 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white disabled:opacity-40"
-          title="Gerçek anomali olarak doğrula ve oturum listesine geçir"
-        >
-          ✔ Anomali
-        </button>
-        <button
-          onClick={() => onDecide({ key: item.key, verdict: "sorun_degil" })}
-          className="rounded px-2 py-0.5 bg-zinc-700 hover:bg-zinc-600"
-          title="Yanlış/önemsiz — kuyruktan düş"
-        >
-          ✘ Değil
-        </button>
+        <div className="flex gap-1">
+          <button
+            onClick={confirm}
+            disabled={!timesValid}
+            className="flex-1 rounded px-2 py-1 bg-emerald-700 hover:bg-emerald-600 text-white disabled:opacity-40"
+            title="Gerçek anomali olarak doğrula ve oturum listesine geçir"
+          >
+            ✔ Anomali
+          </button>
+          <button
+            onClick={() => onDecide({ key: item.key, verdict: "sorun_degil" })}
+            className="flex-1 rounded px-2 py-1 bg-zinc-700 hover:bg-zinc-600"
+            title="Yanlış/önemsiz — kuyruktan düş"
+          >
+            ✘ Sorun değil
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -272,7 +275,7 @@ export default function TriagePanel({ onSelectFeed, feedNames = {} }: {
 
   if (!snap) return null;
   return (
-    <div className="w-72 shrink-0 flex flex-col gap-2 min-h-0 text-sm">
+    <div className="w-[22rem] shrink-0 flex flex-col gap-2 min-h-0 text-sm">
       <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-2 flex-1 min-h-0 flex flex-col">
         <div className="font-bold mb-1.5 flex items-center gap-1">
           <span>⚑ Nöbet kuyruğu</span>
