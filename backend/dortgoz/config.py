@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     escalate_target_p: float = 0.0
     escalate_shadow: bool = True
     shadow_sample_rate: float = 0.0
+    exemplar_suppress: bool = False
+    exemplar_shadow: bool = True
+    exemplar_threshold: float = 0.97
     second_opinion_model: str = "qwen3.8-27b-vision-dg"
     second_opinion_motion: float = 0.30
     interpret_effort: str = ""

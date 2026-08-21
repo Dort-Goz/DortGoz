@@ -9,6 +9,7 @@ from typing import Any
 
 from ..config import settings
 from ..events import Event
+from . import exemplar_bank
 
 LEDGER_VERSION = 2
 
@@ -77,6 +78,8 @@ class TriageItem:
     thumbnail: str | None = None
     evidence: str | None = None
     sample: bool = False
+    emsal_benzerlik: float | None = None
+    emsal_key: str = ""
     needs_review: bool = False
     review_reason: str = ""
     run_id: str = ""
@@ -109,6 +112,10 @@ class TriageStore:
         self.rules: dict[tuple[str, str], int] = {}
         self._runs: dict[str, tuple[str, str]] = {}
         self.expired_count = 0
+        self.emsal_shadow_count = 0
+        self.emsal_suppressed = 0
+        self._matcher = exemplar_bank.Matcher(
+            settings.runs_dir, settings.runs_dir / "nobet_defteri.jsonl")
 
 
     def _signal_dict(self, payload: Any) -> dict[str, Any]:
@@ -172,6 +179,22 @@ class TriageStore:
                 verdict="sorun_degil", decided_wall=time.time(),
                 note=f"otomatik: operatör kuralı ({self._dismissals.get(pair, 0)}× sorun değil)"))
             return
+        match = self._emsal_check(event.feed, p)
+        if match is not None and match.suppress:
+            self.emsal_suppressed += 1
+            self.auto_dismissed += 1
+            self._stamp_and_log(TriageItem(
+                key=key, feed=event.feed, incident_id=p.incident_id,
+                t=p.t, wall=time.time(), title=p.title,
+                model_category=p.anomaly_type, risk=p.risk, phase=p.phase,
+                run_id=run_id, video=video, signals=self._signal_dict(p),
+                model_start=p.olay_baslangic, model_end=p.olay_bitis,
+                evidence=p.evidence,
+                emsal_benzerlik=round(match.similarity, 4),
+                emsal_key=match.precedent.key if match.precedent else "",
+                verdict="sorun_degil", decided_wall=time.time(),
+                note=f"otomatik: emsal bastırması — {match.reason}"))
+            return
         for item in self._pending.values():
             if item.feed == event.feed and item.model_category == p.anomaly_type:
                 item.tekrar += 1
@@ -198,6 +221,21 @@ class TriageStore:
             self.expired_count += 1
             self._stamp_and_log(dropped)
 
+
+    def _emsal_check(self, feed: str, p: Any):
+        emb = None
+        key = exemplar_bank.key_from_evidence(getattr(p, "evidence", None))
+        if key:
+            found = exemplar_bank.load(settings.runs_dir).get(key)
+            emb = found.embedding if found else None
+        match = self._matcher.check(
+            feed, p.anomaly_type, p.risk, emb,
+            threshold=settings.exemplar_threshold,
+            enabled=settings.exemplar_suppress,
+            shadow=settings.exemplar_shadow)
+        if match.shadow and match.similarity >= settings.exemplar_threshold:
+            self.emsal_shadow_count += 1
+        return match
 
     def _observe_sample(self, event: Event, p: Any) -> None:
         run_id, video = self._runs.get(event.feed, ("", ""))
@@ -316,6 +354,14 @@ class TriageStore:
             "rules": [{"feed": f, "category": c, "auto_count": n}
                       for (f, c), n in self.rules.items()],
             "categories": CATEGORIES,
+            "emsal": {
+                "acik": settings.exemplar_suppress,
+                "golge": settings.exemplar_shadow,
+                "esik": settings.exemplar_threshold,
+                "golge_isabet": self.emsal_shadow_count,
+                "bastirilan": self.emsal_suppressed,
+                "kamera_basina": self._matcher.counts(),
+            },
         }
 
     def clear(self) -> None:
@@ -327,6 +373,8 @@ class TriageStore:
         self._dismissals.clear()
         self.rules.clear()
         self._runs.clear()
+        self.emsal_shadow_count = 0
+        self.emsal_suppressed = 0
 
 
 store = TriageStore()

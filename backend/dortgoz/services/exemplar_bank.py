@@ -103,6 +103,65 @@ def benign_exemplars(runs_dir: Path, ledger: Path) -> dict[str, list[Exemplar]]:
     return out
 
 
+# Bu sınıflar ASLA bastırılmaz — öğrenilmiş hiçbir davranış bunları gizleyemez.
+HARD_FLOOR_CATEGORIES = frozenset({"silahli_olay", "yangin", "patlama"})
+HARD_FLOOR_RISK = frozenset({"kritik"})
+
+
+@dataclass(frozen=True)
+class Match:
+    suppress: bool
+    shadow: bool
+    similarity: float
+    precedent: Exemplar | None
+    reason: str
+
+
+class Matcher:
+    """Kamera başına iyi-huylu emsalleri tutar; defter değişince tazeler."""
+
+    def __init__(self, runs_dir: Path, ledger: Path) -> None:
+        self._runs_dir = runs_dir
+        self._ledger = ledger
+        self._stamp: float = -1.0
+        self._by_feed: dict[str, list[Exemplar]] = {}
+
+    def _refresh(self) -> None:
+        try:
+            stamp = self._ledger.stat().st_mtime
+        except OSError:
+            self._by_feed = {}
+            return
+        if stamp != self._stamp:
+            self._by_feed = benign_exemplars(self._runs_dir, self._ledger)
+            self._stamp = stamp
+
+    def counts(self) -> dict[str, int]:
+        self._refresh()
+        return {feed: len(v) for feed, v in self._by_feed.items()}
+
+    def check(self, feed: str, category: str, risk: str,
+              embedding: tuple[float, ...] | None, *,
+              threshold: float, enabled: bool, shadow: bool) -> Match:
+        if not enabled:
+            return Match(False, shadow, -1.0, None, "kapalı")
+        if category in HARD_FLOOR_CATEGORIES or risk in HARD_FLOOR_RISK:
+            return Match(False, shadow, -1.0, None,
+                         f"sert taban: {category}/{risk} asla bastırılmaz")
+        if not embedding:
+            return Match(False, shadow, -1.0, None, "gömme yok")
+        self._refresh()
+        pool = self._by_feed.get(feed, [])
+        if not pool:
+            return Match(False, shadow, -1.0, None, "bu kameranın emsali yok")
+        sim, hit = nearest(embedding, pool)
+        if sim < threshold:
+            return Match(False, shadow, sim, hit,
+                         f"en yakın emsal {sim:.4f} < {threshold:.4f}")
+        return Match(not shadow, shadow, sim, hit,
+                     f"emsal {sim:.4f} ≥ {threshold:.4f} ({len(pool)} iyi-huylu örnek)")
+
+
 def nearest(embedding: tuple[float, ...],
             exemplars: list[Exemplar]) -> tuple[float, Exemplar | None]:
     best, hit = -1.0, None
