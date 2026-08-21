@@ -307,3 +307,31 @@ def test_prompt_change_is_detectable_across_decisions(tmp_path):
     b = triage.store.decide("kamera1:INC-2", "sorun_degil")
 
     assert a.run_meta["system_prompt_sha"] != b.run_meta["system_prompt_sha"]
+
+
+def test_shadow_hit_is_recorded_so_the_activation_gate_is_measurable(tmp_path,
+                                                                    monkeypatch):
+    """Gölge isabeti deftere düşmezse 'yanlış bastırma oldu mu' ölçülemez."""
+    from dortgoz.services import exemplar_bank
+
+    monkeypatch.setattr(triage.settings, "exemplar_suppress", True)
+    monkeypatch.setattr(triage.settings, "exemplar_shadow", True)
+    monkeypatch.setattr(triage.settings, "exemplar_threshold", 0.9)
+    monkeypatch.setattr(
+        triage.store._matcher, "check",
+        lambda *a, **k: exemplar_bank.Match(
+            suppress=False, shadow=True, similarity=0.99,
+            precedent=exemplar_bank.Exemplar("run/9", "kamera1", (1.0,)),
+            reason="test"))
+
+    triage.store.observe(run_started())
+    triage.store.observe(incident())
+    pending = triage.store.snapshot()["pending"][0]
+    assert pending["emsal_golge"] is True
+
+    triage.store.decide("kamera1:INC-1", "anomali", category="kavga")
+    line = ledger_lines(tmp_path)[-1]
+
+    assert line["emsal_golge"] is True
+    assert line["emsal_key"] == "run/9"
+    assert line["verdict"] == "anomali"   # => YANLIŞ bastırma olurdu

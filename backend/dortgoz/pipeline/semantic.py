@@ -105,8 +105,10 @@ class SemanticCandidateModel:
         data = np.load(self._anchors_file)
         anchors = data["anchors"].astype(np.float32)
         n_event = int(data["n_event"])
+        from .onnx_ep import providers
+
         session = ort.InferenceSession(str(self._onnx_file),
-                                       providers=["CPUExecutionProvider"])
+                                       providers=providers())
         runtime = (session, anchors[:n_event], n_event)
         _RUNTIME_CACHE[key] = runtime
         return runtime

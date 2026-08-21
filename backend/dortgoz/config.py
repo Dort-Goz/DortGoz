@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     max_inflight: int = 8
     llm_retries: int = 6
 
+    onnx_providers: str = ""
     detector_enabled: bool = True
     dfine_onnx: str = "~/.cache/dortgoz/dfine/model.onnx"
     detector_conf: float = 0.40

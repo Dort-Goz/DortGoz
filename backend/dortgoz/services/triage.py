@@ -80,6 +80,7 @@ class TriageItem:
     sample: bool = False
     emsal_benzerlik: float | None = None
     emsal_key: str = ""
+    emsal_golge: bool = False
     needs_review: bool = False
     review_reason: str = ""
     run_id: str = ""
@@ -204,6 +205,9 @@ class TriageStore:
                 item.thumbnail = p.thumbnail or item.thumbnail
                 self._merge_signals(item, p)
                 return
+        golge_isabet = bool(
+            match is not None and match.shadow
+            and match.similarity >= settings.exemplar_threshold)
         self._pending[key] = TriageItem(
             key=key, feed=event.feed, incident_id=p.incident_id,
             t=p.t, wall=time.time(), title=p.title,
@@ -212,7 +216,12 @@ class TriageStore:
             needs_review=p.needs_review,
             review_reason=p.review_reason,
             run_id=run_id, video=video, signals=self._signal_dict(p),
-            model_start=p.olay_baslangic, model_end=p.olay_bitis)
+            model_start=p.olay_baslangic, model_end=p.olay_bitis,
+            emsal_golge=golge_isabet,
+            emsal_benzerlik=(round(match.similarity, 4)
+                             if golge_isabet and match else None),
+            emsal_key=(match.precedent.key
+                       if golge_isabet and match and match.precedent else ""))
         while len(self._pending) > MAX_PENDING:
             dropped = self._pending.pop(next(iter(self._pending)))
             dropped.verdict = "expired"

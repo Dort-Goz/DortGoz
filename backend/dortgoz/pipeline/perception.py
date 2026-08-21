@@ -51,8 +51,10 @@ class _Detector:
             raise FileNotFoundError(
                 f"D-FINE ONNX bulunamadı: {model} — DORTGOZ_DFINE_ONNX ayarla "
                 "(indirme: scripts/fetch_models.sh)")
+        from .onnx_ep import providers
+
         self.session = ort.InferenceSession(str(model),
-                                            providers=["CPUExecutionProvider"])
+                                            providers=providers())
         cfg = model.parent / "config.json"
         labels = json.loads(cfg.read_text())["id2label"] if cfg.is_file() else {}
         self.id2label = {int(k): v for k, v in labels.items()}
