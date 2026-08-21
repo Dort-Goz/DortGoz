@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     max_inflight: int = 8
     llm_retries: int = 6
 
+    # cpu VARSAYILAN: CUDA oturumu boru hattı içinde düşünce anlamsal tarayıcı
+    # sessizce motion-baseline'a geriliyor — hız kazancı (~%7-10) bu kalite
+    # kaybına değmez. GPU isteyen DORTGOZ_ONNX_DEVICE=gpu versin.
     onnx_device: str = "cpu"
     onnx_providers: str = ""
     detector_enabled: bool = True
@@ -74,7 +77,7 @@ class Settings(BaseSettings):
     vlm_reject_confidence: float = 0.80
 
     candidate_screening: bool = True
-    candidate_model_manifest: str = ""
+    candidate_model_manifest: str = "models/semantic/manifest.json"
     candidate_start_threshold: float = 0.65
     candidate_continue_threshold: float = 0.40
     candidate_end_patience: int = 3
@@ -127,6 +130,23 @@ class Settings(BaseSettings):
         if not value or Path(value).is_absolute():
             return value
         return str((Path(__file__).resolve().parents[2] / value).resolve())
+
+    @field_validator("dfine_onnx", mode="after")
+    @classmethod
+    def resolve_dfine_onnx(cls, value: str) -> str:
+        """Ağırlık yapılandırılan yolda yoksa taşınabilir yerlere bak.
+
+        Varsayılan masaüstüne özgü mutlak yoldur; başka makinede sessizce
+        dedektörü kapatıyordu. Bulunursa açık kalır.
+        """
+        if value and Path(value).expanduser().is_file():
+            return value
+        repo = Path(__file__).resolve().parents[2]
+        for candidate in (Path.home() / ".cache" / "dortgoz" / "dfine" / "model.onnx",
+                          repo / "models" / "dfine" / "model.onnx"):
+            if candidate.is_file():
+                return str(candidate)
+        return value
 
     @field_validator("vlm_manifest_path", mode="after")
     @classmethod
