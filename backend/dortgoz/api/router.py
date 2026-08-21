@@ -14,7 +14,12 @@ from ..config import settings
 from ..domain.event import VerifiedEvent
 from ..domain.evidence import EvidenceItem, VerifiedEventType
 from ..domain.feedback import DevelopmentApproval, DevelopmentUse
-from ..domain.learning import DriftSnapshot, LearningPlan, LearningRouteQueue
+from ..domain.learning import (
+    DriftSnapshot,
+    LearningOrchestratorOverview,
+    LearningPlan,
+    LearningRouteQueue,
+)
 from ..domain.priority import InterventionPriority
 from ..domain.provenance import HumanReview, ProcedureSource, ReviewDecision
 from ..domain.video import VideoMetadata
@@ -332,6 +337,14 @@ async def event_learning_plan(event_id: str) -> LearningPlan:
 @router.get("/system/learning-health", response_model=DriftSnapshot)
 async def learning_health() -> DriftSnapshot:
     return runtime.learning.drift_snapshot()
+
+
+@router.get(
+    "/system/learning-orchestrator",
+    response_model=LearningOrchestratorOverview,
+)
+async def learning_orchestrator_overview() -> LearningOrchestratorOverview:
+    return runtime.learning.overview()
 
 
 @router.get("/learning/routes/{use}", response_model=LearningRouteQueue)

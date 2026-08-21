@@ -131,6 +131,68 @@ export interface LearningPlan {
   generated_at: string;
 }
 
+export interface DriftMetric {
+  name: string;
+  baseline: number;
+  current: number;
+  delta: number;
+  points: number;
+  detail: string;
+}
+
+export interface DriftSnapshot {
+  state: "insufficient_data" | "stable" | "watch" | "drift";
+  score: number;
+  reviewed_events: number;
+  baseline_size: number;
+  current_size: number;
+  minimum_required: number;
+  metrics: DriftMetric[];
+  mode: "shadow";
+  automatic_training: false;
+  automatic_promotion: false;
+  generated_at: string;
+}
+
+export interface LearningRouteSummary {
+  use: DevelopmentUse;
+  recommended_count: number;
+  ready_count: number;
+  awaiting_gate_count: number;
+  downstream: string;
+  safety_gate: string;
+}
+
+export interface LearningCandidateSummary {
+  event_id: string;
+  event_type: string;
+  video_id: string;
+  learning_score: number;
+  learning_band: "low" | "medium" | "high" | "priority";
+  intervention_score: number | null;
+  recommended_uses: DevelopmentUse[];
+  ready_uses: DevelopmentUse[];
+  blockers: string[];
+}
+
+export interface LearningOrchestratorOverview {
+  orchestrator_version: "dortgoz-learning-orchestrator-v1";
+  total_events: number;
+  reviewed_events: number;
+  pending_review_events: number;
+  pending_approval_events: number;
+  stale_approval_events: number;
+  ready_routes: number;
+  route_summaries: LearningRouteSummary[];
+  priority_candidates: LearningCandidateSummary[];
+  drift: DriftSnapshot;
+  mode: "human_gated";
+  automatic_execution: false;
+  automatic_training: false;
+  automatic_promotion: false;
+  generated_at: string;
+}
+
 export interface VerifiedBoundingBox {
   category_name: string;
   x: number;

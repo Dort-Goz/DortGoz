@@ -622,7 +622,9 @@ export default function TrainingReviewPanel({
             {learningPlan && (
               <div className="mb-3 space-y-2 rounded border border-sky-900/70 bg-sky-950/20 p-2">
                 <div className="flex items-center justify-between">
-                  <div className="font-medium text-sky-100">Öğrenme yönlendiricisi</div>
+                  <div className="font-medium text-sky-100">
+                    Dörtgöz Öğrenme Orkestratörü · olay planı
+                  </div>
                   <span className="rounded bg-sky-900 px-1.5 py-0.5 font-semibold text-sky-100">
                     {learningPlan.learning_score}/100 · {LEARNING_BAND_TR[learningPlan.learning_band]}
                   </span>

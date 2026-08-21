@@ -173,6 +173,82 @@ def test_only_explicitly_approved_use_enters_route_queue() -> None:
     assert calibration.count == 0
 
 
+def test_orchestrator_overview_exposes_human_gated_system_state() -> None:
+    repository = _repository()
+    approved_event = _event(repository, 1, confidence=0.5, uncertain=True)
+    review = _review(repository, approved_event, 1)
+    repository.save_development_approval(
+        DevelopmentApproval(
+            approval_id="approval-learning-overview",
+            event_id=approved_event.event_id,
+            review_id=review.review_id,
+            status=DevelopmentApprovalStatus.APPROVED,
+            approved_uses=[DevelopmentUse.EVALUATION],
+            reviewer="operator",
+            note="Sabit değerlendirme rotası onaylandı.",
+        )
+    )
+    pending_event = _event(repository, 2, confidence=0.5, uncertain=True)
+
+    overview = LearningOrchestrator(repository).overview()
+
+    assert overview.total_events == 2
+    assert overview.reviewed_events == 1
+    assert overview.pending_review_events == 1
+    assert overview.ready_routes == 1
+    assert overview.mode == "human_gated"
+    assert overview.automatic_execution is False
+    assert overview.automatic_training is False
+    assert overview.automatic_promotion is False
+    evaluation = next(
+        route
+        for route in overview.route_summaries
+        if route.use == DevelopmentUse.EVALUATION
+    )
+    assert evaluation.recommended_count == 1
+    assert evaluation.ready_count == 1
+    assert evaluation.awaiting_gate_count == 0
+    pending = next(
+        candidate
+        for candidate in overview.priority_candidates
+        if candidate.event_id == pending_event.event_id
+    )
+    assert pending.ready_uses == []
+    assert pending.blockers == ["İnsan incelemesi gerekli"]
+
+
+def test_orchestrator_overview_rejects_unbounded_candidate_limit() -> None:
+    service = LearningOrchestrator(_repository())
+
+    for invalid in (0, 101):
+        try:
+            service.overview(candidate_limit=invalid)
+        except ValueError as exc:
+            assert "1 ile 100" in str(exc)
+        else:
+            raise AssertionError("geçersiz candidate_limit kabul edildi")
+
+
+def test_orchestrator_overview_reads_review_history_linearly(monkeypatch) -> None:
+    repository = _repository()
+    for index in range(1, 5):
+        event = _event(repository, index)
+        _review(repository, event, index)
+    original = repository.list_reviews
+    calls = 0
+
+    def counted(event_id: str):
+        nonlocal calls
+        calls += 1
+        return original(event_id)
+
+    monkeypatch.setattr(repository, "list_reviews", counted)
+
+    LearningOrchestrator(repository).overview()
+
+    assert calls == 8
+
+
 def test_new_review_makes_old_learning_approval_stale() -> None:
     repository = _repository()
     event = _event(repository, 1)

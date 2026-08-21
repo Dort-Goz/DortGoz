@@ -9,6 +9,7 @@ import ActionLog from "./components/ActionLog";
 import ExperimentPanel, { type InterpretConfig } from "./components/ExperimentPanel";
 import FeedStrip from "./components/FeedStrip";
 import LiveGrid from "./components/LiveGrid";
+import LearningOrchestratorPanel from "./components/LearningOrchestratorPanel";
 import UploadPanel from "./components/UploadPanel";
 import TrainingReviewPanel from "./components/TrainingReviewPanel";
 import TriagePanel from "./components/TriagePanel";
@@ -50,6 +51,7 @@ export default function App() {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [liveView, setLiveView] = useState(false);
   const [trainingEventId, setTrainingEventId] = useState("");
+  const [showLearningOrchestrator, setShowLearningOrchestrator] = useState(false);
   const [fixtureMode, setFixtureMode] = useState(false);
   // Sunucu bağlantısı — üst çubuktaki kalıcı rozet
   const [connection, setConnection] = useState<ConnectionState>("connecting");
@@ -242,6 +244,16 @@ export default function App() {
               className="rounded border border-sky-800 px-2 py-1 text-sky-300 hover:bg-sky-950/40 disabled:cursor-not-allowed disabled:opacity-40"
             >
               ◎ eğitim verisi
+            </button>
+          )}
+          {!fixtureMode && (
+            <button
+              type="button"
+              onClick={() => setShowLearningOrchestrator(true)}
+              title="İnsan kapılı öğrenme rotalarını, öncelik kuyruğunu ve gölge kayma gözcüsünü aç"
+              className="rounded border border-sky-800 px-2 py-1 text-sky-300 hover:bg-sky-950/40"
+            >
+              ◈ öğrenme
             </button>
           )}
           {interpretCfg && !liveView && !fixtureMode && (
@@ -479,6 +491,15 @@ export default function App() {
         <TrainingReviewPanel
           eventId={trainingEventId}
           onClose={() => setTrainingEventId("")}
+        />
+      )}
+      {showLearningOrchestrator && (
+        <LearningOrchestratorPanel
+          onClose={() => setShowLearningOrchestrator(false)}
+          onOpenEvent={(eventId) => {
+            setShowLearningOrchestrator(false);
+            setTrainingEventId(eventId);
+          }}
         />
       )}
     </div>

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import dataclass
 
 from ..domain.event import VerifiedEvent
 from ..domain.feedback import (
@@ -16,10 +17,13 @@ from ..domain.learning import (
     DriftSnapshot,
     DriftState,
     LearningBand,
+    LearningCandidateSummary,
+    LearningOrchestratorOverview,
     LearningPlan,
     LearningRoute,
     LearningRouteItem,
     LearningRouteQueue,
+    LearningRouteSummary,
     LearningValueComponents,
 )
 from ..domain.provenance import HumanReview, ReviewDecision
@@ -54,6 +58,25 @@ _CRITICAL_RULE_TYPES = frozenset({
     "explosion",
     "vehicle_collision",
 })
+
+_BLOCKER_LABELS = {
+    "review_required": "İnsan incelemesi gerekli",
+    "approval_required": "Geliştirme kullanımı onayı gerekli",
+    "not_approved": "Bu kullanım için açık izin yok",
+    "rejected": "Geliştirme kullanımı reddedildi",
+    "revoked": "Geliştirme kullanımı geri alındı",
+    "stale": "Yeni inceleme nedeniyle izin yenilenmeli",
+}
+
+
+@dataclass(frozen=True)
+class _PlanningContext:
+    reviews: dict[str, HumanReview | None]
+    approvals: dict[str, DevelopmentApproval | None]
+    categories: dict[str, str]
+    category_counts: Counter[str]
+    covered_category_counts: Counter[str]
+    video_category_counts: Counter[tuple[str, str]]
 
 
 def learning_band_for_score(score: int) -> LearningBand:
@@ -131,18 +154,20 @@ class LearningOrchestrator:
         if event is None:
             raise RepositoryNotFoundError(f"event bulunamadı: {event_id}")
         events = self.repository.list_all_events()
-        return self._plan(event, events, self.drift_snapshot())
+        context = self._planning_context(events)
+        return self._plan(event, self.drift_snapshot(), context)
 
     def route_queue(self, use: DevelopmentUse) -> LearningRouteQueue:
         events = self.repository.list_all_events()
         drift = self.drift_snapshot()
+        context = self._planning_context(events)
         items: list[LearningRouteItem] = []
         for event in events:
-            review = self._latest_review(event)
-            approval = self._latest_approval(event.event_id)
+            review = context.reviews[event.event_id]
+            approval = context.approvals[event.event_id]
             if review is None or approval is None:
                 continue
-            plan = self._plan(event, events, drift)
+            plan = self._plan(event, drift, context)
             route = next(item for item in plan.routes if item.use == use)
             if not route.ready:
                 continue
@@ -161,28 +186,81 @@ class LearningOrchestrator:
         items.sort(key=lambda item: (-item.learning_score, item.event_id))
         return LearningRouteQueue(use=use, items=items, count=len(items))
 
+    def overview(self, *, candidate_limit: int = 12) -> LearningOrchestratorOverview:
+        """Build one read-only view of every learning route and safety gate."""
+        if candidate_limit < 1 or candidate_limit > 100:
+            raise ValueError("candidate_limit 1 ile 100 arasında olmalıdır")
+        events = self.repository.list_all_events()
+        drift = self.drift_snapshot()
+        context = self._planning_context(events)
+        planned = [(event, self._plan(event, drift, context)) for event in events]
+        route_summaries: list[LearningRouteSummary] = []
+        for use in DevelopmentUse:
+            routes = [
+                next(route for route in plan.routes if route.use == use)
+                for _, plan in planned
+            ]
+            recommended_count = sum(route.recommended for route in routes)
+            ready_count = sum(route.ready for route in routes)
+            route_summaries.append(
+                LearningRouteSummary(
+                    use=use,
+                    recommended_count=recommended_count,
+                    ready_count=ready_count,
+                    awaiting_gate_count=recommended_count - ready_count,
+                    downstream=_DOWNSTREAM[use],
+                    safety_gate=_GATES[use],
+                )
+            )
+
+        pending_review = sum(plan.latest_review_id is None for _, plan in planned)
+        pending_approval = sum(
+            any(
+                route.recommended
+                and route.approval_state in {"approval_required", "not_approved"}
+                for route in plan.routes
+            )
+            for _, plan in planned
+        )
+        stale_approval = sum(
+            any(route.recommended and route.approval_state == "stale" for route in plan.routes)
+            for _, plan in planned
+        )
+        candidates = sorted(
+            planned,
+            key=lambda item: (-item[1].learning_score, item[0].event_id),
+        )[:candidate_limit]
+        priority_candidates = [
+            self._candidate_summary(event, plan, context.reviews[event.event_id])
+            for event, plan in candidates
+        ]
+        return LearningOrchestratorOverview(
+            total_events=len(events),
+            reviewed_events=len(events) - pending_review,
+            pending_review_events=pending_review,
+            pending_approval_events=pending_approval,
+            stale_approval_events=stale_approval,
+            ready_routes=sum(summary.ready_count for summary in route_summaries),
+            route_summaries=route_summaries,
+            priority_candidates=priority_candidates,
+            drift=drift,
+        )
+
     def _plan(
         self,
         event: VerifiedEvent,
-        events: list[VerifiedEvent],
         drift: DriftSnapshot,
+        context: _PlanningContext,
     ) -> LearningPlan:
-        review = self._latest_review(event)
-        category = self._category(event, review)
-        same_category = [
-            item
-            for item in events
-            if self._category(item, self._latest_review(item)) == category
-        ]
-        covered = sum(self._has_active_development_use(item) for item in same_category)
-        same_video = sum(
-            item.video_id == event.video_id
-            and self._category(item, self._latest_review(item)) == category
-            for item in events
-        )
+        review = context.reviews[event.event_id]
+        approval = context.approvals[event.event_id]
+        category = context.categories[event.event_id]
+        same_category = context.category_counts[category]
+        covered = context.covered_category_counts[category]
+        same_video = context.video_category_counts[(event.video_id, category)]
         uncertainty = self._uncertainty(event)
         disagreement = self._disagreement(review)
-        novelty = max(0, 100 - max(0, len(same_category) - 1) * 12)
+        novelty = max(0, 100 - max(0, same_category - 1) * 12)
         coverage_gap = max(0, 100 - covered * 20)
         redundancy = min(100, max(0, same_video - 1) * 25)
         annotation_cost = self._annotation_cost(event)
@@ -218,13 +296,40 @@ class LearningOrchestrator:
             intervention_score=priority.score if priority is not None else None,
             intervention_band=priority.band.value if priority is not None else None,
             drift_state=drift.state,
-            routes=self._routes(event, review, coverage_gap),
+            routes=self._routes(event, review, approval, coverage_gap),
+        )
+
+    def _candidate_summary(
+        self,
+        event: VerifiedEvent,
+        plan: LearningPlan,
+        review: HumanReview | None,
+    ) -> LearningCandidateSummary:
+        recommended = [route for route in plan.routes if route.recommended]
+        blocker_states = {
+            route.approval_state
+            for route in recommended
+            if not route.ready and route.approval_state != "approved"
+        }
+        if review is None:
+            blocker_states.add("review_required")
+        return LearningCandidateSummary(
+            event_id=event.event_id,
+            event_type=self._category(event, review),
+            video_id=event.video_id,
+            learning_score=plan.learning_score,
+            learning_band=plan.learning_band,
+            intervention_score=plan.intervention_score,
+            recommended_uses=[route.use for route in recommended],
+            ready_uses=[route.use for route in recommended if route.ready],
+            blockers=[_BLOCKER_LABELS[state] for state in sorted(blocker_states)],
         )
 
     def _routes(
         self,
         event: VerifiedEvent,
         review: HumanReview | None,
+        approval: DevelopmentApproval | None,
         coverage_gap: int,
     ) -> list[LearningRoute]:
         media = self.repository.get_incident_media_for_event(event.event_id)
@@ -277,19 +382,18 @@ class LearningOrchestrator:
             ),
         }
         return [
-            self._route(event, review, use, recommended[use], reasons[use])
+            self._route(review, approval, use, recommended[use], reasons[use])
             for use in DevelopmentUse
         ]
 
     def _route(
         self,
-        event: VerifiedEvent,
         review: HumanReview | None,
+        approval: DevelopmentApproval | None,
         use: DevelopmentUse,
         recommended: bool,
         reason: str,
     ) -> LearningRoute:
-        approval = self._latest_approval(event.event_id)
         if review is None:
             state = "review_required"
         elif approval is None:
@@ -315,6 +419,41 @@ class LearningOrchestrator:
             safety_gate=_GATES[use],
         )
 
+    def _planning_context(self, events: list[VerifiedEvent]) -> _PlanningContext:
+        reviews = {event.event_id: self._latest_review(event) for event in events}
+        approvals = {
+            event.event_id: self._latest_approval(event.event_id)
+            for event in events
+        }
+        categories = {
+            event.event_id: self._category(event, reviews[event.event_id])
+            for event in events
+        }
+        category_counts: Counter[str] = Counter(categories.values())
+        covered_category_counts: Counter[str] = Counter()
+        video_category_counts: Counter[tuple[str, str]] = Counter()
+        for event in events:
+            category = categories[event.event_id]
+            video_category_counts[(event.video_id, category)] += 1
+            approval = approvals[event.event_id]
+            review = reviews[event.event_id]
+            if (
+                review is not None
+                and approval is not None
+                and approval.review_id == review.review_id
+                and approval.status == DevelopmentApprovalStatus.APPROVED
+                and approval.approved_uses
+            ):
+                covered_category_counts[category] += 1
+        return _PlanningContext(
+            reviews=reviews,
+            approvals=approvals,
+            categories=categories,
+            category_counts=category_counts,
+            covered_category_counts=covered_category_counts,
+            video_category_counts=video_category_counts,
+        )
+
     def _reviewed_events(self) -> list[tuple[VerifiedEvent, HumanReview]]:
         reviewed = [
             (event, review)
@@ -330,17 +469,6 @@ class LearningOrchestrator:
     def _latest_approval(self, event_id: str) -> DevelopmentApproval | None:
         approvals = self.repository.list_development_approvals(event_id)
         return approvals[-1] if approvals else None
-
-    def _has_active_development_use(self, event: VerifiedEvent) -> bool:
-        review = self._latest_review(event)
-        approval = self._latest_approval(event.event_id)
-        return bool(
-            review is not None
-            and approval is not None
-            and approval.review_id == review.review_id
-            and approval.status == DevelopmentApprovalStatus.APPROVED
-            and approval.approved_uses
-        )
 
     @staticmethod
     def _category(event: VerifiedEvent, review: HumanReview | None) -> str:

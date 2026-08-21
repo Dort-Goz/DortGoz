@@ -5,8 +5,9 @@ import type {
   HumanReview,
   IncidentMedia,
   InterventionPriority,
-  TrainingSample,
+  LearningOrchestratorOverview,
   LearningPlan,
+  TrainingSample,
   VerifiedBoundingBox,
   VideoMetadata,
 } from "../types/domain";
@@ -99,6 +100,9 @@ export const getDevelopmentApprovals = (eventId: string) =>
 
 export const getLearningPlan = (eventId: string) =>
   request<LearningPlan>(`/api/events/${encodeURIComponent(eventId)}/learning-plan`);
+
+export const getLearningOrchestratorOverview = () =>
+  request<LearningOrchestratorOverview>("/api/system/learning-orchestrator");
 
 export const approveEventForLearning = (
   eventId: string,

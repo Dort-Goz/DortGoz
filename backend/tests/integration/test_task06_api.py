@@ -176,12 +176,19 @@ def test_review_and_development_approval_are_separate_api_decisions(
         evaluation_queue = client.get("/api/learning/routes/evaluation")
         calibration_queue = client.get("/api/learning/routes/threshold_calibration")
         learning_health = client.get("/api/system/learning-health")
+        orchestrator = client.get("/api/system/learning-orchestrator")
         assert evaluation_queue.status_code == 200
         assert evaluation_queue.json()["count"] == 1
         assert evaluation_queue.json()["automatic_execution"] is False
         assert calibration_queue.json()["count"] == 1
         assert learning_health.status_code == 200
         assert learning_health.json()["mode"] == "shadow"
+        assert orchestrator.status_code == 200
+        assert orchestrator.json()["orchestrator_version"] == (
+            "dortgoz-learning-orchestrator-v1"
+        )
+        assert orchestrator.json()["mode"] == "human_gated"
+        assert orchestrator.json()["automatic_execution"] is False
 
         revoked = client.post(
             "/api/events/event-feedback-api/development-approval",

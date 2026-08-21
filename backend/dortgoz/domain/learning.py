@@ -131,14 +131,66 @@ class LearningRouteQueue(BaseModel):
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class LearningRouteSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    use: DevelopmentUse
+    recommended_count: int = Field(ge=0)
+    ready_count: int = Field(ge=0)
+    awaiting_gate_count: int = Field(ge=0)
+    downstream: str = Field(min_length=1)
+    safety_gate: str = Field(min_length=1)
+
+
+class LearningCandidateSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    event_id: str = Field(min_length=1)
+    event_type: str = Field(min_length=1)
+    video_id: str = Field(min_length=1)
+    learning_score: int = Field(ge=0, le=100)
+    learning_band: LearningBand
+    intervention_score: int | None = Field(default=None, ge=0, le=100)
+    recommended_uses: list[DevelopmentUse]
+    ready_uses: list[DevelopmentUse]
+    blockers: list[str]
+
+
+class LearningOrchestratorOverview(BaseModel):
+    """System-wide read model for the human-gated learning loop."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    orchestrator_version: Literal["dortgoz-learning-orchestrator-v1"] = (
+        "dortgoz-learning-orchestrator-v1"
+    )
+    total_events: int = Field(ge=0)
+    reviewed_events: int = Field(ge=0)
+    pending_review_events: int = Field(ge=0)
+    pending_approval_events: int = Field(ge=0)
+    stale_approval_events: int = Field(ge=0)
+    ready_routes: int = Field(ge=0)
+    route_summaries: list[LearningRouteSummary]
+    priority_candidates: list[LearningCandidateSummary]
+    drift: DriftSnapshot
+    mode: Literal["human_gated"] = "human_gated"
+    automatic_execution: Literal[False] = False
+    automatic_training: Literal[False] = False
+    automatic_promotion: Literal[False] = False
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 __all__ = [
     "DriftMetric",
     "DriftSnapshot",
     "DriftState",
     "LearningBand",
+    "LearningCandidateSummary",
+    "LearningOrchestratorOverview",
     "LearningPlan",
     "LearningRoute",
     "LearningRouteItem",
     "LearningRouteQueue",
+    "LearningRouteSummary",
     "LearningValueComponents",
 ]
