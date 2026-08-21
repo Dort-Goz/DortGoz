@@ -1,47 +1,47 @@
 [
  {
   "category": "silahli_olay",
-  "criterion": "Karede ateşli silah, bıçak veya benzeri bir kesici/delici alet tehdit ya da saldırı amacıyla taşınıyor veya kullanılıyorsa, çevredeki eylem ne olursa olsun (kavga, hırsızlık, soygun) baskın sınıf budur.",
+  "criterion": "Ateşli silah, bıçak veya benzeri kesici/delici alet tehdit ya da saldırı amacıyla taşınıyor/kullanılıyorsa → `event_type: possible_armed_incident`, `anomaly_type: silahli_olay`. Çevredeki eylem ne olursa olsun (kavga, hırsızlık) bu ÖNCELİKLİDİR.",
   "source": "seed"
  },
  {
   "category": "kavga",
-  "criterion": "İki veya daha fazla kişi KARŞILIKLI fiziksel çatışma hâlindeyse (iki taraf da vuruyor, itiyor, boğuşuyor) bu sınıftır; tek taraf saldırıyor diğeri karşılık vermiyorsa `saldiri` seç.",
+  "criterion": "İki veya daha fazla kişi KARŞILIKLI çatışıyorsa (iki taraf da vuruyor/itiyor/boğuşuyor) → `event_type: physical_fight`, `anomaly_type: kavga`. Tek taraf saldırıyor, diğeri karşılık vermiyorsa `assault` seç.",
   "source": "seed"
  },
  {
   "category": "saldiri",
-  "criterion": "Bir kişi, karşılık vermeyen veya kaçmaya çalışan bir kişiye TEK TARAFLI fiziksel şiddet uyguluyorsa bu sınıftır; karşılıklı boğuşma varsa `kavga` seç.",
+  "criterion": "Bir kişi, karşılık vermeyen veya kaçmaya çalışan birine TEK TARAFLI şiddet uyguluyorsa → `event_type: assault`, `anomaly_type: saldiri`. Karşılıklı boğuşma varsa `physical_fight` seç.",
   "source": "seed"
  },
  {
   "category": "hirsizlik",
-  "criterion": "Bir kişi başkasına ait eşyayı, aracı veya ürünü izinsiz ALIP GÖTÜRÜYORSA ya da kapalı bir yere zorla giriyorsa bu sınıftır; amaç eşyayı almak değil zarar vermekse `vandalizm` seç.",
+  "criterion": "Kapı/kilit/pencere zorlama, içeri girme girişimi, eşyayı veya ürünü izinsiz alma → `event_type: possible_theft`, `anomaly_type: hirsizlik`. Malın alındığının GÖRÜNMESİ ŞART DEĞİLDİR; erişim girişimi yeterlidir.",
   "source": "seed"
  },
  {
   "category": "vandalizm",
-  "criterion": "Bir kişi mala veya yapıya KASITLI zarar veriyorsa (kırma, çizme, devirme, boyama, parçalama) bu sınıftır; eşya alınıp götürülüyorsa `hirsizlik`, tutuşturma varsa `yangin`, patlayıcı varsa `patlama` önceliklidir.",
+  "criterion": "YALNIZ zarar vermek amaçlı saldırı (duvara boyama, camı kırıp gitme, eşyayı devirip bırakma) → `event_type: vandalism`, `anomaly_type: vandalizm`. İçeri girmek için kapı/kilit zorlanıyorsa bu vandalism DEĞİL `possible_theft`tir.",
   "source": "seed"
  },
  {
   "category": "yangin",
-  "criterion": "Görünür alev veya SÜREKLİ yükselen duman varsa bu sınıftır; egzoz, buhar, toz ve ışık yansıması yangın değildir. Ani tek seferlik parlama ve basınç dalgası varsa `patlama` seç.",
+  "criterion": "Görünür alev veya SÜREKLİ yükselen duman varsa → `event_type: fire_smoke`, `anomaly_type: yangin`. Egzoz, buhar, toz ve ışık yansıması yangın DEĞİLDİR. Ani tek seferlik parlama varsa `explosion` seç.",
   "source": "seed"
  },
  {
   "category": "patlama",
-  "criterion": "ANİ ve tek seferlik parlama, basınç dalgası veya enkaz saçılması varsa bu sınıftır; ardından süregelen alev/duman kalıyorsa yine patlama önceliklidir, yalnız yavaş büyüyen alev varsa `yangin` seç.",
+  "criterion": "ANİ ve tek seferlik parlama, basınç dalgası veya enkaz saçılması varsa → `event_type: explosion`, `anomaly_type: patlama`. Yavaş büyüyen alev/duman varsa `fire_smoke` seç.",
   "source": "seed"
  },
  {
   "category": "arac_kazasi",
-  "criterion": "Araç ile araç, araç ile yaya veya araç ile sabit nesne arasında ÇARPIŞMA, devrilme ya da savrulma varsa bu sınıftır; yalnız duran, yavaşlayan veya park eden araç kaza değildir.",
+  "criterion": "Araç ile araç, araç ile yaya veya araç ile sabit nesne arasında ÇARPIŞMA, devrilme ya da savrulma varsa → `event_type: vehicle_collision`, `anomaly_type: arac_kazasi`. Duran, yavaşlayan veya park eden araç kaza DEĞİLDİR.",
   "source": "seed"
  },
  {
   "category": "bilinmeyen",
-  "criterion": "Gerçekten dikkat gerektiren bir durum var ama yukarıdaki sınıfların hiçbirine oturmuyorsa bu sınıfı kullan; zorlama sınıflandırma yapma. Olağan hareketlilik için bu sınıfı KULLANMA, `normal` yaz.",
+  "criterion": "Dikkat gerektiren bir durum var ama yukarıdakilerin hiçbirine oturmuyorsa → `event_type: unknown_anomaly`, `anomaly_type: bilinmeyen`. Olağan hareketlilik için bunu KULLANMA, `normal` yaz.",
   "source": "seed"
  }
 ]
