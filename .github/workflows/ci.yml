@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - Bengisu_system
       - feedback_fine-tune
   pull_request:
 

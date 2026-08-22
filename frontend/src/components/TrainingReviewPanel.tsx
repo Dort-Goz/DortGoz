@@ -409,7 +409,7 @@ export default function TrainingReviewPanel({
       <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-zinc-700 bg-zinc-950 shadow-2xl">
         <header className="flex items-center gap-3 border-b border-zinc-800 px-4 py-3">
           <div>
-            <h2 className="font-semibold text-zinc-100">Kontrollü eğitim örneği</h2>
+            <h2 className="font-semibold text-zinc-100">Olay İnceleme ve Eğitim Hazırlığı</h2>
             <p className="font-mono text-[10px] text-zinc-500">{eventId}</p>
           </div>
           <div className="ml-auto flex items-center gap-2 text-xs">
@@ -623,7 +623,7 @@ export default function TrainingReviewPanel({
               <div className="mb-3 space-y-2 rounded border border-sky-900/70 bg-sky-950/20 p-2">
                 <div className="flex items-center justify-between">
                   <div className="font-medium text-sky-100">
-                    Dörtgöz Öğrenme Orkestratörü · olay planı
+                    Öğrenme Merkezi · olay planı
                   </div>
                   <span className="rounded bg-sky-900 px-1.5 py-0.5 font-semibold text-sky-100">
                     {learningPlan.learning_score}/100 · {LEARNING_BAND_TR[learningPlan.learning_band]}

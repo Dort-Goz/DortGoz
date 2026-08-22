@@ -496,6 +496,7 @@ export default function TriagePanel({
   feedNames = {},
   scopeFeed,
   title = "Nöbet kuyruğu",
+  layout = "sidebar",
 }: {
   onSelectFeed?: (feed: string) => void;
   onOpenTraining?: (eventId: string) => void;
@@ -504,6 +505,7 @@ export default function TriagePanel({
   feedNames?: Record<string, string>;
   scopeFeed?: string;
   title?: string;
+  layout?: "sidebar" | "workspace";
 }) {
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [error, setError] = useState("");
@@ -519,6 +521,7 @@ export default function TriagePanel({
     const response = await fetch("/api/triage");
     if (!response.ok) throw new Error("İnceleme kayıtları alınamadı.");
     setSnap(await response.json());
+    setError("");
   }, []);
 
   useEffect(() => {
@@ -526,9 +529,15 @@ export default function TriagePanel({
     const poll = async () => {
       try {
         const r = await fetch("/api/triage");
+        if (!r.ok) throw new Error();
         const body = await r.json();
-        if (alive) setSnap(body);
-      } catch { /* geçici kopukluk */ }
+        if (alive) {
+          setSnap(body);
+          setError("");
+        }
+      } catch {
+        if (alive) setError("İnceleme kayıtları alınamadı. Bağlantıyı denetleyin.");
+      }
     };
     poll();
     const id = setInterval(poll, 2500);
@@ -628,13 +637,24 @@ export default function TriagePanel({
     }
   };
 
-  if (!snap) return null;
+  const rootClass = layout === "workspace"
+    ? "h-full min-h-0 grid grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)] gap-2 text-sm"
+    : "w-80 shrink-0 flex flex-col gap-2 min-h-0 text-sm";
+  if (!snap) {
+    return (
+      <div className={rootClass}>
+        <div className="rounded-lg border border-red-900 bg-red-950/30 p-3 text-sm text-red-200">
+          {error || "İnceleme kayıtları yükleniyor…"}
+        </div>
+      </div>
+    );
+  }
   const pending = scopeFeed === undefined
     ? snap.pending : snap.pending.filter((item) => item.feed === scopeFeed);
   const confirmed = scopeFeed === undefined
     ? snap.confirmed : snap.confirmed.filter((item) => item.feed === scopeFeed);
   return (
-    <div className="w-80 shrink-0 flex flex-col gap-2 min-h-0 text-sm">
+    <div className={rootClass}>
       <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-2 flex-1 min-h-0 flex flex-col">
         <div className="font-bold mb-1.5">
           ⚑ {title}
@@ -725,7 +745,9 @@ export default function TriagePanel({
           </div>
         )}
       </div>
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-2 max-h-[45%] flex flex-col">
+      <div className={`rounded-lg border border-zinc-800 bg-zinc-900/60 p-2 flex flex-col ${
+        layout === "sidebar" ? "max-h-[45%]" : "min-h-0"
+      }`}>
         <div className="font-bold mb-1.5">
           ✔ Bu oturumda tespit edilenler
           <span className="ml-1 text-zinc-500 text-xs font-normal">
@@ -762,7 +784,7 @@ export default function TriagePanel({
                   className="mt-1 rounded border border-indigo-800 px-1.5 py-0.5 text-indigo-300 hover:bg-indigo-950/40"
                   title="Sonucu yeniden incele ve ayrı geliştirme izni ver"
                 >
-                  Geliştirmeye incele
+                  Ayrıntılı incele
                 </button>
               )}
               {(i.suggested_actions ?? []).length > 0 && (

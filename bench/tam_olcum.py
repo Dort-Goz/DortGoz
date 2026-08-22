@@ -52,6 +52,7 @@ async def kostur(base: str, videos: list[str], timeout: float) -> float:
                  for i in range(0, len(videos), MAX_ESZAMAN)]:
         done: set[str] = set()
         async with websockets.connect(ws_url, max_size=8 * 1024 * 1024) as ws:
+            await ws.send(json.dumps({"kind": "sync", "from_seq": 0}))
             feeds = {f"OLC-{i}": v for i, v in enumerate(grup)}
             for feed, video in feeds.items():
                 await ws.send(json.dumps({"kind": "start_run", "video": video,

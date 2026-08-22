@@ -323,7 +323,38 @@ class TriageStore:
             self._stamp_and_log(item)
             return
 
-        item = self._new_item(event, event_id, priority)
+        match = self._emsal_check(event.feed, payload)
+        item = self._new_item(event, event_id, priority, match)
+        if match.suppress:
+            if event_id is None:
+                suffix = (
+                    "Canonical olay kaydı hazır değil; emsal bastırması "
+                    "güvenli biçimde uygulanmadı."
+                )
+                item.needs_review = True
+                item.review_reason = " · ".join(
+                    filter(None, [item.review_reason, suffix])
+                )
+                self._pending[key] = item
+                self._enforce_capacity()
+                return
+            review = self._save_review(
+                event_id,
+                ReviewDecision.REJECT,
+                reviewer="exemplar-bank",
+                note=f"Emsal bastırması uygulandı. {match.reason}",
+                false_alarm_reason=FalseAlarmReason.NORMAL_ACTIVITY,
+                intervention_required=False,
+            )
+            self.emsal_suppressed += 1
+            self.auto_dismissed += 1
+            item.verdict = "sorun_degil"
+            item.note = f"otomatik: emsal bastırması — {match.reason}"
+            item.decided_wall = time.time()
+            item.review_ids = [review.review_id]
+            self._append_resolved(item)
+            self._stamp_and_log(item)
+            return
         if rule is not None and event_id is None:
             suffix = "Canonical olay kaydı hazır değil; kural güvenli biçimde uygulanmadı."
             item.needs_review = True
@@ -781,15 +812,18 @@ class TriageStore:
         event: Event,
         event_id: str | None,
         priority: tuple[int, str, list[str], str],
+        match: exemplar_bank.Match | None = None,
     ) -> TriageItem:
         payload = event.payload
         run_id, video = self._runs.get(event.feed, ("", ""))
-        match = self._emsal_check(event.feed, payload)
+        if match is None:
+            match = self._emsal_check(event.feed, payload)
         shadow_hit = bool(
             match is not None
             and match.shadow
             and match.similarity >= settings.exemplar_threshold
         )
+        exemplar_hit = bool(match is not None and (match.suppress or shadow_hit))
         item = TriageItem(
             key=f"{event.feed}:{payload.incident_id}",
             feed=event.feed,
@@ -812,10 +846,10 @@ class TriageStore:
             model_end=payload.olay_bitis,
             signals=self._signal_dict(payload),
             emsal_golge=shadow_hit,
-            emsal_benzerlik=(round(match.similarity, 4) if shadow_hit else None),
+            emsal_benzerlik=(round(match.similarity, 4) if exemplar_hit else None),
             emsal_key=(
                 match.precedent.key
-                if shadow_hit and match is not None and match.precedent is not None
+                if exemplar_hit and match is not None and match.precedent is not None
                 else ""
             ),
         )

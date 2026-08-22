@@ -21,8 +21,8 @@ def key_for(run_id: str, name: str) -> str:
     return f"{run_id}/{name}"
 
 
-def key_from_evidence(url: str | None) -> str | None:
-    if not url:
+def key_from_evidence(url: object) -> str | None:
+    if not isinstance(url, str) or not url:
         return None
     m = EVIDENCE_RE.search(url)
     return key_for(m.group("run"), m.group("name")) if m else None

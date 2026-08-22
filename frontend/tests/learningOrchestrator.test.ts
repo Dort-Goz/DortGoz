@@ -8,7 +8,7 @@ describe("öğrenme yönlendiricisi güvenlik sınırı", () => {
       "utf8",
     );
 
-    expect(source).toContain("Dörtgöz Öğrenme Orkestratörü · olay planı");
+    expect(source).toContain("Öğrenme Merkezi · olay planı");
     expect(source).toContain("learningPlan.learning_score");
     expect(source).toContain("learningPlan.intervention_score");
     expect(source).toContain("Müdahale önceliği:");
@@ -36,8 +36,8 @@ describe("öğrenme yönlendiricisi güvenlik sınırı", () => {
 
     expect(app).toContain("<LearningOrchestratorPanel");
     expect(app).toContain("!fixtureMode");
-    expect(app).toContain("◈ öğrenme");
-    expect(panel).toContain("Dörtgöz Öğrenme Orkestratörü");
-    expect(panel).toContain("İnsan kapılı aktif öğrenme");
+    expect(app).toContain("◈ öğrenme merkezi");
+    expect(panel).toContain("Öğrenme Merkezi");
+    expect(panel).toContain("İnsan onaylı geliştirme akışları");
   });
 });

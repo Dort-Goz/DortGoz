@@ -176,6 +176,42 @@ def test_incident_update_lands_in_pending(store):
     assert item["priority_ruleset_version"] == "intervention-priority-v1"
 
 
+def test_enabled_exemplar_suppression_persists_canonical_review(
+    store: CanonicalTriageStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(triage.settings, "exemplar_suppress", True)
+    monkeypatch.setattr(triage.settings, "exemplar_shadow", False)
+    monkeypatch.setattr(triage.settings, "exemplar_threshold", 0.9)
+    monkeypatch.setattr(
+        store._matcher,
+        "check",
+        lambda *args, **kwargs: triage.exemplar_bank.Match(
+            suppress=True,
+            shadow=False,
+            similarity=0.99,
+            precedent=triage.exemplar_bank.Exemplar(
+                "run/benign-1", "KAM-1", (1.0,)
+            ),
+            reason="test emsali",
+        ),
+    )
+
+    store.observe(_incident())
+
+    snapshot = store.snapshot()
+    assert snapshot["pending"] == []
+    assert snapshot["auto_dismissed"] == 1
+    assert snapshot["emsal"]["bastirilan"] == 1
+    decision = store.decision_for("KAM-1", "inc-1")
+    assert decision is not None
+    assert decision.verdict == "sorun_degil"
+    assert decision.emsal_benzerlik == 0.99
+    reviews = store.repo.list_reviews("event:KAM-1:inc-1")
+    assert len(reviews) == 1
+    assert reviews[0].reviewer == "exemplar-bank"
+
+
 def test_pending_card_exposes_persisted_incident_clip(store):
     store.observe(_incident())
     event = store.repo.get_event("event:KAM-1:inc-1")

@@ -67,7 +67,7 @@ def _common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--policy",
         type=_path,
-        default=REPO_ROOT / "configs" / "dfine_feedback_training.json",
+        default=REPO_ROOT / "defaults" / "dfine_feedback_training.json",
     )
 
 
@@ -98,7 +98,7 @@ def _parser() -> argparse.ArgumentParser:
     plan.add_argument(
         "--selection-policy",
         type=_path,
-        default=REPO_ROOT / "configs" / "dfine_sample_selection.json",
+        default=REPO_ROOT / "defaults" / "dfine_sample_selection.json",
     )
 
     run = commands.add_parser(

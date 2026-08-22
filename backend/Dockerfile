@@ -21,7 +21,7 @@ RUN python -m pip install --no-cache-dir "uv==${UV_VERSION}" \
 COPY backend/dortgoz ./dortgoz
 RUN uv sync --frozen --no-dev
 
-COPY configs /app/configs
+COPY defaults /app/defaults
 # services/live_cctv canlı akış listesini /app/config altından okur; bu dizin
 # olmadan /api/live/start konteynerde FileNotFoundError verir. Gerçek liste
 # çalışma anında compose bind mount'u ile üzerine bindirilir.

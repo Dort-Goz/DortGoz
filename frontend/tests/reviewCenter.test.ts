@@ -47,11 +47,17 @@ describe("olay inceleme merkezi", () => {
     );
 
     expect(app).toContain('title="Olay İnceleme Merkezi"');
+    expect(app).toContain('["analysis", "Analiz"]');
+    expect(app).toContain('["live", "Canlı"]');
+    expect(app).toContain('["review", "Olay inceleme"]');
+    expect(app).toContain('layout="workspace"');
     expect(app).toContain("!fixtureMode && (");
     expect(app).toContain('kind: "seek"');
     expect(app).toContain("video: reviewVideo");
     expect(panel).toContain("Doğrulanmış video kanıtı");
     expect(panel).toContain("Operatör notu");
     expect(panel).toContain("Güvenli yerel taslak önerileri");
+    expect(panel).toContain("if (!r.ok) throw new Error()");
+    expect(panel).toContain("İnceleme kayıtları alınamadı. Bağlantıyı denetleyin.");
   });
 });

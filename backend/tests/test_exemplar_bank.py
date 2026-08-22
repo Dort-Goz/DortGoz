@@ -13,6 +13,7 @@ def test_key_is_recoverable_from_the_evidence_url():
     assert bank.key_from_evidence(
         "/media/_evidence/run-1/ornek_60.mp4") == "run-1/ornek_60"
     assert bank.key_from_evidence(None) is None
+    assert bank.key_from_evidence([{"frame_id": "legacy"}]) is None
     assert bank.key_from_evidence("/media/_thumbs/run-1/30.jpg") is None
 
 

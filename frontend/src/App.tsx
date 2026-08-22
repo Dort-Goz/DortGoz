@@ -50,6 +50,7 @@ export default function App() {
   const [importNote, setImportNote] = useState("");
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [liveView, setLiveView] = useState(false);
+  const [reviewView, setReviewView] = useState(false);
   const [trainingEventId, setTrainingEventId] = useState("");
   const [showLearningOrchestrator, setShowLearningOrchestrator] = useState(false);
   const [fixtureMode, setFixtureMode] = useState(false);
@@ -100,7 +101,10 @@ export default function App() {
       .then((body: { analysis_mode?: string }) => {
         const fixture = body.analysis_mode === "ui_fixture_replay";
         setFixtureMode(fixture);
-        if (fixture) setLiveView(false);
+        if (fixture) {
+          setLiveView(false);
+          setReviewView(false);
+        }
       })
       .catch(() => setFixtureMode(false));
   }, []);
@@ -143,6 +147,7 @@ export default function App() {
   const feed = state.feeds[state.active] ?? emptyFeed;
   const run = feed.runStatus;
   const busy = Object.values(state.feeds).some((f) => f.runStatus?.state === "processing");
+  const workspace = liveView ? "live" : reviewView ? "review" : "analysis";
 
   const overrides = useCallback(() => ({
     model: interpretCfg && model !== interpretCfg.default_model ? model : "",
@@ -222,19 +227,36 @@ export default function App() {
         >
           {connection === "open" ? "●" : "○"} {CONNECTION_TR[connection]}
         </span>
-        <div className="ml-auto flex items-center flex-wrap gap-x-3 gap-y-1.5 text-xs text-zinc-400">
-          {!fixtureMode && <button
-            onClick={() => setLiveView((v) => !v)}
-            title="Canlı CCTV ızgarası: config/live_feeds.json'daki gerçek akışlar, işlenme durumu ve gecikme rozetleriyle"
-            className={`rounded px-2 py-1 border ${
-              liveView
-                ? "border-sky-700 text-sky-300 bg-sky-950/40"
-                : "border-zinc-700 hover:border-zinc-500"
-            }`}
+        {!fixtureMode && (
+          <nav
+            aria-label="Çalışma alanları"
+            className="flex items-center rounded border border-zinc-800 bg-zinc-950/60 p-0.5 text-xs"
           >
-            📡 canlı
-          </button>}
-          {!fixtureMode && !liveView && feed.highlight && run?.run_id && run.run_id !== "-" && (
+            {([
+              ["analysis", "Analiz"],
+              ["live", "Canlı"],
+              ["review", "Olay inceleme"],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => {
+                  setLiveView(value === "live");
+                  setReviewView(value === "review");
+                }}
+                className={`rounded px-2.5 py-1 ${
+                  workspace === value
+                    ? "bg-sky-900/70 text-sky-100"
+                    : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+        )}
+        <div className="ml-auto flex items-center flex-wrap gap-x-3 gap-y-1.5 text-xs text-zinc-400">
+          {!fixtureMode && workspace === "analysis" && feed.highlight && run?.run_id && run.run_id !== "-" && (
             <button
               onClick={() => setTrainingEventId(`${run.run_id}:${feed.highlight!.incident_id}`)}
               disabled={run.state !== "done"}
@@ -243,7 +265,7 @@ export default function App() {
                 : "Eğitim verisi hazırlamak için analiz tamamlanmalıdır"}
               className="rounded border border-sky-800 px-2 py-1 text-sky-300 hover:bg-sky-950/40 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              ◎ eğitim verisi
+              ◎ ayrıntılı incele
             </button>
           )}
           {!fixtureMode && (
@@ -253,10 +275,10 @@ export default function App() {
               title="İnsan kapılı öğrenme rotalarını, öncelik kuyruğunu ve gölge kayma gözcüsünü aç"
               className="rounded border border-sky-800 px-2 py-1 text-sky-300 hover:bg-sky-950/40"
             >
-              ◈ öğrenme
+              ◈ öğrenme merkezi
             </button>
           )}
-          {interpretCfg && !liveView && !fixtureMode && (
+          {interpretCfg && workspace === "analysis" && !fixtureMode && (
             <button
               onClick={() => setShowExperiment((s) => !s)}
               title="Model ve istem deneyleri"
@@ -274,13 +296,13 @@ export default function App() {
               )}
             </button>
           )}
-          {!liveView && (
+          {workspace === "analysis" && (
             <UploadPanel onUploaded={(video) => {
               setVideos((current) => includeUploadedVideo(current, video.stored_filename));
               setSelected(video.stored_filename);
             }} />
           )}
-          <input
+          {workspace === "analysis" && <input
             ref={importInputRef}
             type="file"
             accept=".zip"
@@ -290,14 +312,14 @@ export default function App() {
               if (file) importPackage(file);
               e.target.value = "";
             }}
-          />
-          <button
+          />}
+          {workspace === "analysis" && <button
             onClick={() => importInputRef.current?.click()}
             title="Dışa aktarılmış analiz paketini (.zip) içe al — sohbet paket üzerinde tam yetenekle çalışır"
             className="rounded px-2 py-1 border border-zinc-700 hover:border-zinc-500"
           >
             ⇪ paket al
-          </button>
+          </button>}
           {importNote && (
             <button
               onClick={() => setImportNote("")}
@@ -307,7 +329,7 @@ export default function App() {
               {importNote}
             </button>
           )}
-          {!liveView && (<>
+          {workspace === "analysis" && (<>
           {!fixtureMode && <select
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
@@ -387,7 +409,7 @@ export default function App() {
         </div>
       </header>
 
-      {!fixtureMode && showExperiment && interpretCfg && (
+      {!fixtureMode && workspace === "analysis" && showExperiment && interpretCfg && (
         <ExperimentPanel
           config={interpretCfg}
           model={model}
@@ -400,12 +422,12 @@ export default function App() {
         />
       )}
 
-      {!liveView && (
+      {workspace === "analysis" && (
         <FeedStrip feeds={state.feeds} active={state.active}
                    onSelect={(f) => dispatch({ kind: "select_feed", feed: f })} />
       )}
 
-      {run?.state === "done" && run.detail && (() => {
+      {workspace === "analysis" && run?.state === "done" && run.detail && (() => {
         const order = ["dusuk", "orta", "yuksek", "kritik"] as const;
         const worst = feed.incidents.reduce<string | null>(
           (w, i) => (w === null || order.indexOf(i.risk) > order.indexOf(w as any) ? i.risk : w),
@@ -426,7 +448,7 @@ export default function App() {
         );
       })()}
 
-      {liveView && (
+      {workspace === "live" && (
         <LiveGrid
           incidents={Object.fromEntries(
             Object.entries(state.feeds).map(([f, s]) => [f, s.incidents]))}
@@ -435,8 +457,7 @@ export default function App() {
         />
       )}
 
-      {!liveView && (
-      <div className="flex-1 flex gap-2 min-h-0">
+      {workspace === "analysis" && (
       <div className="flex-1 grid grid-cols-6 grid-rows-2 gap-2 min-h-0">
         <div className="col-span-2 row-span-1 min-h-0">
           <VideoPanel
@@ -469,10 +490,13 @@ export default function App() {
           />
         </div>
       </div>
-      {!fixtureMode && (
+      )}
+
+      {workspace === "review" && (
+        <div className="flex-1 min-h-0">
         <TriagePanel
           title="Olay İnceleme Merkezi"
-          scopeFeed={state.active}
+          layout="workspace"
           onSelectFeed={(selectedFeed) =>
             dispatch({ kind: "select_feed", feed: selectedFeed })}
           onSeek={(selectedFeed, timestamp, reviewVideo) =>
@@ -484,8 +508,7 @@ export default function App() {
             })}
           onOpenTraining={setTrainingEventId}
         />
-      )}
-      </div>
+        </div>
       )}
       {trainingEventId && (
         <TrainingReviewPanel

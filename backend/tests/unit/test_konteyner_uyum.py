@@ -34,10 +34,11 @@ def _load_isolated_config():
     return module
 
 
-def test_image_ships_live_feed_config_directory() -> None:
+def test_image_ships_runtime_config_directories() -> None:
     dockerfile = (ROOT / "backend" / "Dockerfile").read_text(encoding="utf-8")
 
     assert "COPY config /app/config" in dockerfile
+    assert "COPY defaults /app/defaults" in dockerfile
 
 
 def test_compose_mounts_config_and_models_read_only() -> None:

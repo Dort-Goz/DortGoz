@@ -597,7 +597,7 @@ def _atomic_write_records(path: Path, records: list[ShadowEvaluationRecord]) -> 
 def _atomic_write_text(path: Path, content: str) -> None:
     target = path.resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_name(f".{target.name}.tmp")
+    temporary = target.parent / f".tmp-{uuid4().hex[:8]}"
     temporary.write_text(content, encoding="utf-8")
     temporary.replace(target)
 

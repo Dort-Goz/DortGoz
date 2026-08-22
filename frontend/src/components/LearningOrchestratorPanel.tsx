@@ -62,9 +62,9 @@ export default function LearningOrchestratorPanel({
       <section className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-sky-900 bg-zinc-950 shadow-2xl">
         <header className="flex items-center gap-3 border-b border-zinc-800 px-4 py-3">
           <div>
-            <h2 className="font-semibold text-sky-100">Dörtgöz Öğrenme Orkestratörü</h2>
+            <h2 className="font-semibold text-sky-100">Öğrenme Merkezi</h2>
             <p className="text-[10px] text-zinc-500">
-              İnsan kapılı aktif öğrenme · salt-okunur yönlendirme · gölge kayma gözcüsü
+              İnsan onaylı geliştirme akışları · salt-okunur yönlendirme · gölge kayma gözcüsü
             </p>
           </div>
           <div className="ml-auto flex items-center gap-2 text-xs">
