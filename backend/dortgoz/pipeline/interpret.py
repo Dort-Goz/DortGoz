@@ -211,7 +211,6 @@ async def review_incident(
     timing: dict[str, float | int] | None = None,
     captured_frames: dict[str, tuple[FrameReference, bytes]] | None = None,
     current_type: str = "",
-    strict_class_rules: bool = False,
 ) -> dict[str, Any]:
     start, end = span
     frame_refs = build_frame_references(keyframes)
@@ -236,19 +235,6 @@ async def review_incident(
             "gördükten sonra en doğru sınıfı sen seç: ön analiz doğruysa koru, "
             "kareler farklı bir sınıfı gösteriyorsa düzelt. Kararını kanıt "
             "kareleriyle destekle."
-        )
-    if strict_class_rules:
-        # 2026-08-22 hakem ölçümü: possible_theft/physical_fight sınıfları
-        # çekim merkezi gibi davranıyor; sınıf kararı karelere dayanmalı.
-        task += (
-            "\n\nSINIF SEÇİM KURALLARI (öncelik sırasıyla): görünür bir silah "
-            "(tabanca, tüfek) varsa her durumda possible_armed_incident; "
-            "patlama ânı (şok dalgası, ani parlama) explosion, sonrasındaki "
-            "yangın fire_smoke; araçların çarpışması vehicle_collision; "
-            "possible_theft YALNIZ mal alma eylemi görünüyorsa; kişiler arası "
-            "fiziksel şiddet physical_fight/assault; mala kasıtlı zarar "
-            "vandalism. Sınıf kararını ön gözlem notlarına değil KARELERE "
-            "dayandır."
         )
     if notes:
         joined = " · ".join(notes[:12])
@@ -301,6 +287,78 @@ async def review_incident(
     review = IncidentReviewResult.model_validate(payload)
     _guard_incident_review_evidence(review, frame_refs)
     return review.model_dump(mode="json")
+
+
+# Yalnız somut anomali sınıfları: hakem karar KAÇAMAZ (normal/uncertain yok;
+# "emin değilsen bilinmeyen" kaçışı çevrimdışı ölçümde doğruluğu %48→%39
+# düşürmüştü). Hakem yakalamaya dokunamaz, yalnız sınıfı düzeltir.
+ADJUDICATE_TYPES = [
+    "physical_fight", "assault", "possible_theft", "possible_armed_incident",
+    "fire_smoke", "explosion", "vehicle_collision", "vandalism",
+]
+
+ADJUDICATE_SYSTEM_TR = (
+    "Sen güvenlik kamerası olay sınıflandırma uzmanısın. Sana kapanmış bir "
+    "olayın kareleri veriliyor. Tek görevin olayın SINIFINI seçmek. "
+    "Öncelik sırasıyla: görünür bir silah (tabanca, tüfek) varsa her durumda "
+    "possible_armed_incident; patlama ânı (şok dalgası, ani parlama) "
+    "explosion, sonrasındaki yangın fire_smoke; araçların çarpışması "
+    "vehicle_collision; possible_theft YALNIZ mal alma eylemi görünüyorsa; "
+    "kişiler arası fiziksel şiddet physical_fight veya assault; mala kasıtlı "
+    "zarar vandalism. Kararsız kalsan da karelere göre EN YAKIN sınıfı seç."
+)
+
+
+async def adjudicate_category(
+    video: Path,
+    span: tuple[float, float],
+    keyframes: list[float],
+    *,
+    model: str = "",
+    stats: dict[str, Any] | None = None,
+    timing: dict[str, float | int] | None = None,
+) -> str | None:
+    """Anlatıdan bağımsız zorunlu-seçimli sınıf hakemi (kapanış sonrası).
+
+    Yalnız kareleri görür; ön gözlem, mevcut sınıf ve notlar verilmez
+    (çapa etkisi 2026-08-22 hakem ölçümünde doğruluğu düşürüyordu).
+    """
+    start, end = span
+    frame_refs = build_frame_references(keyframes)
+    if not frame_refs:
+        return None
+    content = await _frame_parts(video, frame_refs, include_timestamps=True)
+    content.append({"type": "text", "text":
+                    f"Kareler {start:.0f}-{end:.0f} sn arasındaki tek bir "
+                    "olaya aittir. Olayın sınıfı nedir?"})
+    client = main_client()
+    started = time.monotonic()
+    try:
+        resp = await create_chat(client,
+            model=model or settings.main_model,
+            messages=[{"role": "system", "content": ADJUDICATE_SYSTEM_TR},
+                      {"role": "user", "content": content}],
+            max_tokens=64,
+            temperature=0,
+            response_format={"type": "json_schema", "json_schema": {
+                "name": "sinif_hakemi", "strict": True,
+                "schema": {"type": "object", "additionalProperties": False,
+                           "properties": {"event_type": {
+                               "type": "string", "enum": ADJUDICATE_TYPES}},
+                           "required": ["event_type"]}}},
+            extra_body={"speculative.n_max": 0,
+                        "chat_template_kwargs": {"enable_thinking": False}},
+        )
+    finally:
+        _record_qwen_timing(timing, started)
+    if stats is not None:
+        stats.update(call_stats(resp))
+    raw = resp.choices[0].message.content or "{}"
+    try:
+        value = json.loads(raw).get("event_type")
+    except json.JSONDecodeError:
+        return None
+    return value if value in ADJUDICATE_TYPES else None
 
 
 def report_schema(frame_ids: list[str] | None = None) -> dict[str, Any]:

@@ -186,6 +186,61 @@ def perf_text(call: dict, n_ctx: int | None) -> str:
     return " · " + " · ".join(bits) if bits else ""
 
 
+async def _adjudicate_if_confusable(
+    rec: RunRecorder,
+    ledger: Ledger,
+    incident_id: str,
+    path: Path,
+    profile: list[float],
+    model: str,
+    metrics: CanonicalRunMetrics | None,
+    video_duration: float,
+) -> None:
+    """Kapanan olayın sınıfını anlatıdan bağımsız hakemle düzeltir.
+
+    Yalnız `adjudicate_confusable` kümesindeki sınıflarda çalışır; yakalamaya
+    dokunamaz, sınıf dışında hiçbir alanı değiştirmez.
+    """
+    confusable = {s.strip() for s in
+                  settings.adjudicate_confusable.split(",") if s.strip()}
+    inc = ledger.incidents.get(incident_id)
+    if inc is None or inc.anomaly_type not in confusable:
+        return
+    end = min(inc.last_seen + 5.0, video_duration) if video_duration > 0 \
+        else inc.last_seen + 5.0
+    start = max(0.0, min(inc.first_seen - 5.0, end - 1.0))
+    try:
+        keyframes = windowing.select_keyframes(profile, start, end, 6)
+        call: dict = {}
+        qwen_timing: dict[str, float | int] = {}
+        try:
+            with metrics.second_pass_call() if metrics is not None \
+                    else nullcontext():
+                verdict = await interpret.adjudicate_category(
+                    path, (start, end), keyframes,
+                    model=model, stats=call, timing=qwen_timing)
+        finally:
+            if metrics is not None:
+                metrics.record_qwen_timing(qwen_timing)
+        if verdict is None:
+            return
+        new_ws = legacy_ws_label_from_canonical(
+            CanonicalEventType(verdict)).value
+        if new_ws == inc.anomaly_type:
+            await rec.emit(AgentStep(node="hakem", status="end",
+                                     detail=f"sınıf korundu: {new_ws}"))
+            return
+        old = inc.anomaly_type
+        revised = ledger.apply_review(incident_id, {"anomaly_type": new_ws})
+        if revised is not None:
+            await rec.emit(revised)
+        await rec.emit(AgentStep(node="hakem", status="end",
+                                 detail=f"sınıf düzeltildi: {old} → {new_ws}"))
+    except Exception as exc:
+        await rec.emit(AgentStep(node="hakem", status="error",
+                                 detail=str(exc)[:160]))
+
+
 async def review_if_closed(
     rec: RunRecorder,
     ledger: Ledger,
@@ -233,10 +288,6 @@ async def review_if_closed(
                     current_type=canonical_event_type_from_ws_label(
                         inc.anomaly_type
                     ).value,
-                    strict_class_rules=inc.anomaly_type in {
-                        s.strip() for s in
-                        settings.adjudicate_confusable.split(",") if s.strip()
-                    },
                 )
         finally:
             if metrics is not None:
@@ -286,6 +337,9 @@ async def review_if_closed(
                     ),
                 )
             )
+            await _adjudicate_if_confusable(
+                rec, ledger, update.incident_id, path, profile, model,
+                metrics, video_duration)
             return
 
         review_update = dict(review)
@@ -308,6 +362,9 @@ async def review_if_closed(
             incident_id=update.incident_id,
         )
         await rec.emit(AgentStep(node="oversight", status="error", detail=str(exc)[:160]))
+    await _adjudicate_if_confusable(
+        rec, ledger, update.incident_id, path, profile, model,
+        metrics, video_duration)
 
 
 def _mode_flags(mode: str) -> tuple[bool, bool, bool]:
