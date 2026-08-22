@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     # kaybına değmez. GPU isteyen DORTGOZ_ONNX_DEVICE=gpu versin.
     onnx_device: str = "cpu"
     onnx_providers: str = ""
+    # 0 = onnxruntime varsayılanı (tüm çekirdekler). Çok akışlı koşuda oturum
+    # başına iplik sınırı aşırı aboneliği önler; 2026-08-22 gecelik ölçümünde
+    # D-FINE+SigLIP toplam sürenin %42'sini CPU çekişmesiyle yiyordu.
+    onnx_intra_threads: int = 0
     detector_enabled: bool = True
     dfine_onnx: str = "~/.cache/dortgoz/dfine/model.onnx"
     detector_conf: float = 0.40
