@@ -210,32 +210,45 @@ async def _adjudicate_if_confusable(
         else inc.last_seen + 5.0
     start = max(0.0, min(inc.first_seen - 5.0, end - 1.0))
     try:
+        # Kareler hareket sıralamasıyla seçilir. Kanıt zaman damgalarına
+        # çapalama DENENDİ ve GERİ ALINDI (2026-08-22 v10): anlatının kanıt
+        # seçimi kendi yanlış okumasını taşıyor, hakem doğruluğu düştü.
         keyframes = windowing.select_keyframes(profile, start, end, 6)
         call: dict = {}
         qwen_timing: dict[str, float | int] = {}
         try:
             with metrics.second_pass_call() if metrics is not None \
                     else nullcontext():
-                verdict = await interpret.adjudicate_category(
+                sonuc = await interpret.adjudicate_category(
                     path, (start, end), keyframes,
                     model=model, stats=call, timing=qwen_timing)
         finally:
             if metrics is not None:
                 metrics.record_qwen_timing(qwen_timing)
-        if verdict is None:
+        if sonuc is None:
             return
+        verdict, conf = sonuc
         new_ws = legacy_ws_label_from_canonical(
             CanonicalEventType(verdict)).value
         if new_ws == inc.anomaly_type:
             await rec.emit(AgentStep(node="hakem", status="end",
-                                     detail=f"sınıf korundu: {new_ws}"))
+                                     detail=f"sınıf korundu: {new_ws} "
+                                            f"(güven {conf:.2f})"))
+            return
+        if conf < settings.adjudicate_min_conf:
+            await rec.emit(AgentStep(
+                node="hakem", status="end",
+                detail=f"düşük güven ({conf:.2f} < "
+                       f"{settings.adjudicate_min_conf:.2f}): "
+                       f"{inc.anomaly_type} korundu, öneri {new_ws}"))
             return
         old = inc.anomaly_type
         revised = ledger.apply_review(incident_id, {"anomaly_type": new_ws})
         if revised is not None:
             await rec.emit(revised)
         await rec.emit(AgentStep(node="hakem", status="end",
-                                 detail=f"sınıf düzeltildi: {old} → {new_ws}"))
+                                 detail=f"sınıf düzeltildi: {old} → {new_ws} "
+                                        f"(güven {conf:.2f})"))
     except Exception as exc:
         await rec.emit(AgentStep(node="hakem", status="error",
                                  detail=str(exc)[:160]))

@@ -31,7 +31,7 @@ async def test_hakem_confusable_sinifi_duzeltir(monkeypatch) -> None:
     monkeypatch.setattr(settings, "adjudicate_confusable", "hirsizlik,kavga")
 
     async def fake_adjudicate(_video, _span, _keyframes, **_kwargs):
-        return "vehicle_collision"
+        return "vehicle_collision", 0.95
 
     monkeypatch.setattr(interpret, "adjudicate_category", fake_adjudicate)
     ledger = _ledger_with("hirsizlik")
@@ -64,7 +64,7 @@ async def test_hakem_ayni_sinifta_dokunmaz(monkeypatch) -> None:
     monkeypatch.setattr(settings, "adjudicate_confusable", "hirsizlik,kavga")
 
     async def fake_adjudicate(_video, _span, _keyframes, **_kwargs):
-        return "possible_theft"
+        return "possible_theft", 0.95
 
     monkeypatch.setattr(interpret, "adjudicate_category", fake_adjudicate)
     ledger = _ledger_with("hirsizlik")
@@ -90,3 +90,21 @@ async def test_hakem_bos_anahtar_kapali(monkeypatch) -> None:
         rec, ledger, "abc", Path("yok.mp4"), [], "", None, 30.0)
     assert ledger.incidents["abc"].anomaly_type == "hirsizlik"
     assert not rec.emitted
+
+
+@pytest.mark.asyncio
+async def test_hakem_dusuk_guvende_degistirmez(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "adjudicate_confusable", "hirsizlik,kavga")
+    monkeypatch.setattr(settings, "adjudicate_min_conf", 0.60)
+
+    async def fake_adjudicate(_video, _span, _keyframes, **_kwargs):
+        return "vehicle_collision", 0.35
+
+    monkeypatch.setattr(interpret, "adjudicate_category", fake_adjudicate)
+    ledger = _ledger_with("hirsizlik")
+    rec = _FakeRec()
+    await runner._adjudicate_if_confusable(
+        rec, ledger, "abc", Path("yok.mp4"), [], "", None, 30.0)
+    assert ledger.incidents["abc"].anomaly_type == "hirsizlik"
+    steps = [e for e in rec.emitted if getattr(e, "node", "") == "hakem"]
+    assert steps and "düşük güven" in steps[-1].detail

@@ -63,10 +63,17 @@ class Settings(BaseSettings):
     onnx_intra_threads: int = 0
     # Kapanan olayın sınıfını anlatıdan bağımsız hakem çağrısı hangi WS
     # sınıflarında yeniden karara bağlar. Hakem yakalamaya dokunamaz, yalnız
-    # sınıfı düzeltir (kapanış başına en çok 1 kısa çağrı). Bu iki sınıf
-    # çekim merkezi gibi davranıp Shooting/RoadAccidents kütlesini yutuyordu
-    # (2026-08-22 hakem ölçümü: seçici düzeltme %48→%56 katı). Boş = kapalı.
-    adjudicate_confusable: str = "hirsizlik,kavga"
+    # sınıfı düzeltir (kapanış başına en çok 1 kısa çağrı). Çekirdek ikili
+    # (hirsizlik,kavga) canlı eşli retestte %41→%55 katı verdi; genişletme
+    # benzetimde +2 katı / +3 komşu ekledi. Boş = kapalı.
+    adjudicate_confusable: str = "hirsizlik,kavga,saldiri,bilinmeyen,arac_kazasi"
+    # Hakem ancak bu güvenin ÜSTÜNDE sınıf değiştirir. 0 = kapı kapalı
+    # (yalnız günlüğe yazılır). 0,60 DENENDİ ve GERİ ALINDI (v10): 6 doğru
+    # düzeltmeye karşı 2 yanlışı engelledi — net kayıp.
+    adjudicate_min_conf: float = 0.0
+    # Hakem karesi genişliği (512 = ana yol ile aynı; 640 denemesi kare
+    # kaynağı değişikliğiyle karışık ölçüldü, kanıtlanmadı).
+    adjudicate_frame_width: int = 512
     detector_enabled: bool = True
     dfine_onnx: str = "~/.cache/dortgoz/dfine/model.onnx"
     detector_conf: float = 0.40

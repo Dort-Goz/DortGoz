@@ -317,17 +317,21 @@ async def adjudicate_category(
     model: str = "",
     stats: dict[str, Any] | None = None,
     timing: dict[str, float | int] | None = None,
-) -> str | None:
+) -> tuple[str, float] | None:
     """Anlatıdan bağımsız zorunlu-seçimli sınıf hakemi (kapanış sonrası).
 
     Yalnız kareleri görür; ön gözlem, mevcut sınıf ve notlar verilmez
     (çapa etkisi 2026-08-22 hakem ölçümünde doğruluğu düşürüyordu).
+    (sınıf, güven) döndürür; güven, dilbilgisi-kısıtlı çıktının toplam token
+    olasılığıdır — iskelet token'ları ~1 olduğundan pratikte P(sınıf) verir.
     """
     start, end = span
     frame_refs = build_frame_references(keyframes)
     if not frame_refs:
         return None
-    content = await _frame_parts(video, frame_refs, include_timestamps=True)
+    content = await _frame_parts(
+        video, frame_refs, include_timestamps=True,
+        frame_width=settings.adjudicate_frame_width)
     content.append({"type": "text", "text":
                     f"Kareler {start:.0f}-{end:.0f} sn arasındaki tek bir "
                     "olaya aittir. Olayın sınıfı nedir?"})
@@ -340,6 +344,8 @@ async def adjudicate_category(
                       {"role": "user", "content": content}],
             max_tokens=64,
             temperature=0,
+            logprobs=True,
+            top_logprobs=8,
             response_format={"type": "json_schema", "json_schema": {
                 "name": "sinif_hakemi", "strict": True,
                 "schema": {"type": "object", "additionalProperties": False,
@@ -358,7 +364,54 @@ async def adjudicate_category(
         value = json.loads(raw).get("event_type")
     except json.JSONDecodeError:
         return None
-    return value if value in ADJUDICATE_TYPES else None
+    if value not in ADJUDICATE_TYPES:
+        return None
+    lp = getattr(resp.choices[0], "logprobs", None)
+    conf = _enum_confidence(getattr(lp, "content", None) or [], raw, value)
+    return value, conf
+
+
+def _enum_confidence(tokens: list, raw: str, value: str) -> float:
+    """Sınıf güveni: enum ayrım token'larında normalize seçim olasılığı.
+
+    llama.cpp dilbilgisi-kısıtlı çıktıda HAM model logprob'ları döndürür;
+    iskelet token'ları düşük olasılıklı görünebilir. Bu yüzden yalnız sınıf
+    adayları arasında ayrım yapan token'lara bakılır ve olasılık, o noktada
+    hâlâ mümkün adaylara giden alternatiflerin toplamına bölünür.
+    Çözülemezse 1.0 (kapı devre dışı, açık tarafta hata).
+    """
+    try:
+        start = raw.index(value)
+    except ValueError:
+        return 1.0
+    pos = 0
+    conf = 1.0
+    prefix = ""
+    for t in tokens:
+        text = getattr(t, "token", "") or ""
+        t_start, t_end = pos, pos + len(text)
+        pos = t_end
+        if t_end <= start or not text:
+            continue
+        if t_start >= start + len(value):
+            break
+        adaylar = [v for v in ADJUDICATE_TYPES if v.startswith(prefix)]
+        if len(adaylar) <= 1:
+            break
+        secilen_p = math.exp(getattr(t, "logprob", 0.0))
+        gecerli_p = 0.0
+        for alt in getattr(t, "top_logprobs", None) or []:
+            alt_text = (getattr(alt, "token", "") or "")
+            parca = alt_text[max(0, start - t_start):]
+            uzanti = prefix + parca
+            if any(v.startswith(uzanti) or uzanti.startswith(v)
+                   for v in adaylar):
+                gecerli_p += math.exp(getattr(alt, "logprob", -50.0))
+        conf *= secilen_p / max(gecerli_p, secilen_p)
+        parca = text[max(0, start - t_start):]
+        kalan = start + len(value) - max(t_start, start)
+        prefix += parca[:kalan]
+    return max(0.0, min(conf, 1.0))
 
 
 def report_schema(frame_ids: list[str] | None = None) -> dict[str, Any]:
