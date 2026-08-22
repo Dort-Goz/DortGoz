@@ -233,6 +233,10 @@ async def review_if_closed(
                     current_type=canonical_event_type_from_ws_label(
                         inc.anomaly_type
                     ).value,
+                    strict_class_rules=inc.anomaly_type in {
+                        s.strip() for s in
+                        settings.adjudicate_confusable.split(",") if s.strip()
+                    },
                 )
         finally:
             if metrics is not None:

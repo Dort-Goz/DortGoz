@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     # başına iplik sınırı aşırı aboneliği önler; 2026-08-22 gecelik ölçümünde
     # D-FINE+SigLIP toplam sürenin %42'sini CPU çekişmesiyle yiyordu.
     onnx_intra_threads: int = 0
+    # Olay kapanış incelemesinde sıkı sınıf-kuralları hangi WS sınıflarında
+    # devreye girer. Boş = kapalı. 2026-08-22 eşli retest: istem yumuşatmasıyla
+    # birlikte NET NEGATİF çıktı (yakalama 79→70); tek başına etkisi ölçülmedi,
+    # o yüzden varsayılan kapalı tutulur.
+    adjudicate_confusable: str = ""
     detector_enabled: bool = True
     dfine_onnx: str = "~/.cache/dortgoz/dfine/model.onnx"
     detector_conf: float = 0.40

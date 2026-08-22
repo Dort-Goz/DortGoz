@@ -211,6 +211,7 @@ async def review_incident(
     timing: dict[str, float | int] | None = None,
     captured_frames: dict[str, tuple[FrameReference, bytes]] | None = None,
     current_type: str = "",
+    strict_class_rules: bool = False,
 ) -> dict[str, Any]:
     start, end = span
     frame_refs = build_frame_references(keyframes)
@@ -235,6 +236,19 @@ async def review_incident(
             "gördükten sonra en doğru sınıfı sen seç: ön analiz doğruysa koru, "
             "kareler farklı bir sınıfı gösteriyorsa düzelt. Kararını kanıt "
             "kareleriyle destekle."
+        )
+    if strict_class_rules:
+        # 2026-08-22 hakem ölçümü: possible_theft/physical_fight sınıfları
+        # çekim merkezi gibi davranıyor; sınıf kararı karelere dayanmalı.
+        task += (
+            "\n\nSINIF SEÇİM KURALLARI (öncelik sırasıyla): görünür bir silah "
+            "(tabanca, tüfek) varsa her durumda possible_armed_incident; "
+            "patlama ânı (şok dalgası, ani parlama) explosion, sonrasındaki "
+            "yangın fire_smoke; araçların çarpışması vehicle_collision; "
+            "possible_theft YALNIZ mal alma eylemi görünüyorsa; kişiler arası "
+            "fiziksel şiddet physical_fight/assault; mala kasıtlı zarar "
+            "vandalism. Sınıf kararını ön gözlem notlarına değil KARELERE "
+            "dayandır."
         )
     if notes:
         joined = " · ".join(notes[:12])
