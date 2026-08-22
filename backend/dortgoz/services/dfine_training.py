@@ -344,7 +344,8 @@ class DfineTrainingService:
                 "BASE_CHECKPOINT_CHANGED",
                 "başlangıç checkpoint SHA-256 değeri değişti",
             )
-        python = _validated_file(python_executable)
+        # venv python Linux'ta her zaman symlink'tir; hedef ikili doğrulanır.
+        python = _validated_file(python_executable.resolve())
         self.cuda_probe(python, job.gpu_index)
         export_dir = self._resolve_reference(job.export_ref)
         output_dir = self._resolve_reference(job.output_ref)
