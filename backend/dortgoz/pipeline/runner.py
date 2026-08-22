@@ -196,11 +196,7 @@ async def _adjudicate_if_confusable(
     metrics: CanonicalRunMetrics | None,
     video_duration: float,
 ) -> None:
-    """Kapanan olayın sınıfını anlatıdan bağımsız hakemle düzeltir.
-
-    Yalnız `adjudicate_confusable` kümesindeki sınıflarda çalışır; yakalamaya
-    dokunamaz, sınıf dışında hiçbir alanı değiştirmez.
-    """
+    """Kapanan olayın sınıfını anlatıdan bağımsız hakemle düzeltir."""
     confusable = {s.strip() for s in
                   settings.adjudicate_confusable.split(",") if s.strip()}
     inc = ledger.incidents.get(incident_id)
@@ -210,9 +206,6 @@ async def _adjudicate_if_confusable(
         else inc.last_seen + 5.0
     start = max(0.0, min(inc.first_seen - 5.0, end - 1.0))
     try:
-        # Kareler hareket sıralamasıyla seçilir. Kanıt zaman damgalarına
-        # çapalama DENENDİ ve GERİ ALINDI (2026-08-22 v10): anlatının kanıt
-        # seçimi kendi yanlış okumasını taşıyor, hakem doğruluğu düştü.
         keyframes = windowing.select_keyframes(profile, start, end, 6)
         call: dict = {}
         qwen_timing: dict[str, float | int] = {}

@@ -226,7 +226,6 @@ async def test_second_pass_and_qwen_are_counted_without_duplicate_inference(
     _configure_runner(monkeypatch, tmp_path, incident_review=True)
     monkeypatch.setattr(settings, "candidate_screening", False)
     monkeypatch.setattr(settings, "detector_enabled", False)
-    # Bu test yalnız 2. geçiş sayacını yalıtır; sınıf hakemi ayrı ölçülür.
     monkeypatch.setattr(settings, "adjudicate_confusable", "")
 
     async def fake_probe_duration(_path):

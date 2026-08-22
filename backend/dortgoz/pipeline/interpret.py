@@ -289,9 +289,6 @@ async def review_incident(
     return review.model_dump(mode="json")
 
 
-# Yalnız somut anomali sınıfları: hakem karar KAÇAMAZ (normal/uncertain yok;
-# "emin değilsen bilinmeyen" kaçışı çevrimdışı ölçümde doğruluğu %48→%39
-# düşürmüştü). Hakem yakalamaya dokunamaz, yalnız sınıfı düzeltir.
 ADJUDICATE_TYPES = [
     "physical_fight", "assault", "possible_theft", "possible_armed_incident",
     "fire_smoke", "explosion", "vehicle_collision", "vandalism",
@@ -318,13 +315,7 @@ async def adjudicate_category(
     stats: dict[str, Any] | None = None,
     timing: dict[str, float | int] | None = None,
 ) -> tuple[str, float] | None:
-    """Anlatıdan bağımsız zorunlu-seçimli sınıf hakemi (kapanış sonrası).
-
-    Yalnız kareleri görür; ön gözlem, mevcut sınıf ve notlar verilmez
-    (çapa etkisi 2026-08-22 hakem ölçümünde doğruluğu düşürüyordu).
-    (sınıf, güven) döndürür; güven, dilbilgisi-kısıtlı çıktının toplam token
-    olasılığıdır — iskelet token'ları ~1 olduğundan pratikte P(sınıf) verir.
-    """
+    """Anlatıdan bağımsız zorunlu-seçimli sınıf hakemi; (sınıf, güven) döndürür."""
     start, end = span
     frame_refs = build_frame_references(keyframes)
     if not frame_refs:
@@ -372,14 +363,7 @@ async def adjudicate_category(
 
 
 def _enum_confidence(tokens: list, raw: str, value: str) -> float:
-    """Sınıf güveni: enum ayrım token'larında normalize seçim olasılığı.
-
-    llama.cpp dilbilgisi-kısıtlı çıktıda HAM model logprob'ları döndürür;
-    iskelet token'ları düşük olasılıklı görünebilir. Bu yüzden yalnız sınıf
-    adayları arasında ayrım yapan token'lara bakılır ve olasılık, o noktada
-    hâlâ mümkün adaylara giden alternatiflerin toplamına bölünür.
-    Çözülemezse 1.0 (kapı devre dışı, açık tarafta hata).
-    """
+    """Sınıf güveni: enum ayrım token'larında normalize seçim olasılığı."""
     try:
         start = raw.index(value)
     except ValueError:
