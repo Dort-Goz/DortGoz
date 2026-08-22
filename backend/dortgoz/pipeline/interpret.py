@@ -289,6 +289,115 @@ async def review_incident(
     return review.model_dump(mode="json")
 
 
+ADJUDICATE_TYPES = [
+    "physical_fight", "assault", "possible_theft", "possible_armed_incident",
+    "fire_smoke", "explosion", "vehicle_collision", "vandalism",
+]
+
+ADJUDICATE_SYSTEM_TR = (
+    "Sen güvenlik kamerası olay sınıflandırma uzmanısın. Sana kapanmış bir "
+    "olayın kareleri veriliyor. Tek görevin olayın SINIFINI seçmek. "
+    "Öncelik sırasıyla: görünür bir silah (tabanca, tüfek) varsa her durumda "
+    "possible_armed_incident; patlama ânı (şok dalgası, ani parlama) "
+    "explosion, sonrasındaki yangın fire_smoke; araçların çarpışması "
+    "vehicle_collision; possible_theft YALNIZ mal alma eylemi görünüyorsa; "
+    "kişiler arası fiziksel şiddet physical_fight veya assault; mala kasıtlı "
+    "zarar vandalism. Kararsız kalsan da karelere göre EN YAKIN sınıfı seç."
+)
+
+
+async def adjudicate_category(
+    video: Path,
+    span: tuple[float, float],
+    keyframes: list[float],
+    *,
+    model: str = "",
+    stats: dict[str, Any] | None = None,
+    timing: dict[str, float | int] | None = None,
+) -> tuple[str, float] | None:
+    """Anlatıdan bağımsız zorunlu-seçimli sınıf hakemi; (sınıf, güven) döndürür."""
+    start, end = span
+    frame_refs = build_frame_references(keyframes)
+    if not frame_refs:
+        return None
+    content = await _frame_parts(
+        video, frame_refs, include_timestamps=True,
+        frame_width=settings.adjudicate_frame_width)
+    content.append({"type": "text", "text":
+                    f"Kareler {start:.0f}-{end:.0f} sn arasındaki tek bir "
+                    "olaya aittir. Olayın sınıfı nedir?"})
+    client = main_client()
+    started = time.monotonic()
+    try:
+        resp = await create_chat(client,
+            model=model or settings.main_model,
+            messages=[{"role": "system", "content": ADJUDICATE_SYSTEM_TR},
+                      {"role": "user", "content": content}],
+            max_tokens=64,
+            temperature=0,
+            logprobs=True,
+            top_logprobs=8,
+            response_format={"type": "json_schema", "json_schema": {
+                "name": "sinif_hakemi", "strict": True,
+                "schema": {"type": "object", "additionalProperties": False,
+                           "properties": {"event_type": {
+                               "type": "string", "enum": ADJUDICATE_TYPES}},
+                           "required": ["event_type"]}}},
+            extra_body={"speculative.n_max": 0,
+                        "chat_template_kwargs": {"enable_thinking": False}},
+        )
+    finally:
+        _record_qwen_timing(timing, started)
+    if stats is not None:
+        stats.update(call_stats(resp))
+    raw = resp.choices[0].message.content or "{}"
+    try:
+        value = json.loads(raw).get("event_type")
+    except json.JSONDecodeError:
+        return None
+    if value not in ADJUDICATE_TYPES:
+        return None
+    lp = getattr(resp.choices[0], "logprobs", None)
+    conf = _enum_confidence(getattr(lp, "content", None) or [], raw, value)
+    return value, conf
+
+
+def _enum_confidence(tokens: list, raw: str, value: str) -> float:
+    """Sınıf güveni: enum ayrım token'larında normalize seçim olasılığı."""
+    try:
+        start = raw.index(value)
+    except ValueError:
+        return 1.0
+    pos = 0
+    conf = 1.0
+    prefix = ""
+    for t in tokens:
+        text = getattr(t, "token", "") or ""
+        t_start, t_end = pos, pos + len(text)
+        pos = t_end
+        if t_end <= start or not text:
+            continue
+        if t_start >= start + len(value):
+            break
+        adaylar = [v for v in ADJUDICATE_TYPES if v.startswith(prefix)]
+        if len(adaylar) <= 1:
+            break
+        secilen_p = math.exp(getattr(t, "logprob", 0.0))
+        gecerli_p = 0.0
+        for alt in getattr(t, "top_logprobs", None) or []:
+            alt_text = (getattr(alt, "token", "") or "")
+            parca = alt_text[max(0, start - t_start):]
+            uzanti = prefix + parca
+            if any(v.startswith(uzanti) or uzanti.startswith(v)
+                   for v in adaylar):
+                gecerli_p += math.exp(getattr(alt, "logprob", -50.0))
+        conf *= secilen_p / max(gecerli_p, secilen_p)
+        parca = text[max(0, start - t_start):]
+        kalan = start + len(value) - max(t_start, start)
+        prefix += parca[:kalan]
+    return max(0.0, min(conf, 1.0))
+
+
 def report_schema(frame_ids: list[str] | None = None) -> dict[str, Any]:
     schema = inline_defs(WindowReport.model_json_schema())
     props = schema.get("properties", {})

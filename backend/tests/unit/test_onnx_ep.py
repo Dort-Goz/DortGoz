@@ -71,3 +71,21 @@ def test_cpu_is_always_the_last_resort(monkeypatch):
     _available(monkeypatch, [CUDA, CPU])
 
     assert onnx_ep.providers()[-1] == CPU
+
+
+def test_session_options_apply_configured_thread_limit(monkeypatch):
+    monkeypatch.setattr(onnx_ep.settings, "onnx_intra_threads", 4)
+
+    options = onnx_ep.session_options()
+
+    assert options.intra_op_num_threads == 4
+    assert options.inter_op_num_threads == 1
+
+
+def test_session_options_keep_runtime_defaults_when_limit_is_zero(monkeypatch):
+    monkeypatch.setattr(onnx_ep.settings, "onnx_intra_threads", 0)
+
+    options = onnx_ep.session_options()
+
+    assert options.intra_op_num_threads == 0
+    assert options.inter_op_num_threads == 0

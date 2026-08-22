@@ -70,3 +70,15 @@ def providers() -> list[str]:
     if CPU not in usable:
         usable.append(CPU)
     return usable
+
+
+def session_options():
+    """İplik sınırlı oturum ayarları; 0 = onnxruntime varsayılanı."""
+    import onnxruntime as ort
+
+    opts = ort.SessionOptions()
+    n = settings.onnx_intra_threads
+    if n > 0:
+        opts.intra_op_num_threads = n
+        opts.inter_op_num_threads = 1
+    return opts

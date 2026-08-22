@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     # kaybına değmez. GPU isteyen DORTGOZ_ONNX_DEVICE=gpu versin.
     onnx_device: str = "cpu"
     onnx_providers: str = ""
+    onnx_intra_threads: int = 4
+    adjudicate_confusable: str = "hirsizlik,kavga,saldiri,bilinmeyen,arac_kazasi"
+    adjudicate_min_conf: float = 0.0
+    adjudicate_frame_width: int = 512
     detector_enabled: bool = True
     dfine_onnx: str = "~/.cache/dortgoz/dfine/model.onnx"
     dfine_active_manifest: Path = (

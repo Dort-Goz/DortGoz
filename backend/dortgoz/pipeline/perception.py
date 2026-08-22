@@ -55,10 +55,13 @@ class _Detector:
         if session_factory is None:
             import onnxruntime as ort
 
-            from .onnx_ep import providers
+            from .onnx_ep import providers, session_options
 
-            session_factory = ort.InferenceSession
-            self.session = session_factory(str(model), providers=providers())
+            self.session = ort.InferenceSession(
+                str(model),
+                sess_options=session_options(),
+                providers=providers(),
+            )
         else:
             self.session = session_factory(str(model), providers=["CPUExecutionProvider"])
         input_names = [item.name for item in self.session.get_inputs()]

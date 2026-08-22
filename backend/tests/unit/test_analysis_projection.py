@@ -5,6 +5,7 @@ from pathlib import Path
 
 from dortgoz.domain.event import EventStatus
 from dortgoz.domain.memory import AnalysisStatus
+from dortgoz.domain.taxonomy import VerifiedEventType
 from dortgoz.domain.video import VideoMetadata, VideoProbe
 from dortgoz.events import Event, IncidentUpdate, RunStatus
 from dortgoz.repositories.memory import InMemoryEventRepository
@@ -146,6 +147,50 @@ def test_unregistered_media_and_failed_run_do_not_create_training_events(
     assert analysis.status == AnalysisStatus.FAILED
     assert analysis.error == "model yanıt vermedi"
     assert repository.list_events("failed") == []
+
+
+def test_adjudicator_revision_updates_existing_canonical_event(tmp_path: Path) -> None:
+    repository = InMemoryEventRepository()
+    video = repository.create_video(_video())
+    projection = RuntimeAnalysisProjection(repository, tmp_path)
+    run_id = "adjudicator-run"
+
+    _emit(
+        projection,
+        RunStatus(run_id=run_id, state="processing", video=video.stored_filename),
+    )
+    _emit(
+        projection,
+        IncidentUpdate(
+            incident_id="incident-1",
+            t=5,
+            phase="basladi",
+            title="Olası hırsızlık",
+            anomaly_type="hirsizlik",
+            risk="orta",
+        ),
+    )
+    initial = repository.get_event(f"{run_id}:incident-1")
+    assert initial is not None
+
+    _emit(
+        projection,
+        IncidentUpdate(
+            incident_id="incident-1",
+            t=8,
+            phase="sonuclandi",
+            title="Araç kazası",
+            anomaly_type="arac_kazasi",
+            risk="orta",
+        ),
+    )
+
+    events = repository.list_events(run_id)
+    assert len(events) == 1
+    assert events[0].event_id == initial.event_id
+    assert events[0].event_type == VerifiedEventType.VEHICLE_COLLISION
+    assert events[0].legacy_event_type == "arac_kazasi"
+    assert events[0].revision == initial.revision + 1
 
 
 def test_mock_virtual_source_keeps_operator_feedback_canonical(tmp_path: Path) -> None:

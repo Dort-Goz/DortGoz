@@ -18,6 +18,7 @@ from dortgoz.domain.model_lifecycle import (
     TrainingJob,
     TrainingJobStatus,
 )
+from dortgoz.pipeline import onnx_ep
 from dortgoz.pipeline.perception import (
     SIZE,
     _Detector,
@@ -313,6 +314,38 @@ def test_production_detector_reads_official_deployed_contract(tmp_path: Path) ->
     assert (detection.cx, detection.cy, detection.w, detection.h) == pytest.approx(
         (0.3, 0.4, 0.4, 0.4)
     )
+
+
+def test_production_detector_applies_onnx_session_options(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model = tmp_path / "model.onnx"
+    model.write_bytes(b"fixture")
+    (tmp_path / "config.json").write_text(
+        json.dumps({"id2label": {"0": "person"}}),
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_session(path, *, sess_options, providers):
+        captured.update(
+            path=path,
+            sess_options=sess_options,
+            providers=providers,
+        )
+        return _DeployedSession()
+
+    monkeypatch.setattr(settings, "onnx_intra_threads", 4)
+    monkeypatch.setattr(onnx_ep, "providers", lambda: ["CPUExecutionProvider"])
+    monkeypatch.setattr("onnxruntime.InferenceSession", fake_session)
+
+    _Detector(model)
+
+    options = captured["sess_options"]
+    assert captured["path"] == str(model)
+    assert captured["providers"] == ["CPUExecutionProvider"]
+    assert options.intra_op_num_threads == 4
+    assert options.inter_op_num_threads == 1
 
 
 def test_active_manifest_selects_only_hash_verified_onnx(
