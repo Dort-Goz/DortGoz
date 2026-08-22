@@ -57,10 +57,10 @@ class Settings(BaseSettings):
     # kaybına değmez. GPU isteyen DORTGOZ_ONNX_DEVICE=gpu versin.
     onnx_device: str = "cpu"
     onnx_providers: str = ""
-    # 0 = onnxruntime varsayılanı (tüm çekirdekler). Çok akışlı koşuda oturum
-    # başına iplik sınırı aşırı aboneliği önler; 2026-08-22 gecelik ölçümünde
-    # D-FINE+SigLIP toplam sürenin %42'sini CPU çekişmesiyle yiyordu.
-    onnx_intra_threads: int = 0
+    # Oturum başına iplik sınırı çok akışlı koşuda aşırı aboneliği önler
+    # (0 = onnxruntime varsayılanı, tüm çekirdekler). 2026-08-22: 4 BENİMSENDİ —
+    # D-FINE aşama süresi −%18, SigLIP −%30, kalite değişmedi.
+    onnx_intra_threads: int = 4
     # Kapanan olayın sınıfını anlatıdan bağımsız hakem çağrısı hangi WS
     # sınıflarında yeniden karara bağlar. Hakem yakalamaya dokunamaz, yalnız
     # sınıfı düzeltir (kapanış başına en çok 1 kısa çağrı). Çekirdek ikili
