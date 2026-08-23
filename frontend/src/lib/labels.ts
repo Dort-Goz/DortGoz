@@ -50,8 +50,9 @@ export const NODE_TR: Record<string, string> = {
 export function stripPerf(detail: string): string {
   return detail
     .replace(/ · P\(dikkat\)=[\d.]+/g, "")
-    .replace(/ · \d+\+\d+\/\d+ tok.*$/g, "")
-    .replace(/ · \d+\+\d+ tok.*$/g, "");
+    .replace(/ · \d+\+\d+\/(?:\d+|\?) tok.*$/g, "")
+    .replace(/ · \d+\+\d+ tok.*$/g, "")
+    .replace(/ · PP \d+ ?\/ ?gen \d+ t\/s.*$/g, "");
 }
 
 const ENUM_TR: [RegExp, string][] = [

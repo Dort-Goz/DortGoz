@@ -227,7 +227,10 @@ async def review_incident(
     task = (
         f"Yukarıdaki kareler {start:.0f}-{end:.0f} sn arasındaki TEK bir olayın "
         f"tamamını kapsıyor ({end - start:.0f} sn). Olayı bütün olarak değerlendir: "
-        "nasıl başladı, zirve anı hangisi, nasıl sonuçlandı."
+        "nasıl başladı, zirve anı hangisi, nasıl sonuçlandı. "
+        "baslangic/zirve/sonuc alanlarına sahnede GÖRÜNENİ anlatan kısa Türkçe "
+        "cümleler yaz; kare adı (f_001 gibi) veya saniye değeri yazma — zaman "
+        "bilgisi zaten *_t alanlarında."
     )
     if current_type:
         task += (

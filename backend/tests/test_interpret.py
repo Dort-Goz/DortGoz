@@ -223,3 +223,40 @@ def test_activity_windows_empty_profile_is_safe():
     from dortgoz.pipeline.windowing import activity_windows
     assert activity_windows([], duration=10, gate=0.1) == []
     assert activity_windows(_prof([0.0] * 20), duration=20, gate=0.1) == []
+
+
+def test_review_never_degrades_title_to_frame_reference():
+    from dortgoz.agent.memory import Ledger
+    from dortgoz.events import WindowEvent, WindowReport
+    led = Ledger()
+    ups = led.ingest(WindowReport(window_start=0, window_end=30, anomaly_type="kavga",
+                                  summary="kavga",
+                                  events=[WindowEvent(t=5.0, desc="İki kişi itişiyor.",
+                                                      severity_hint="orta")]))
+    iid = ups[0].incident_id
+    original_title = led.incidents[iid].title
+    rev = led.apply_review(iid, {"baslangic": "f_001 (6.000s)", "zirve": "f_003 (12.000s)",
+                                 "sonuc": "f_007 (26.000s)", "zirve_t": 12.0,
+                                 "anomaly_type": "kavga", "belirsizlikler": [""]})
+    assert led.incidents[iid].title == original_title
+    assert "f_003" not in rev.detail
+    assert "Zirve: 00:12" in rev.detail
+
+
+def test_review_title_derefs_frame_reference_inside_sentence():
+    from dortgoz.agent.memory import Ledger
+    from dortgoz.events import WindowEvent, WindowReport
+    led = Ledger()
+    ups = led.ingest(WindowReport(window_start=0, window_end=30, anomaly_type="kavga",
+                                  summary="kavga",
+                                  events=[WindowEvent(t=5.0, desc="İtişme.",
+                                                      severity_hint="orta")]))
+    iid = ups[0].incident_id
+    led.apply_review(iid, {"baslangic": "Grup toplandı.",
+                           "zirve": "f_003 (12.000s)'de iki kişi yere düşüyor. Sonra dağılıyorlar.",
+                           "sonuc": "Grup dağıldı.", "zirve_t": 12.0,
+                           "anomaly_type": "kavga", "belirsizlikler": []})
+    title = led.incidents[iid].title
+    assert "f_00" not in title
+    assert "yere düşüyor" in title
+    assert "Sonra dağılıyorlar" not in title

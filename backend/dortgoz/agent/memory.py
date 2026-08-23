@@ -115,25 +115,31 @@ class Ledger:
         was_review_required = inc.needs_review
         previous_review_reason = inc.review_reason
         inc.anomaly_type = review.get("anomaly_type", inc.anomaly_type)
-        inc.title = _title_text(review.get("zirve", inc.title))
+        title_candidate = _title_text(str(review.get("zirve", "")))
+        if len(title_candidate) >= 12:
+            inc.title = title_candidate
         if not inc.evidence_ts and \
                 isinstance(review.get("baslangic_t"), int | float) and \
                 isinstance(review.get("bitis_t"), int | float):
             inc.olay_baslangic = float(review["baslangic_t"])
             inc.olay_bitis = float(review["bitis_t"])
-        unc = review.get("belirsizlikler", [])
+        unc = [str(u).strip() for u in review.get("belirsizlikler", []) if str(u).strip()]
         inc.needs_review = was_review_required or bool(unc) or inc.anomaly_type == "bilinmeyen"
         if previous_review_reason:
             inc.review_reason = previous_review_reason
         elif unc:
-            inc.review_reason = f"2. geçiş: {_short(unc[0])}"
+            inc.review_reason = f"2. geçiş: {_short(_deref_frames(unc[0]))}"
         elif inc.anomaly_type == "bilinmeyen":
             inc.review_reason = "olay kapalı sınıf listesine oturmadı"
+        moments = [
+            (label, _deref_frames(str(review.get(key, "")).strip()))
+            for label, key in (("Başlangıç", "baslangic"),
+                               ("Zirve", "zirve"),
+                               ("Sonuç", "sonuc"))
+        ]
         detail = "\n".join(filter(None, [
-            f"Başlangıç: {review.get('baslangic', '')}".strip(),
-            f"Zirve: {review.get('zirve', '')}".strip(),
-            f"Sonuç: {review.get('sonuc', '')}".strip(),
-            *(f"? {u}" for u in review.get("belirsizlikler", [])[:2]),
+            *(f"{label}: {value}" for label, value in moments if value),
+            *(f"? {_deref_frames(u)}" for u in unc[:2]),
         ]))
         return _update(inc, review.get("zirve_t", inc.first_seen), _trim(detail))
 
@@ -255,9 +261,31 @@ _TIME_LEAD = re.compile(
     r"(?:t\s*=\s*\d+(?:[.,]\d+)?\s*s?\s*)?(?:arasında|civarında|itibarıyla|de|da|'de|'da)?[\s,:-]*",
     re.IGNORECASE)
 
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+
+_FRAME_REF = re.compile(
+    r"\bf_?\d+\s*\(\s*(\d+(?:[.,]\d+)?)\s*s?\s*\)", re.IGNORECASE)
+
+_CLOCK_LEAD = re.compile(
+    r"^(?:\d{1,2}:\d{2}(?:\s*[-–]\s*\d{1,2}:\d{2})?(?:'?[dt][ea])?"
+    r"\s*(?:arasında|civarında|itibarıyla)?[\s,:-]*)")
+
+
+def _clock_text(seconds: float) -> str:
+    total = int(seconds)
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def _deref_frames(text: str) -> str:
+    return _FRAME_REF.sub(
+        lambda m: _clock_text(float(m.group(1).replace(",", "."))), text)
+
 
 def _title_text(text: str) -> str:
-    head = _TIME_LEAD.sub("", text.split(".")[0].strip()).strip()
+    clean = _deref_frames(text.strip())
+    head = _SENTENCE_SPLIT.split(clean)[0].strip().rstrip(".")
+    head = _TIME_LEAD.sub("", head).strip()
+    head = _CLOCK_LEAD.sub("", head).strip()
     if head:
         head = head[0].upper() + head[1:]
     return head if len(head) <= 70 else head[:67] + "…"

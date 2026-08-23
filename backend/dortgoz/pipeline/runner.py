@@ -340,7 +340,9 @@ async def review_if_closed(
             metrics.record_validation(validation)
         policy = decide_runtime_policy(review_report, validation)
         ledger.require_review(
-            f"2. geçiş: {policy.review_reason}",
+            f"2. geçiş: {policy.review_reason}"
+            if (policy.review_reason or "").strip()
+            else "2. geçiş doğrulaması yapıldı",
             incident_id=update.incident_id,
         )
         if policy.ledger_report is None:
