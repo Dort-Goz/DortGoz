@@ -90,6 +90,12 @@ class SemanticCandidateModel:
     def score(self, profile: list[MotionSample]) -> list[ScreeningSample]:
         raise RuntimeError("anlamsal scorer kare erişimi ister; score_video kullanılmalı")
 
+    def verify_artifacts(self) -> None:
+        if file_sha256(self._onnx_file) != self.artifact.onnx_sha256:
+            raise ValueError("semantic onnx SHA-256 artifact ile eşleşmiyor")
+        if file_sha256(self._anchors_file) != self.artifact.anchors_sha256:
+            raise ValueError("semantic çapa SHA-256 artifact ile eşleşmiyor")
+
     def _runtime(self) -> tuple[object, object, int]:
         key = str(self._onnx_file)
         cached = _RUNTIME_CACHE.get(key)
@@ -98,10 +104,7 @@ class SemanticCandidateModel:
         import numpy as np
         import onnxruntime as ort
 
-        if file_sha256(self._onnx_file) != self.artifact.onnx_sha256:
-            raise ValueError("semantic onnx SHA-256 artifact ile eşleşmiyor")
-        if file_sha256(self._anchors_file) != self.artifact.anchors_sha256:
-            raise ValueError("semantic çapa SHA-256 artifact ile eşleşmiyor")
+        self.verify_artifacts()
         data = np.load(self._anchors_file)
         anchors = data["anchors"].astype(np.float32)
         n_event = int(data["n_event"])

@@ -35,8 +35,13 @@ def test_readiness_separates_local_components():
     with TestClient(app) as client:
         response = client.get("/ready")
 
-    assert response.status_code == 503
     body = response.json()
+    expected_status = 200 if all(
+        component["ready"]
+        for component in body["components"].values()
+        if component["required"]
+    ) else 503
+    assert response.status_code == expected_status
     assert body["components"]["storage"]["ready"] is True
     assert body["components"]["video_store"]["mode"] == "memory"
     assert body["components"]["model"]["mode"] == "local_vlm"

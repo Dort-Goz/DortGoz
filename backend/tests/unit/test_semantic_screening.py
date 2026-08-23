@@ -159,3 +159,7 @@ def test_manifest_loads_semantic_scorer(tmp_path: Path) -> None:
     assert isinstance(scorer, SemanticCandidateModel)
     assert scorer.model_id == "siglip2-semantic-v1"
     assert hasattr(scorer, "score_video")
+    scorer.verify_artifacts()
+    anchors.write_bytes(b"tampered")
+    with pytest.raises(ValueError, match="çapa"):
+        scorer.verify_artifacts()

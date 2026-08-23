@@ -1,0 +1,24 @@
+# Dörtgöz Demo Operatör Prosedürü
+
+- Belge kimliği: `dortgoz-demo-operator-v1`
+- Sürüm: `1.0.0`
+- Sahip: Dörtgöz takımı
+- Lisans: Apache-2.0
+- İç onay referansı: `DORTGOZ-DEMO-2026-08-23`
+- Onay tarihi: 2026-08-23
+- Sınıflandırma: Açık demo metni
+- Geçerlilik: 2026-08-23 ile 2026-08-26 arası
+
+Bu metin yalnız Dörtgöz demo akışı içindir. Bu metin resmî kurum talimatı veya mevzuat değildir. Sistem dış kuruma bildirim yapmaz. Sistem fiziksel müdahale başlatmaz.
+
+## 1. Kanıt kontrolü
+
+Olay zamanını, kamera kimliğini ve kanıt karesini operatör incelemesine sun.
+
+## 2. İnsan onayı
+
+Operatör doğrulaması olmadan dış bildirim veya fiziksel müdahale başlatma.
+
+## 3. Yerel taslak
+
+Yüksek veya kritik riskte yalnız yerel bildirim taslağı hazırla ve operatör onayı iste.

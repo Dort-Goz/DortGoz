@@ -39,6 +39,12 @@ def test_local_hash_cited_procedure_is_returned_only_for_actionable_risk(tmp_pat
     assert not blocked.actions and blocked.reason
 
 
+def test_repo_demo_procedure_manifest_is_hash_valid() -> None:
+    root = Path(__file__).resolve().parents[3] / "data" / "procedures"
+    index = LocalProcedureIndex.load(root, root / "manifest.json")
+    assert any(document.approved_for_demo for document in index.manifest.documents)
+
+
 def test_hash_mismatch_rejects_local_document(tmp_path: Path) -> None:
     index = _index(tmp_path)
     (tmp_path / "demo.md").write_text("tampered", encoding="utf-8")

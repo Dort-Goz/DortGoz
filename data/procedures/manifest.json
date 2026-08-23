@@ -1,4 +1,45 @@
 {
   "version": "procedure-manifest-v1",
-  "documents": []
+  "documents": [
+    {
+      "document_id": "dortgoz-demo-operator-v1",
+      "path": "dortgoz-demo-operator-v1.txt",
+      "version": "1.0.0",
+      "content_hash": "acf71e4f5249730cc297abc01c815cbcbd7c56991771c04622ac96f0db892904",
+      "valid_from": "2026-08-23",
+      "valid_until": "2026-08-26",
+      "approved_for_demo": true,
+      "event_types": [
+        "unknown_anomaly",
+        "physical_fight",
+        "assault",
+        "possible_theft",
+        "possible_armed_incident",
+        "fire_smoke",
+        "explosion",
+        "vehicle_collision",
+        "vandalism",
+        "fall",
+        "person_on_ground",
+        "camera_blackout",
+        "camera_freeze",
+        "camera_occlusion"
+      ],
+      "risk_levels": ["medium", "high", "critical"],
+      "sections": [
+        {
+          "section": "1. Kanıt kontrolü",
+          "action": "Olay zamanını, kamera kimliğini ve kanıt karesini operatör incelemesine sun."
+        },
+        {
+          "section": "2. İnsan onayı",
+          "action": "Operatör doğrulaması olmadan dış bildirim veya fiziksel müdahale başlatma."
+        },
+        {
+          "section": "3. Yerel taslak",
+          "action": "Yüksek veya kritik riskte yalnız yerel bildirim taslağı hazırla ve operatör onayı iste."
+        }
+      ]
+    }
+  ]
 }
