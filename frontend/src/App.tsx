@@ -91,6 +91,7 @@ export default function App() {
   const [trainingEventId, setTrainingEventId] = useState("");
   const [showLearningOrchestrator, setShowLearningOrchestrator] = useState(false);
   const [fixtureMode, setFixtureMode] = useState(false);
+  const [triagePending, setTriagePending] = useState(0);
   // Sunucu bağlantısı — üst çubuktaki kalıcı rozet
   const [connection, setConnection] = useState<ConnectionState>("connecting");
 
@@ -145,6 +146,22 @@ export default function App() {
       })
       .catch(() => setFixtureMode(false));
   }, []);
+
+  useEffect(() => {
+    if (fixtureMode) return;
+    let alive = true;
+    const poll = async () => {
+      try {
+        const r = await fetch("/api/triage");
+        if (!r.ok) return;
+        const body = await r.json();
+        if (alive) setTriagePending((body.pending ?? []).length);
+      } catch {}
+    };
+    poll();
+    const id = setInterval(poll, 10000);
+    return () => { alive = false; clearInterval(id); };
+  }, [fixtureMode]);
 
   useEffect(() => {
     fetch("/api/interpret_config")
@@ -304,6 +321,11 @@ export default function App() {
                 }`}
               >
                 {label}
+                {value === "review" && triagePending > 0 && (
+                  <span className="ml-1.5 inline-flex min-w-4 items-center justify-center rounded-sm bg-amber-800 px-1 font-mono text-[10px] leading-4 text-amber-100">
+                    {triagePending}
+                  </span>
+                )}
               </button>
             ))}
           </nav>
@@ -551,6 +573,7 @@ export default function App() {
           <VideoPanel
             highlight={feed.highlight}
             seekTo={feed.seekTo}
+            seekNonce={feed.seekNonce}
             video={feed.video}
             feed={Object.keys(state.feeds).filter((k) => k !== "").length >= 2
               ? state.active : null}
@@ -561,6 +584,7 @@ export default function App() {
             incidents={feed.incidents}
             reports={feed.reports}
             highlightId={feed.highlight?.incident_id}
+            reportsPulse={feed.reportsPulse}
             onSelect={(incident) => dispatch({ kind: "select_incident", incident })}
           />
         </div>
@@ -587,13 +611,17 @@ export default function App() {
           layout="workspace"
           onSelectFeed={(selectedFeed) =>
             dispatch({ kind: "select_feed", feed: selectedFeed })}
-          onSeek={(selectedFeed, timestamp, reviewVideo) =>
+          onSeek={(selectedFeed, timestamp, reviewVideo) => {
             dispatch({
               kind: "seek",
               feed: selectedFeed,
               timestamp,
               video: reviewVideo,
-            })}
+            });
+            setLiveView(false);
+            setReviewView(false);
+            history.replaceState(null, "", "#");
+          }}
           onOpenTraining={setTrainingEventId}
         />
         </div>

@@ -10,13 +10,19 @@ export interface TraceEntry {
   tool?: ToolCall;
 }
 
+export interface StoredIncident extends IncidentUpdate {
+  boxT?: number;
+}
+
 export interface FeedState {
-  incidents: IncidentUpdate[];
+  incidents: StoredIncident[];
   reports: WindowReport[];
   trace: TraceEntry[];
   runStatus: RunStatus | null;
-  highlight: IncidentUpdate | null;
+  highlight: StoredIncident | null;
   seekTo: number | null;
+  seekNonce: number;
+  reportsPulse: number;
   video: string | null;
 }
 
@@ -27,6 +33,8 @@ export const emptyFeed: FeedState = {
   runStatus: null,
   highlight: null,
   seekTo: null,
+  seekNonce: 0,
+  reportsPulse: 0,
   video: null,
 };
 
@@ -91,7 +99,9 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
   }
   if (action.kind === "select_incident") {
     return withFeed(state, state.active, (f) => ({
-      ...f, highlight: action.incident, seekTo: action.incident.t,
+      ...f, highlight: action.incident,
+      seekTo: action.incident.olay_baslangic ?? action.incident.t,
+      seekNonce: f.seekNonce + 1,
     }));
   }
   if (action.kind === "seek") {
@@ -99,6 +109,7 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
       ...withFeed(state, action.feed, (f) => ({
         ...f,
         seekTo: action.timestamp,
+        seekNonce: f.seekNonce + 1,
         video: f.video ?? action.video ?? null,
       })),
       active: action.feed,
@@ -120,10 +131,15 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
       }));
     case "incident_update":
       return withFeed(state, feed, (f) => {
+        const prev = f.incidents.find((i) => i.incident_id === p.incident_id);
+        const merged: StoredIncident = p.boxes.length > 0
+          ? { ...p, boxT: p.t }
+          : { ...p, boxes: prev?.boxes ?? [], boxT: prev?.boxT ?? prev?.t };
         const others = f.incidents.filter((i) => i.incident_id !== p.incident_id);
         return {
           ...f,
-          incidents: cap([...others, p].sort((a, b) => a.t - b.t), CAPS.incidents),
+          highlight: f.highlight?.incident_id === p.incident_id ? merged : f.highlight,
+          incidents: cap([...others, merged].sort((a, b) => a.t - b.t), CAPS.incidents),
         };
       });
     case "agent_step":
@@ -179,13 +195,18 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
     case "ui_command": {
       const target = feed || state.active;
       if (p.action === "seek_video") {
-        return withFeed(state, target, (f) => ({ ...f, seekTo: Number(p.args.t ?? 0) }));
+        return withFeed(state, target, (f) => ({
+          ...f, seekTo: Number(p.args.t ?? 0), seekNonce: f.seekNonce + 1,
+        }));
       }
       if (p.action === "highlight_incident") {
         return withFeed(state, target, (f) => ({
           ...f,
           highlight: f.incidents.find((i) => i.incident_id === p.args.incident_id) ?? null,
         }));
+      }
+      if (p.action === "show_report") {
+        return withFeed(state, target, (f) => ({ ...f, reportsPulse: f.reportsPulse + 1 }));
       }
       return state;
     }

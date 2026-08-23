@@ -35,11 +35,17 @@ export default function ActionLog({
   readOnly?: boolean;
 }) {
   const resolved = new Map(results.map((result) => [result.request_id, result]));
+  const pendingCount = requests.filter((request) => !resolved.has(request.request_id)).length;
 
   return (
     <div className="panel h-full">
       <div className="panel-title">
         <span>Aksiyon Günlüğü</span>
+        {pendingCount > 0 && !readOnly && (
+          <span className="chip border border-amber-900 bg-amber-950/40 font-mono normal-case tracking-normal text-amber-300">
+            {pendingCount} beklemede
+          </span>
+        )}
         <span className="flex-1" />
         <span className="text-[9px] font-normal normal-case tracking-normal text-zinc-500">
           dış aksiyonlar yerel taslak olarak hazırlanır

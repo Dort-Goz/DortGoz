@@ -1,5 +1,5 @@
-import { useState } from "react";
-import type { IncidentUpdate, WindowReport } from "../types/events";
+import { useEffect, useRef, useState } from "react";
+import type { IncidentUpdate, WindowReport, WindowSignals } from "../types/events";
 import { PHASE_TR, RISK_TR, TYPE_TR, clock } from "../lib/labels";
 
 const quiet = (r: WindowReport) => r.anomaly_type === "normal" && r.events.length === 0;
@@ -19,6 +19,25 @@ function groupRows(reports: WindowReport[]): Row[] {
     }
   }
   return rows;
+}
+
+const SIGNAL_TR: [keyof WindowSignals, string][] = [
+  ["durum_p", "P"],
+  ["anomaly_score", "anomali"],
+  ["interaction_score", "etkileşim"],
+  ["fall_score", "düşme"],
+  ["fire_smoke_score", "yangın"],
+  ["vehicle_conflict_score", "araç"],
+  ["tampering_score", "sabotaj"],
+  ["image_quality", "kalite"],
+];
+
+function signalLine(signals: WindowSignals | null | undefined): string {
+  if (!signals) return "";
+  return SIGNAL_TR
+    .filter(([key]) => typeof signals[key] === "number")
+    .map(([key, label]) => `${label}=${(signals[key] as number).toFixed(2)}`)
+    .join(" · ");
 }
 
 function ReportRow({ r }: { r: WindowReport }) {
@@ -77,13 +96,27 @@ function QuietGroup({ reports }: { reports: WindowReport[] }) {
 }
 
 export default function Timeline({
-  incidents, reports, highlightId, onSelect,
+  incidents, reports, highlightId, reportsPulse = 0, onSelect,
 }: {
   incidents: IncidentUpdate[];
   reports: WindowReport[];
   highlightId?: string;
+  reportsPulse?: number;
   onSelect: (inc: IncidentUpdate) => void;
 }) {
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const reportsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (reportsPulse === 0) return;
+    const body = bodyRef.current, section = reportsRef.current;
+    if (!body || !section) return;
+    body.scrollTo({
+      top: section.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop,
+      behavior: "smooth",
+    });
+  }, [reportsPulse]);
+
   return (
     <div className="panel h-full">
       <div className="panel-title">
@@ -95,17 +128,19 @@ export default function Timeline({
           </span>
         )}
       </div>
-      <div className="panel-body space-y-1.5 p-2">
+      <div ref={bodyRef} className="panel-body space-y-1.5 p-2">
         {incidents.length === 0 && reports.length === 0 && (
           <p className="p-2 text-xs text-zinc-600">Henüz olay yok — akış bekleniyor.</p>
         )}
 
-        {incidents.map((inc) => (
+        {incidents.map((inc) => {
+          const signals = signalLine(inc.signals);
+          return (
           <button
-            key={inc.incident_id}
+            key={`${inc.incident_id}:${inc.phase}:${inc.t}`}
             onClick={() => onSelect(inc)}
-            title="Videoyu bu ana sar"
-            className={`w-full rounded-sm border-l-2 bg-zinc-950 p-2 text-left transition-colors risk-${inc.risk}
+            title="Videoyu olayın başına sar"
+            className={`flash-once w-full rounded-sm border-l-2 bg-zinc-950 p-2 text-left transition-colors risk-${inc.risk}
                         hover:bg-zinc-800/60 ${
               inc.incident_id === highlightId ? "ring-1 ring-zinc-500" : ""
             }`}
@@ -131,9 +166,14 @@ export default function Timeline({
                   </span>
                 </div>
                 <div className="mt-0.5 text-sm font-medium text-zinc-200">{inc.title}</div>
-                <span className="text-[10px] text-zinc-500">
-                  {PHASE_TR[inc.phase] ?? inc.phase}
-                </span>
+                <div className="flex items-baseline gap-2 text-[10px] text-zinc-500">
+                  <span>{PHASE_TR[inc.phase] ?? inc.phase}</span>
+                  {inc.olay_baslangic != null && inc.olay_bitis != null && (
+                    <span className="font-mono">
+                      {clock(inc.olay_baslangic)}–{clock(inc.olay_bitis)}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
             {inc.needs_review && inc.review_reason && (
@@ -142,11 +182,17 @@ export default function Timeline({
             <p className={`mt-1 whitespace-pre-line text-xs text-zinc-400 ${
               inc.incident_id === highlightId ? "" : "line-clamp-3"
             }`}>{inc.detail}</p>
+            {inc.incident_id === highlightId && signals && (
+              <p className="mt-1 border-t border-zinc-800 pt-1 font-mono text-[10px] text-zinc-500">
+                {signals}
+              </p>
+            )}
           </button>
-        ))}
+          );
+        })}
 
         {reports.length > 0 && (
-          <div className="border-t border-zinc-800 pt-2">
+          <div ref={reportsRef} className="border-t border-zinc-800 pt-2">
             <div className="microlabel sticky top-0 mb-1 bg-zinc-900 px-1 py-0.5">
               Pencere raporları
             </div>

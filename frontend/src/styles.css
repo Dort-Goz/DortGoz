@@ -91,6 +91,14 @@ body {
   @apply text-[10px] font-semibold uppercase tracking-wider text-zinc-500;
 }
 
+@keyframes card-flash {
+  0% { background-color: rgba(245, 158, 11, 0.14); }
+  100% { background-color: transparent; }
+}
+.flash-once {
+  animation: card-flash 1.2s ease-out 1;
+}
+
 .risk-dusuk { color: var(--risk-dusuk); border-color: var(--risk-dusuk); }
 .risk-orta { color: var(--risk-orta); border-color: var(--risk-orta); }
 .risk-yuksek { color: var(--risk-yuksek); border-color: var(--risk-yuksek); }

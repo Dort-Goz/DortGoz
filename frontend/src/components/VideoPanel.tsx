@@ -1,21 +1,50 @@
 import { useEffect, useRef } from "react";
-import type { IncidentUpdate } from "../types/events";
+import type { BoundingBox } from "../types/events";
+import type { StoredIncident } from "../state";
 import { clock } from "../lib/labels";
 
+const TRACK_COLORS = [
+  "#f87171", "#38bdf8", "#4ade80", "#fbbf24",
+  "#c084fc", "#fb923c", "#2dd4bf", "#f472b6",
+];
+
+const BOX_FULL_S = 1.5;
+const BOX_FADE_S = 3.5;
+
+function boxColor(box: BoundingBox): string {
+  if (box.track_id == null) return TRACK_COLORS[0];
+  return TRACK_COLORS[Math.abs(box.track_id) % TRACK_COLORS.length];
+}
+
+function boxTag(box: BoundingBox): string {
+  const track = box.track_id != null ? ` #${box.track_id}` : "";
+  const conf = box.conf != null ? ` %${Math.round(box.conf * 100)}` : "";
+  return `${box.label}${track}${conf}`;
+}
+
 export default function VideoPanel({
-  highlight, seekTo, video, feed,
+  highlight, seekTo, seekNonce, video, feed,
 }: {
-  highlight: IncidentUpdate | null;
+  highlight: StoredIncident | null;
   seekTo: number | null;
+  seekNonce: number;
   video: string | null;
   feed?: string | null;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const pendingSeek = useRef<number | null>(null);
 
   useEffect(() => {
-    if (seekTo !== null && videoRef.current) videoRef.current.currentTime = seekTo;
-  }, [seekTo]);
+    if (seekTo === null) return;
+    const player = videoRef.current;
+    if (player && player.readyState >= 1) {
+      player.currentTime = seekTo;
+      pendingSeek.current = null;
+    } else {
+      pendingSeek.current = seekTo;
+    }
+  }, [seekTo, seekNonce]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -27,7 +56,12 @@ export default function VideoPanel({
       canvas.width = player.clientWidth;
       canvas.height = player.clientHeight;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (!highlight) return;
+      if (!highlight || highlight.boxes.length === 0) return;
+      const dt = Math.abs(player.currentTime - (highlight.boxT ?? highlight.t));
+      if (dt >= BOX_FADE_S) return;
+      const alpha = dt <= BOX_FULL_S
+        ? 1
+        : 1 - (dt - BOX_FULL_S) / (BOX_FADE_S - BOX_FULL_S);
       let dx = 0, dy = 0, dw = canvas.width, dh = canvas.height;
       if (player.videoWidth > 0 && player.videoHeight > 0) {
         const scale = Math.min(
@@ -39,29 +73,44 @@ export default function VideoPanel({
         dx = (canvas.width - dw) / 2;
         dy = (canvas.height - dh) / 2;
       }
+      ctx.globalAlpha = alpha;
+      ctx.font = "11px ui-monospace, monospace";
       for (const b of highlight.boxes) {
         const x = dx + b.x1 * dw, y = dy + b.y1 * dh;
         const w = (b.x2 - b.x1) * dw, h = (b.y2 - b.y1) * dh;
-        ctx.strokeStyle = "#ef4444";
+        const color = boxColor(b);
+        ctx.strokeStyle = color;
         ctx.lineWidth = 2;
         ctx.strokeRect(x, y, w, h);
-        const tag = `${b.label}${b.track_id != null ? ` #${b.track_id}` : ""}`;
-        ctx.font = "11px ui-monospace, monospace";
+        const tag = boxTag(b);
         const tagWidth = ctx.measureText(tag).width;
         ctx.fillStyle = "rgba(9, 9, 11, 0.85)";
         ctx.fillRect(x - 1, Math.max(0, y - 16), tagWidth + 8, 16);
-        ctx.fillStyle = "#f87171";
+        ctx.fillStyle = color;
         ctx.fillText(tag, x + 3, Math.max(12, y - 5));
       }
+      ctx.globalAlpha = 1;
+    };
+
+    const onMetadata = () => {
+      if (pendingSeek.current !== null) {
+        player.currentTime = pendingSeek.current;
+        pendingSeek.current = null;
+      }
+      draw();
     };
 
     draw();
     const observer = new ResizeObserver(draw);
     observer.observe(player);
-    player.addEventListener("loadedmetadata", draw);
+    player.addEventListener("loadedmetadata", onMetadata);
+    player.addEventListener("timeupdate", draw);
+    player.addEventListener("seeked", draw);
     return () => {
       observer.disconnect();
-      player.removeEventListener("loadedmetadata", draw);
+      player.removeEventListener("loadedmetadata", onMetadata);
+      player.removeEventListener("timeupdate", draw);
+      player.removeEventListener("seeked", draw);
     };
   }, [highlight, video]);
 
@@ -80,9 +129,14 @@ export default function VideoPanel({
         {highlight && (
           <span
             className={`min-w-0 flex-1 truncate text-right font-medium normal-case tracking-normal risk-${highlight.risk}`}
-            title={highlight.title}
+            title={`${highlight.title} — kutular olay anının (${clock(highlight.boxT ?? highlight.t)}) çevresinde görünür`}
           >
             ▸ {highlight.title} · {clock(highlight.t)}
+            {highlight.olay_baslangic != null && highlight.olay_bitis != null && (
+              <span className="font-normal opacity-70">
+                {" "}({clock(highlight.olay_baslangic)}–{clock(highlight.olay_bitis)})
+              </span>
+            )}
           </span>
         )}
       </div>
