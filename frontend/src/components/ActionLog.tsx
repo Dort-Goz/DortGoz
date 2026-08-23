@@ -8,10 +8,10 @@ const FALLBACK_LABELS: Record<string, string> = {
 };
 
 const RISK_CLASS: Record<string, string> = {
-  dusuk: "bg-sky-950 text-sky-300",
-  orta: "bg-amber-950 text-amber-300",
-  yuksek: "bg-orange-950 text-orange-300",
-  kritik: "bg-red-950 text-red-300",
+  dusuk: "border-sky-900 bg-sky-950 text-sky-300",
+  orta: "border-amber-900 bg-amber-950 text-amber-300",
+  yuksek: "border-orange-900 bg-orange-950 text-orange-300",
+  kritik: "border-red-900 bg-red-950 text-red-300",
 };
 
 const clock = (t: number) =>
@@ -38,15 +38,16 @@ export default function ActionLog({
 
   return (
     <div className="panel h-full">
-      <div className="panel-title flex items-center justify-between">
+      <div className="panel-title">
         <span>Aksiyon Günlüğü</span>
-        <span className="text-[10px] font-normal text-zinc-500">
-          Dış aksiyonlar yerel taslak olarak hazırlanır
+        <span className="flex-1" />
+        <span className="text-[9px] font-normal normal-case tracking-normal text-zinc-500">
+          dış aksiyonlar yerel taslak olarak hazırlanır
         </span>
       </div>
-      <div className="flex-1 overflow-y-auto p-2 space-y-2">
+      <div className="panel-body space-y-1.5 p-2">
         {requests.length === 0 && (
-          <p className="text-xs text-zinc-600 p-2">Aksiyon kaydı yok.</p>
+          <p className="p-2 text-xs text-zinc-600">Aksiyon kaydı yok.</p>
         )}
         {requests.map((request) => {
           const result = resolved.get(request.request_id);
@@ -58,32 +59,32 @@ export default function ActionLog({
             : "Talebi hazırla";
           return (
             <div key={request.request_id}
-                 className="rounded border border-zinc-800 bg-zinc-900 p-2 space-y-2">
+                 className="space-y-1.5 rounded-md border border-zinc-800 bg-zinc-950 p-2">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-amber-200">{label}</span>
+                <span className="text-xs font-semibold text-amber-200">{label}</span>
                 {state ? (
-                  <span className={`ml-auto text-xs font-bold ${state.cls}`}>{state.text}</span>
+                  <span className={`ml-auto text-[10px] font-bold ${state.cls}`}>{state.text}</span>
                 ) : (
-                  <span className="ml-auto text-[10px] text-amber-400">
+                  <span className="ml-auto text-[10px] font-semibold text-amber-400">
                     {cardReadOnly ? "TEMSİLİ KART" : "OPERATÖR KARARI BEKLİYOR"}
                   </span>
                 )}
               </div>
 
-              <div className="flex flex-wrap gap-1 text-[10px]">
-                <span className="rounded bg-zinc-800 px-1.5 py-0.5">
+              <div className="flex flex-wrap gap-1">
+                <span className="chip bg-zinc-800 text-zinc-300">
                   {request.feed || "ana kamera"}
                 </span>
-                <span className="rounded bg-zinc-800 px-1.5 py-0.5">
+                <span className="chip bg-zinc-800 text-zinc-300">
                   {request.anomaly_type}
                 </span>
                 {request.risk && (
-                  <span className={`rounded px-1.5 py-0.5 ${RISK_CLASS[request.risk] ?? "bg-zinc-800"}`}>
+                  <span className={`chip border ${RISK_CLASS[request.risk] ?? "bg-zinc-800 text-zinc-300"}`}>
                     {request.risk} risk
                   </span>
                 )}
                 {request.incident_id && (
-                  <span className="rounded bg-zinc-800 px-1.5 py-0.5 font-mono">
+                  <span className="chip bg-zinc-800 font-mono text-zinc-400">
                     {request.incident_id}
                   </span>
                 )}
@@ -94,7 +95,7 @@ export default function ActionLog({
               )}
               <p className="text-xs text-zinc-400">{request.reason}</p>
               {(request.evidence_timestamps ?? []).length > 0 && (
-                <p className="text-[10px] text-zinc-500">
+                <p className="font-mono text-[10px] text-zinc-500">
                   Video kanıtı: {(request.evidence_timestamps ?? []).map(clock).join(", ")}
                 </p>
               )}
@@ -106,16 +107,16 @@ export default function ActionLog({
               )}
 
               {!result && !cardReadOnly && (
-                <div className="flex gap-1">
+                <div className="flex gap-1.5">
                   <button
                     onClick={() => onRespond(request.request_id, true)}
-                    className="rounded bg-emerald-800 hover:bg-emerald-700 px-2 py-1 text-xs"
+                    className="btn btn-primary h-6"
                   >
                     {submitLabel}
                   </button>
                   <button
                     onClick={() => onRespond(request.request_id, false)}
-                    className="rounded bg-zinc-800 hover:bg-zinc-700 px-2 py-1 text-xs"
+                    className="btn btn-outline h-6"
                   >
                     Vazgeç
                   </button>
@@ -123,7 +124,7 @@ export default function ActionLog({
               )}
 
               {result && (
-                <div className="rounded border border-zinc-800 bg-zinc-950/60 p-2 space-y-1">
+                <div className="space-y-1 rounded-sm border border-zinc-800 bg-zinc-900 p-2">
                   <p className="text-xs text-zinc-300">{result.detail}</p>
                   {result.status === "prepared" && (
                     <p className="text-[10px] font-bold text-amber-300">
@@ -132,7 +133,7 @@ export default function ActionLog({
                   )}
                   {result.artifact_url && (
                     <a href={result.artifact_url}
-                       className="inline-block text-xs text-sky-400 hover:text-sky-300 underline">
+                       className="inline-block text-xs text-sky-400 underline hover:text-sky-300">
                       Hazırlanan taslağı indir
                     </a>
                   )}

@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { TraceEntry } from "../state";
 import { NODE_TR, humanizeEnums, stripPerf } from "../lib/labels";
+import { useStickyScroll } from "../lib/useStickyScroll";
 
 type StepRow = { kind: "step"; seq: number; node: string; status: string; detail: string };
 type Row =
@@ -56,12 +57,12 @@ function QuietRow({ rows }: { rows: { seq: number; detail: string }[] }) {
   return (
     <div>
       <button onClick={() => setOpen((o) => !o)}
-              className="w-full text-left hover:bg-zinc-800/40 rounded px-1 text-zinc-600">
+              className="w-full rounded-sm px-1 text-left text-zinc-600 transition-colors hover:bg-zinc-800/60">
         ✔ <span className="text-sky-800">yorum</span> — {rows.length} pencere, olay yok{" "}
         <span>{open ? "▾" : "▸"}</span>
       </button>
       {open && (
-        <div className="pl-3 border-l border-zinc-800 ml-1">
+        <div className="ml-1 border-l border-zinc-800 pl-3">
           {rows.map((r) => <div key={r.seq} className="text-zinc-600">— {r.detail}</div>)}
         </div>
       )}
@@ -70,31 +71,31 @@ function QuietRow({ rows }: { rows: { seq: number; detail: string }[] }) {
 }
 
 export default function AgentTrace({ entries }: { entries: TraceEntry[] }) {
-  const endRef = useRef<HTMLDivElement>(null);
   const [verbose, setVerbose] = useState(false);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [entries.length]);
+  const { ref, onScroll } = useStickyScroll<HTMLDivElement>(entries.length);
   const rows = build(entries);
 
   return (
     <div className="panel h-full">
-      <div className="panel-title flex items-center gap-2">
-        Ajan İzleme
+      <div className="panel-title">
+        <span>Ajan İzleme</span>
+        <span className="flex-1" />
         <button
           onClick={() => setVerbose((v) => !v)}
           title="Ham akış: hiçbir satır gizlenmez (hata ayıklama)"
-          className={`ml-auto normal-case font-normal rounded px-1.5 py-0.5 border text-[10px] ${
-            verbose ? "border-amber-700 text-amber-300 bg-amber-950/40"
-                    : "border-zinc-700 text-zinc-500 hover:border-zinc-500"
+          className={`btn h-5 px-1.5 text-[10px] normal-case tracking-normal ${
+            verbose ? "btn-outline-warn" : "btn-outline"
           }`}
         >
           {verbose ? "detay ●" : "detay"}
         </button>
       </div>
       {verbose && (
-        <div className="flex-1 overflow-y-auto p-2 font-mono text-[11px] space-y-0.5">
+        <div ref={ref} onScroll={onScroll}
+             className="panel-body space-y-0.5 p-2 font-mono text-[11px] leading-5">
           {entries.map((e) => (
-            <div key={e.seq} className="leading-relaxed">
-              <span className="text-zinc-700 mr-1">{String(e.seq).padStart(4, "0")}</span>
+            <div key={e.seq}>
+              <span className="mr-1 text-zinc-700">{String(e.seq).padStart(4, "0")}</span>
               {e.kind === "step" && e.step && (
                 <>
                   <span className={e.step.status === "error" ? "text-red-400"
@@ -114,27 +115,32 @@ export default function AgentTrace({ entries }: { entries: TraceEntry[] }) {
               )}
             </div>
           ))}
-          <div ref={endRef} />
         </div>
       )}
       {!verbose && (
-      <div className="flex-1 overflow-y-auto p-2 font-mono text-xs space-y-0.5">
+      <div ref={ref} onScroll={onScroll}
+           className="panel-body space-y-0.5 p-2 font-mono text-[11px] leading-5">
+        {entries.length === 0 && (
+          <p className="p-2 font-sans text-xs text-zinc-600">
+            Koşu başlayınca ajan adımları burada akar.
+          </p>
+        )}
         {rows.map((r) =>
           r.kind === "quiet" ? (
             <QuietRow key={`q${r.seq}`} rows={r.rows} />
           ) : r.kind === "tool" && r.entry.tool ? (
-            <div key={r.seq} className="leading-relaxed">
+            <div key={r.seq}>
               <span className="text-amber-400">⚙ {r.entry.tool.tool}</span>
               <span className="text-zinc-500">({JSON.stringify(r.entry.tool.args)})</span>
               {r.entry.tool.rationale && (
-                <span className="text-zinc-400 italic"> · gerekçe: {r.entry.tool.rationale}</span>
+                <span className="italic text-zinc-400"> · gerekçe: {r.entry.tool.rationale}</span>
               )}
               {r.entry.tool.result && (
                 <span className="text-zinc-300"> → {r.entry.tool.result}</span>
               )}
             </div>
           ) : r.kind === "step" ? (
-            <div key={r.seq} className="leading-relaxed">
+            <div key={r.seq}>
               <span className={r.status === "error" ? "text-red-400"
                              : r.status === "start" ? "text-zinc-500" : "text-emerald-400"}>
                 {r.status === "start" ? "▶" : r.status === "end" ? "✔" : "✖"}
@@ -146,7 +152,6 @@ export default function AgentTrace({ entries }: { entries: TraceEntry[] }) {
             </div>
           ) : null
         )}
-        <div ref={endRef} />
       </div>
       )}
     </div>

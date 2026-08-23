@@ -13,11 +13,11 @@ export default function UploadPanel({ onUploaded }: { onUploaded: (video: VideoM
     catch (reason) { setError(reason instanceof Error ? reason.message : "Yükleme başarısız."); }
     finally { setBusy(false); if (input.current) input.current.value = ""; }
   };
-  return <div className="flex items-center gap-2">
+  return <div className="flex shrink-0 items-center gap-1.5">
     <input ref={input} className="hidden" type="file" accept="video/*" onChange={(e) => choose(e.target.files?.[0])} />
-    <button onClick={() => input.current?.click()} disabled={busy} className="rounded px-2 py-1 border border-zinc-700 text-xs hover:border-zinc-500 disabled:opacity-50">
+    <button onClick={() => input.current?.click()} disabled={busy} className="btn btn-outline">
       {busy ? "Yükleniyor…" : "Video yükle"}
     </button>
-    {error && <span className="text-[10px] text-red-300 max-w-52 truncate" title={error}>{error}</span>}
+    {error && <span className="max-w-40 truncate text-[10px] text-red-300" title={error}>{error}</span>}
   </div>;
 }

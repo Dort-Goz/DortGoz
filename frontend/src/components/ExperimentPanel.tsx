@@ -26,15 +26,15 @@ function PromptBox({ label, value, fallback, disabled, onChange, warn }: {
 }) {
   const customized = value !== fallback;
   return (
-    <div className="flex-1 min-w-0 flex flex-col gap-1">
-      <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-zinc-500">
-        {label}
-        {customized && <span className="text-amber-400 normal-case">— özelleştirildi</span>}
+    <div className="flex min-w-0 flex-1 flex-col gap-1">
+      <div className="flex items-center gap-2">
+        <span className="microlabel">{label}</span>
+        {customized && <span className="text-[10px] text-amber-400">— özelleştirildi</span>}
         {customized && (
           <button
             onClick={() => onChange(fallback)}
             disabled={disabled}
-            className="ml-auto text-zinc-400 hover:text-zinc-200 disabled:opacity-40 normal-case"
+            className="ml-auto text-[10px] text-zinc-400 hover:text-zinc-200 disabled:opacity-40"
           >
             varsayılana dön
           </button>
@@ -46,9 +46,7 @@ function PromptBox({ label, value, fallback, disabled, onChange, warn }: {
         disabled={disabled}
         spellCheck={false}
         rows={6}
-        className="w-full resize-y rounded border border-zinc-700 bg-zinc-950/60 p-2
-                   font-mono text-xs leading-relaxed text-zinc-200
-                   focus:border-emerald-700 focus:outline-none disabled:opacity-50"
+        className="field-area resize-y font-mono"
       />
       {warn && <div className="text-[11px] text-amber-400">{warn}</div>}
     </div>
@@ -62,19 +60,15 @@ export default function ExperimentPanel({
   const placeholderLost =
     !taskPrompt.includes("{start}") || !taskPrompt.includes("{end}");
   return (
-    <div className="shrink-0 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2
-                    flex flex-col gap-2 text-sm">
+    <div className="flex shrink-0 flex-col gap-2 border-b border-amber-900/40 bg-zinc-900 px-3 py-2">
       <div className="flex items-center gap-2 text-xs text-zinc-400">
-        <span className="text-[11px] uppercase tracking-wide font-bold text-zinc-500">
-          Deney
-        </span>
-        <label className="ml-2">model</label>
+        <span className="microlabel text-amber-500">⚗ deney</span>
+        <span className="microlabel ml-2">model</span>
         <select
           value={model}
           onChange={(e) => onModel(e.target.value)}
           disabled={busy}
-          className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 max-w-72
-                     disabled:opacity-50"
+          className="field max-w-72"
         >
           {config.models.map((m) => (
             <option key={m} value={m}>
@@ -82,12 +76,12 @@ export default function ExperimentPanel({
             </option>
           ))}
         </select>
-        <span className="text-zinc-600">
+        <span className="truncate text-[11px] text-zinc-600">
           seçenekler bir sonraki koşuda geçerli olur; etkin yapılandırma
           runs/&lt;id&gt;.meta.json'a yazılır
         </span>
       </div>
-      <div className="flex gap-3 flex-col lg:flex-row">
+      <div className="flex flex-col gap-3 lg:flex-row">
         <PromptBox
           label="Sistem istemi"
           value={systemPrompt}

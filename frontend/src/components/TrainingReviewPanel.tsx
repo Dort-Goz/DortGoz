@@ -166,7 +166,7 @@ function BoxEditor({
 
   return (
     <div className="space-y-2">
-      <div className="relative overflow-hidden rounded border border-zinc-700 bg-black">
+      <div className="relative overflow-hidden rounded-md border border-zinc-800 bg-black">
         <img src={sample.frame_url} alt="Eğitim karesi" className="block w-full select-none" />
         <svg
           viewBox={`0 0 ${sample.image_width} ${sample.image_height}`}
@@ -221,7 +221,7 @@ function BoxEditor({
           <input
             value={category}
             onChange={(event) => setCategory(event.target.value.toLowerCase())}
-            className="w-36 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 font-mono"
+            className="field w-36 font-mono"
             placeholder="person"
           />
           <span className="text-zinc-500">Görüntü üzerinde sürükleyerek kutu çizin.</span>
@@ -405,30 +405,33 @@ export default function TrainingReviewPanel({
       : Boolean(falseAlarmReason));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
-      <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-zinc-700 bg-zinc-950 shadow-2xl">
-        <header className="flex items-center gap-3 border-b border-zinc-800 px-4 py-3">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+      <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 shadow-2xl">
+        <header className="flex h-12 shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
           <div>
-            <h2 className="font-semibold text-zinc-100">Olay İnceleme ve Eğitim Hazırlığı</h2>
+            <h2 className="text-sm font-semibold text-zinc-200">Olay İnceleme ve Eğitim Hazırlığı</h2>
             <p className="font-mono text-[10px] text-zinc-500">{eventId}</p>
           </div>
           <div className="ml-auto flex items-center gap-2 text-xs">
-            <label className="text-zinc-400">İnceleyen</label>
+            <label className="microlabel">İnceleyen</label>
             <input
               value={reviewer}
               onChange={(event) => setReviewer(event.target.value)}
-              className="w-36 rounded border border-zinc-700 bg-zinc-900 px-2 py-1"
+              className="field w-36"
             />
-            <button onClick={onClose} className="rounded px-2 py-1 text-zinc-400 hover:bg-zinc-800">
+            <button onClick={onClose} className="btn btn-ghost">
               Kapat ×
             </button>
           </div>
         </header>
 
         <div className="grid min-h-0 flex-1 grid-cols-[21rem_minmax(0,1fr)]">
-          <aside className="overflow-y-auto border-r border-zinc-800 p-3 text-xs">
-            <div className="mb-3 space-y-1 rounded border border-zinc-800 bg-zinc-900/60 p-2">
-              <div className="font-medium text-zinc-200">1 · Olay incelemesi</div>
+          <aside className="overflow-y-auto border-r border-zinc-800 p-2.5 text-xs">
+            <div className="mb-2.5 space-y-1 rounded-md border border-zinc-800 bg-zinc-900 p-2.5">
+              <div className="flex items-center gap-1.5 font-medium text-zinc-200">
+                <span className="chip border border-zinc-700 text-zinc-300 font-mono">1</span>
+                Olay incelemesi
+              </div>
               <div className={latestReview ? "text-emerald-400" : "text-amber-400"}>
                 {latestReview ? `Hazır · revizyon ${latestReview.revision}` : "İnsan kararı gerekli"}
               </div>
@@ -442,7 +445,7 @@ export default function TrainingReviewPanel({
                 <button
                   type="button"
                   onClick={() => setReviewOpen(true)}
-                  className="mt-2 w-full rounded border border-amber-800 px-2 py-1.5 text-amber-200 hover:bg-amber-950/40"
+                  className="btn btn-outline-warn mt-1.5 w-full"
                 >
                   Kararı düzelt
                 </button>
@@ -450,7 +453,7 @@ export default function TrainingReviewPanel({
             </div>
 
             {reviewOpen && canonicalEvent && (
-              <div className="mb-3 space-y-2 rounded border border-amber-900/60 bg-amber-950/20 p-2">
+              <div className="mb-2.5 space-y-2 rounded-md border border-amber-900 bg-amber-950 p-2.5">
                 <div className="flex items-center justify-between">
                   <p className="text-amber-200">
                     {latestReview ? "Yeni bir karar revizyonu ekleyin." : "Model sonucunu doğrulayın."}
@@ -459,7 +462,7 @@ export default function TrainingReviewPanel({
                     <button
                       type="button"
                       onClick={() => setReviewOpen(false)}
-                      className="text-zinc-500 hover:text-zinc-200"
+                      className="text-zinc-500 transition-colors hover:text-zinc-200"
                     >
                       Vazgeç ×
                     </button>
@@ -470,7 +473,7 @@ export default function TrainingReviewPanel({
                   <select
                     value={reviewVerdict}
                     onChange={(event) => setReviewVerdict(event.target.value as "anomali" | "sorun_degil")}
-                    className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200"
+                    className="field mt-0.5 w-full"
                   >
                     <option value="anomali">Anomali</option>
                     <option value="sorun_degil">Sorun değil</option>
@@ -483,7 +486,7 @@ export default function TrainingReviewPanel({
                       <select
                         value={reviewEventType}
                         onChange={(event) => setReviewEventType(event.target.value as CanonicalEventType)}
-                        className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200"
+                        className="field mt-0.5 w-full"
                       >
                         {EVENT_TYPES.map((eventType) => (
                           <option key={eventType} value={eventType}>{CANONICAL_TYPE_TR[eventType]}</option>
@@ -495,7 +498,7 @@ export default function TrainingReviewPanel({
                       <select
                         value={reviewRisk}
                         onChange={(event) => setReviewRisk(event.target.value as Risk)}
-                        className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200"
+                        className="field mt-0.5 w-full"
                       >
                         {(Object.entries(RISK_TR) as [Risk, string][]).map(([value, label]) => (
                           <option key={value} value={value}>{label}</option>
@@ -514,7 +517,7 @@ export default function TrainingReviewPanel({
                               step="0.1"
                               value={times[field]}
                               onChange={(event) => setTimes({ ...times, [field]: Number(event.target.value) })}
-                              className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-1 py-1 text-right text-zinc-200"
+                              className="field mt-0.5 w-full text-right"
                             />
                           </label>
                         ))}
@@ -528,7 +531,7 @@ export default function TrainingReviewPanel({
                     <select
                       value={falseAlarmReason}
                       onChange={(event) => setFalseAlarmReason(event.target.value)}
-                      className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200"
+                      className="field mt-0.5 w-full"
                     >
                       <option value="">Neden seçin</option>
                       {Object.entries(FALSE_ALARM_TR).map(([value, label]) => (
@@ -542,7 +545,7 @@ export default function TrainingReviewPanel({
                   <select
                     value={intervention}
                     onChange={(event) => setIntervention(event.target.value as "" | "yes" | "no")}
-                    className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200"
+                    className="field mt-0.5 w-full"
                   >
                     <option value="">Seçin</option>
                     <option value="yes">Evet, gerekliydi</option>
@@ -556,7 +559,7 @@ export default function TrainingReviewPanel({
                     onChange={(event) => setReviewNote(event.target.value)}
                     rows={2}
                     maxLength={4000}
-                    className="mt-0.5 w-full resize-none rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200"
+                    className="field-area mt-0.5 resize-none"
                     placeholder="Düzeltmenin kısa gerekçesi"
                   />
                 </label>
@@ -580,12 +583,12 @@ export default function TrainingReviewPanel({
                     }),
                     latestReview ? "Olay kararı yeni revizyon olarak kaydedildi." : "Olay incelemesi kaydedildi.",
                   )}
-                  className="w-full rounded bg-amber-700 px-2 py-1.5 font-medium text-white disabled:opacity-40"
+                  className="btn btn-accent w-full"
                 >
                   {latestReview ? "Düzeltmeyi yeni revizyon olarak kaydet" : "İnsan kararını kaydet"}
                 </button>
                 {latestReview && (
-                  <p className="text-[10px] leading-relaxed text-amber-300/80">
+                  <p className="text-[10px] leading-relaxed text-amber-300">
                     Yeni revizyon eski eğitim karelerini geçersiz kılar. D-FINE izni yeniden verilmelidir.
                   </p>
                 )}
@@ -593,11 +596,11 @@ export default function TrainingReviewPanel({
             )}
 
             {reviews.length > 0 && (
-              <details className="mb-3 rounded border border-zinc-800 bg-zinc-950/60 p-2">
-                <summary className="cursor-pointer text-zinc-400">Karar geçmişi · {reviews.length}</summary>
+              <details className="mb-2.5 rounded-md border border-zinc-800 bg-zinc-950 p-2">
+                <summary className="cursor-pointer text-zinc-400 hover:text-zinc-200">Karar geçmişi · {reviews.length}</summary>
                 <div className="mt-2 space-y-2">
                   {[...reviews].reverse().map((review) => (
-                    <div key={review.review_id} className="rounded border border-zinc-800 bg-zinc-900/50 p-2">
+                    <div key={review.review_id} className="rounded-md border border-zinc-800 bg-zinc-900 p-2">
                       <div className="flex justify-between text-zinc-300">
                         <span>Revizyon {review.revision} · {REVIEW_DECISION_TR[review.decision]}</span>
                         <span className="text-zinc-600">{dateTime(review.created_at)}</span>
@@ -620,12 +623,12 @@ export default function TrainingReviewPanel({
             )}
 
             {learningPlan && (
-              <div className="mb-3 space-y-2 rounded border border-sky-900/70 bg-sky-950/20 p-2">
+              <div className="mb-2.5 space-y-2 rounded-md border border-sky-900 bg-zinc-900 p-2.5">
                 <div className="flex items-center justify-between">
-                  <div className="font-medium text-sky-100">
+                  <div className="font-medium text-sky-300">
                     Öğrenme Merkezi · olay planı
                   </div>
-                  <span className="rounded bg-sky-900 px-1.5 py-0.5 font-semibold text-sky-100">
+                  <span className="chip border border-sky-800 bg-zinc-950 font-mono text-sky-300">
                     {learningPlan.learning_score}/100 · {LEARNING_BAND_TR[learningPlan.learning_band]}
                   </span>
                 </div>
@@ -640,7 +643,7 @@ export default function TrainingReviewPanel({
                 </p>
                 <div className="space-y-1">
                   {learningPlan.routes.filter((route) => route.recommended).map((route) => (
-                    <div key={route.use} className="rounded border border-zinc-800 bg-zinc-950/60 px-1.5 py-1">
+                    <div key={route.use} className="rounded-md border border-zinc-800 bg-zinc-950 px-1.5 py-1">
                       <div className="flex items-center justify-between">
                         <span className="text-zinc-300">{DEVELOPMENT_USE_TR[route.use]}</span>
                         <span className={route.ready ? "text-emerald-400" : "text-amber-400"}>
@@ -657,8 +660,11 @@ export default function TrainingReviewPanel({
               </div>
             )}
 
-            <div className="mb-3 space-y-1 rounded border border-zinc-800 bg-zinc-900/60 p-2">
-              <div className="font-medium text-zinc-200">2 · Geliştirme izni</div>
+            <div className="mb-2.5 space-y-1 rounded-md border border-zinc-800 bg-zinc-900 p-2.5">
+              <div className="flex items-center gap-1.5 font-medium text-zinc-200">
+                <span className="chip border border-zinc-700 text-zinc-300 font-mono">2</span>
+                Geliştirme izni
+              </div>
               <div className={activeDevelopmentApproval ? "text-emerald-400" : latestApproval?.status === "revoked" ? "text-red-400" : approvalNeedsRenewal ? "text-amber-400" : "text-zinc-500"}>
                 {activeDevelopmentApproval
                   ? `${activeDevelopmentApproval.approved_uses.length} geliştirme kullanımı onaylı`
@@ -670,7 +676,7 @@ export default function TrainingReviewPanel({
               </div>
               {latestReview && !activeDevelopmentApproval && (
                 <div className="mt-2 space-y-2">
-                  <div className="space-y-1 rounded border border-zinc-800 bg-zinc-950/60 p-1.5">
+                  <div className="space-y-1 rounded-md border border-zinc-800 bg-zinc-950 p-1.5">
                     {(learningPlan?.routes ?? [])
                       .filter((route) => route.recommended && route.use !== "camera_rule")
                       .map((route) => (
@@ -696,7 +702,7 @@ export default function TrainingReviewPanel({
                     onChange={(event) => setApprovalNote(event.target.value)}
                     rows={2}
                     maxLength={4000}
-                    className="w-full resize-none rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-zinc-200"
+                    className="field-area"
                     aria-label="Geliştirme kullanım onay notu"
                   />
                   <button
@@ -711,7 +717,7 @@ export default function TrainingReviewPanel({
                       }),
                       "Seçilen geliştirme kullanımları kaydedildi.",
                     )}
-                    className="w-full rounded bg-indigo-700 px-2 py-1.5 font-medium text-white disabled:opacity-40"
+                    className="btn btn-accent w-full"
                   >
                     Seçilen kullanımları onayla
                   </button>
@@ -721,31 +727,31 @@ export default function TrainingReviewPanel({
                 <button
                   type="button"
                   onClick={() => setRevokeOpen(true)}
-                  className="mt-2 w-full rounded border border-red-900 px-2 py-1.5 text-red-300 hover:bg-red-950/40"
+                  className="btn btn-outline mt-2 w-full border-red-900 text-red-300 hover:border-red-700 hover:text-red-200"
                 >
                   Geliştirme iznini geri al
                 </button>
               )}
               {activeDevelopmentApproval && revokeOpen && (
-                <div className="mt-2 space-y-2 rounded border border-red-900/70 bg-red-950/20 p-2">
+                <div className="mt-2 space-y-2 rounded-md border border-red-900 bg-red-950 p-2.5">
                   <p className="text-red-200">Bu izne bağlı bütün geliştirme rotaları kapanacak.</p>
                   <textarea
                     value={revocationNote}
                     onChange={(event) => setRevocationNote(event.target.value)}
                     rows={2}
                     maxLength={4000}
-                    className="w-full resize-none rounded border border-red-900 bg-zinc-950 px-2 py-1 text-zinc-200"
+                    className="field-area"
                     placeholder="Geri alma gerekçesi"
                     aria-label="Geliştirme izni geri alma gerekçesi"
                   />
-                  <div className="grid grid-cols-2 gap-1">
+                  <div className="grid grid-cols-2 gap-1.5">
                     <button
                       type="button"
                       onClick={() => {
                         setRevokeOpen(false);
                         setRevocationNote("");
                       }}
-                      className="rounded border border-zinc-700 px-2 py-1.5 text-zinc-300"
+                      className="btn btn-outline"
                     >
                       Vazgeç
                     </button>
@@ -765,7 +771,7 @@ export default function TrainingReviewPanel({
                         },
                         "Geliştirme kullanım izni geri alındı.",
                       )}
-                      className="rounded bg-red-800 px-2 py-1.5 font-medium text-white disabled:opacity-40"
+                      className="btn btn-danger"
                     >
                       İzni geri al
                     </button>
@@ -775,11 +781,11 @@ export default function TrainingReviewPanel({
             </div>
 
             {approvals.length > 0 && (
-              <details className="mb-3 rounded border border-zinc-800 bg-zinc-950/60 p-2">
-                <summary className="cursor-pointer text-zinc-400">İzin geçmişi · {approvals.length}</summary>
+              <details className="mb-2.5 rounded-md border border-zinc-800 bg-zinc-950 p-2">
+                <summary className="cursor-pointer text-zinc-400 hover:text-zinc-200">İzin geçmişi · {approvals.length}</summary>
                 <div className="mt-2 space-y-2">
                   {[...approvals].reverse().map((approval) => (
-                    <div key={approval.approval_id} className="rounded border border-zinc-800 bg-zinc-900/50 p-2">
+                    <div key={approval.approval_id} className="rounded-md border border-zinc-800 bg-zinc-900 p-2">
                       <div className="flex justify-between text-zinc-300">
                         <span>{APPROVAL_STATUS_TR[approval.status]}</span>
                         <span className="text-zinc-600">{dateTime(approval.created_at)}</span>
@@ -792,12 +798,15 @@ export default function TrainingReviewPanel({
               </details>
             )}
 
-            <div className="mb-3 space-y-2 rounded border border-zinc-800 bg-zinc-900/60 p-2">
-              <div className="font-medium text-zinc-200">3 · Kareleri hazırla</div>
+            <div className="mb-2.5 space-y-2 rounded-md border border-zinc-800 bg-zinc-900 p-2.5">
+              <div className="flex items-center gap-1.5 font-medium text-zinc-200">
+                <span className="chip border border-zinc-700 text-zinc-300 font-mono">3</span>
+                Kareleri hazırla
+              </div>
               <input
                 value={manifest}
                 onChange={(event) => setManifest(event.target.value)}
-                className="w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1 font-mono"
+                className="field w-full font-mono"
                 placeholder="training_manifest.json"
               />
               <button
@@ -810,55 +819,60 @@ export default function TrainingReviewPanel({
                   }),
                   "Olay kareleri hazırlandı.",
                 )}
-                className="w-full rounded bg-sky-700 px-2 py-1.5 font-medium text-white disabled:opacity-40"
+                className="btn btn-accent w-full"
               >
                 Başlangıç · zirve · bitiş karelerini çıkar
               </button>
             </div>
 
-            <div className="space-y-1">
-              <div className="font-medium text-zinc-300">4 · Kare doğrulama</div>
-              {samples.length === 0 && <p className="text-zinc-600">Hazırlanmış kare yok.</p>}
-              {samples.map((sample) => (
-                <button
-                  key={sample.sample_id}
-                  onClick={() => setSelectedId(sample.sample_id)}
-                  className={`flex w-full items-center gap-2 rounded border p-1.5 text-left ${
-                    selectedId === sample.sample_id
-                      ? "border-sky-700 bg-sky-950/30"
-                      : "border-zinc-800 bg-zinc-900/40"
-                  }`}
-                >
-                  <img src={sample.frame_url} alt="" className="h-10 w-16 rounded bg-black object-cover" />
-                  <span className="min-w-0">
-                    <span className="block text-zinc-300">
-                      {REASON_TR[sample.selection_reason] ?? sample.selection_reason} · {clock(sample.timestamp_seconds)}
+            <div className="rounded-md border border-zinc-800 bg-zinc-900 p-2.5">
+              <div className="mb-1.5 flex items-center gap-1.5 font-medium text-zinc-200">
+                <span className="chip border border-zinc-700 text-zinc-300 font-mono">4</span>
+                Kare doğrulama
+              </div>
+              <div className="space-y-1">
+                {samples.length === 0 && <p className="text-zinc-600">Hazırlanmış kare yok.</p>}
+                {samples.map((sample) => (
+                  <button
+                    key={sample.sample_id}
+                    onClick={() => setSelectedId(sample.sample_id)}
+                    className={`flex w-full items-center gap-2 rounded-md border p-1.5 text-left transition-colors ${
+                      selectedId === sample.sample_id
+                        ? "border-sky-800 bg-sky-950/30"
+                        : "border-zinc-800 bg-zinc-950 hover:border-zinc-600"
+                    }`}
+                  >
+                    <img src={sample.frame_url} alt="" className="h-10 w-16 rounded-sm bg-black object-cover" />
+                    <span className="min-w-0">
+                      <span className="block text-zinc-300">
+                        {REASON_TR[sample.selection_reason] ?? sample.selection_reason} · {clock(sample.timestamp_seconds)}
+                      </span>
+                      <span className={sample.status === "verified" ? "text-emerald-400" : sample.status === "revoked" ? "text-red-400" : "text-amber-400"}>
+                        {STATUS_TR[sample.status]}
+                      </span>
                     </span>
-                    <span className={sample.status === "verified" ? "text-emerald-400" : sample.status === "revoked" ? "text-red-400" : "text-amber-400"}>
-                      {STATUS_TR[sample.status]}
-                    </span>
-                  </span>
-                </button>
-              ))}
+                  </button>
+                ))}
+              </div>
             </div>
           </aside>
 
           <main className="min-h-0 overflow-y-auto p-4">
             {error && (
-              <div className="mb-3 rounded border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300">
+              <div className="mb-3 rounded-md border border-red-900 bg-red-950 px-3 py-2 text-sm text-red-300">
                 {error}
               </div>
             )}
             {notice && (
-              <div className="mb-3 rounded border border-emerald-900 bg-emerald-950/40 px-3 py-2 text-sm text-emerald-300">
+              <div className="mb-3 rounded-md border border-emerald-900 bg-emerald-950 px-3 py-2 text-sm text-emerald-300">
                 {notice}
               </div>
             )}
             {incidentMedia && (
-              <section className="mx-auto mb-4 max-w-4xl rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+              <section className="mx-auto mb-4 max-w-4xl rounded-md border border-zinc-800 bg-zinc-900 p-2.5">
                 <div className="mb-2 flex items-center text-xs text-zinc-400">
                   <span>Olay klibi</span>
-                  <span className="ml-auto">
+                  <span className="ml-auto font-mono">
                     {clock(incidentMedia.clip_start)}–{clock(incidentMedia.clip_end)}
                   </span>
                 </div>
@@ -867,7 +881,7 @@ export default function TrainingReviewPanel({
                   preload="metadata"
                   poster={incidentMedia.thumbnail_url}
                   src={incidentMedia.clip_url}
-                  className="max-h-72 w-full rounded bg-black object-contain"
+                  className="max-h-72 w-full rounded-md bg-black object-contain"
                 >
                   Tarayıcınız olay klibini oynatamıyor.
                 </video>
@@ -881,10 +895,10 @@ export default function TrainingReviewPanel({
             {selected && (
               <div className="mx-auto max-w-4xl space-y-3">
                 <div className="flex items-center gap-2 text-xs text-zinc-400">
-                  <span className="rounded bg-zinc-800 px-2 py-1">
+                  <span className="chip bg-zinc-800 text-zinc-300">
                     {REASON_TR[selected.selection_reason] ?? selected.selection_reason}
                   </span>
-                  <span>{clock(selected.timestamp_seconds)}</span>
+                  <span className="font-mono">{clock(selected.timestamp_seconds)}</span>
                   <span>{selected.image_width}×{selected.image_height}</span>
                   <span>{selected.split}</span>
                   <span className="ml-auto">{STATUS_TR[selected.status]}</span>
@@ -902,7 +916,7 @@ export default function TrainingReviewPanel({
                         }),
                         "Kare hedef nesne içermiyor olarak doğrulandı.",
                       )}
-                      className="rounded border border-zinc-700 px-3 py-1.5 text-sm hover:bg-zinc-800 disabled:opacity-40"
+                      className="btn btn-outline"
                     >
                       Hedef nesne yok
                     </button>
@@ -916,19 +930,19 @@ export default function TrainingReviewPanel({
                         }),
                         `${boxes.length} kutu doğrulandı.`,
                       )}
-                      className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+                      className="btn btn-primary"
                     >
                       {boxes.length} kutuyu doğrula
                     </button>
                   </div>
                 )}
                 {selected.status === "verified" && selected.frame_review && (
-                  <div className="rounded border border-emerald-900 bg-emerald-950/30 px-3 py-2 text-sm text-emerald-300">
+                  <div className="rounded-md border border-emerald-900 bg-emerald-950 px-3 py-2 text-sm text-emerald-300">
                     İnsan doğrulaması tamamlandı · {selected.frame_review.reviewer} · {selected.frame_review.boxes.length} kutu
                   </div>
                 )}
                 {selected.status === "revoked" && (
-                  <div className="rounded border border-red-900 bg-red-950/30 px-3 py-2 text-sm text-red-300">
+                  <div className="rounded-md border border-red-900 bg-red-950 px-3 py-2 text-sm text-red-300">
                     Bu örnek daha yeni bir inceleme veya izin kararı nedeniyle geçersizdir. Eğitime aktarılmaz.
                   </div>
                 )}

@@ -22,68 +22,72 @@ export default function FeedStrip({ feeds, active, onSelect }: {
   const enough = busyFeeds.length === 0 || total >= busyFeeds.length;
 
   return (
-    <div className="shrink-0 flex flex-wrap gap-1.5 overflow-y-auto max-h-44">
-      <div className={`rounded-lg border px-3 py-1.5 min-w-32 shrink-0 ${
-        enough ? "border-emerald-900/60 bg-emerald-950/30" : "border-red-900/60 bg-red-950/30"
-      }`}>
-        <div className={`text-sm font-mono font-bold ${
-          enough ? "text-emerald-300" : "text-red-300"
+    <div className="shrink-0 border-b border-zinc-800 bg-zinc-950 p-1.5">
+      <div
+        className="grid max-h-32 gap-1 overflow-y-auto"
+        style={{ gridTemplateColumns: "repeat(auto-fill, minmax(11rem, 1fr))" }}
+      >
+        <div className={`rounded-sm border px-2 py-1.5 ${
+          enough ? "border-emerald-900 bg-emerald-950/30" : "border-red-900 bg-red-950/30"
         }`}>
-          Σ ×{total >= 10 ? total.toFixed(0) : total.toFixed(1)}
+          <div className={`font-mono text-sm font-bold ${
+            enough ? "text-emerald-300" : "text-red-300"
+          }`}>
+            Σ ×{total >= 10 ? total.toFixed(0) : total.toFixed(1)}
+          </div>
+          <div className="truncate text-[10px] text-zinc-500">
+            {busyFeeds.length > 0
+              ? `${busyFeeds.length} akış işleniyor · gerçek zaman için Σ ≥ ${busyFeeds.length}`
+              : `${names.length} akış tamamlandı`}
+          </div>
         </div>
-        <div className="text-[10px] text-zinc-500">
-          {busyFeeds.length > 0
-            ? `${busyFeeds.length} akış işleniyor · gerçek zaman için Σ ≥ ${busyFeeds.length}`
-            : `${names.length} akış tamamlandı`}
-        </div>
+        {names.map((name) => {
+          const f = feeds[name];
+          const risk = worstRisk(f);
+          const review = f.incidents.filter((i) => i.needs_review).length;
+          const busy = f.runStatus?.state === "processing";
+          const pct = Math.round((f.runStatus?.progress ?? 0) * 100);
+          const speed = f.runStatus?.speed ?? 0;
+          return (
+            <button
+              key={name}
+              onClick={() => onSelect(name)}
+              className={`rounded-sm border bg-zinc-900 px-2 py-1.5 text-left transition-colors hover:bg-zinc-800 ${
+                name === active ? "border-zinc-500" : "border-zinc-800"
+              }`}
+            >
+              <div className="flex items-center gap-1.5">
+                <span className="font-mono text-xs font-bold text-zinc-200">{name}</span>
+                {risk && (
+                  <span className={`text-[10px] font-bold uppercase risk-${risk}`}>
+                    {RISK_TR[risk as keyof typeof RISK_TR] ?? risk}
+                  </span>
+                )}
+                {review > 0 && (
+                  <span className="text-[10px] text-amber-400">⚑{review}</span>
+                )}
+                {speed > 0 && (
+                  <span className={`ml-auto font-mono text-[10px] font-bold ${
+                    speed >= 1 ? "text-emerald-400" : "text-red-400"
+                  }`}>
+                    ×{speed >= 10 ? speed.toFixed(0) : speed.toFixed(1)}
+                  </span>
+                )}
+                <span className={`font-mono text-[10px] text-zinc-500 ${speed > 0 ? "" : "ml-auto"}`}>
+                  {busy ? `%${pct}` : f.runStatus?.state ?? "—"}
+                </span>
+              </div>
+              <div className="truncate text-[10px] text-zinc-500">
+                {f.video ?? "—"} · {f.incidents.length} olay
+              </div>
+              <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-zinc-800">
+                <div className={`h-full ${busy ? "bg-emerald-500" : "bg-zinc-600"}`}
+                     style={{ width: `${pct}%` }} />
+              </div>
+            </button>
+          );
+        })}
       </div>
-      {names.map((name) => {
-        const f = feeds[name];
-        const risk = worstRisk(f);
-        const review = f.incidents.filter((i) => i.needs_review).length;
-        const busy = f.runStatus?.state === "processing";
-        const pct = Math.round((f.runStatus?.progress ?? 0) * 100);
-        const speed = f.runStatus?.speed ?? 0;
-        return (
-          <button
-            key={name}
-            onClick={() => onSelect(name)}
-            className={`rounded-lg border px-2.5 py-1.5 text-left w-48 bg-zinc-900/70
-                        hover:bg-zinc-800 transition-colors ${
-              name === active ? "border-zinc-400" : "border-zinc-800"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-zinc-200">{name}</span>
-              {risk && (
-                <span className={`text-[10px] uppercase font-bold risk-${risk}`}>
-                  {RISK_TR[risk as keyof typeof RISK_TR] ?? risk}
-                </span>
-              )}
-              {review > 0 && (
-                <span className="text-[10px] text-amber-400">⚑{review}</span>
-              )}
-              {speed > 0 && (
-                <span className={`ml-auto text-[10px] font-mono font-bold ${
-                  speed >= 1 ? "text-emerald-400" : "text-red-400"
-                }`}>
-                  ×{speed >= 10 ? speed.toFixed(0) : speed.toFixed(1)}
-                </span>
-              )}
-              <span className={`text-[10px] text-zinc-500 ${speed > 0 ? "" : "ml-auto"}`}>
-                {busy ? `%${pct}` : f.runStatus?.state ?? "—"}
-              </span>
-            </div>
-            <div className="text-[10px] text-zinc-500 truncate max-w-44">
-              {f.video ?? "—"} · {f.incidents.length} olay
-            </div>
-            <div className="mt-1 h-1 rounded bg-zinc-800 overflow-hidden">
-              <div className={`h-full transition-all ${busy ? "bg-emerald-500" : "bg-zinc-600"}`}
-                   style={{ width: `${pct}%` }} />
-            </div>
-          </button>
-        );
-      })}
     </div>
   );
 }

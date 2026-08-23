@@ -251,39 +251,39 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
   };
 
   return (
-    <div className="rounded border border-zinc-700 bg-zinc-900/70 p-2 space-y-1.5 text-xs">
+    <div className="space-y-1.5 rounded-md border border-zinc-800 bg-zinc-950 p-2 text-xs">
       <div className="flex items-center gap-2">
         {item.thumbnail && (
-          <img src={item.thumbnail} alt="" className="w-14 h-10 object-cover rounded" />
+          <img src={item.thumbnail} alt="" className="h-10 w-14 rounded-sm object-cover" />
         )}
         <div className="min-w-0">
-          <div className="font-medium truncate">{item.title}</div>
+          <div className="truncate font-medium text-zinc-200">{item.title}</div>
           <div className="text-zinc-400">
-            {feedLabel} · video {clock(item.t)} · {wallClock(item.wall)}
+            {feedLabel} · video <span className="font-mono">{clock(item.t)}</span> · <span className="font-mono">{wallClock(item.wall)}</span>
           </div>
-          <div className="flex gap-1 mt-0.5">
+          <div className="mt-1 flex flex-wrap gap-1">
             <span
-              className={`rounded px-1 font-medium ${PRIORITY_CLS[item.intervention_band]}`}
+              className={`chip ${PRIORITY_CLS[item.intervention_band]}`}
               title={item.intervention_reasons.join("\n")}
             >
-              {item.intervention_score} · {PRIORITY_TR[item.intervention_band]}
+              <span className="font-mono">{item.intervention_score}</span> · {PRIORITY_TR[item.intervention_band]}
             </span>
             {item.sample ? (
-              <span className="rounded bg-sky-900 px-1 text-sky-200">
+              <span className="chip bg-sky-900 text-sky-200">
                 denetim örneği
               </span>
             ) : (
-              <span className={`rounded px-1 ${RISK_CLS[item.risk] ?? "bg-zinc-800"}`}>
+              <span className={`chip ${RISK_CLS[item.risk] ?? "bg-zinc-800"}`}>
                 {item.risk}
               </span>
             )}
-            <span className="rounded px-1 bg-zinc-800 text-zinc-300">
+            <span className="chip bg-zinc-800 text-zinc-300">
               model: {CATEGORY_TR[item.model_category] ?? item.model_category}
             </span>
             {item.tekrar > 1 && (
-              <span className="rounded px-1 bg-indigo-900 text-indigo-200"
+              <span className="chip bg-indigo-900 text-indigo-200"
                     title="Aynı kameradan aynı sınıfta tekrar tespit — tek kartta birleştirildi">
-                ×{item.tekrar}
+                ×<span className="font-mono">{item.tekrar}</span>
               </span>
             )}
           </div>
@@ -291,7 +291,7 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
         {onSeek && item.video && (
           <button
             onClick={() => onSeek(item.feed, item.t, item.video)}
-            className="ml-auto shrink-0 rounded border border-sky-800 px-1.5 py-1 text-[10px] text-sky-300 hover:bg-sky-950/50"
+            className="btn btn-outline-accent ml-auto h-6 shrink-0 px-1.5 text-[10px]"
             title="Videoyu olay anına götür"
           >
             ▶ videoda aç
@@ -300,7 +300,7 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
       </div>
       {(item.evidence_refs ?? []).length > 0 && (
         <div>
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+          <div className="microlabel mb-1">
             Doğrulanmış video kanıtı
           </div>
           <div className="grid grid-cols-3 gap-1">
@@ -308,7 +308,7 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
               <button
                 key={`${evidence.frame_id}:${evidence.timestamp}`}
                 onClick={() => onSeek?.(item.feed, evidence.timestamp, item.video)}
-                className="overflow-hidden rounded border border-zinc-800 bg-zinc-950 text-left hover:border-sky-700"
+                className="overflow-hidden rounded-sm border border-zinc-800 bg-zinc-950 text-left transition-colors hover:border-sky-700"
                 title={`${clock(evidence.timestamp)} · ${evidence.claim}`}
               >
                 <img
@@ -331,7 +331,7 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
         </div>
       )}
       {item.needs_review && item.review_reason && (
-        <div className="text-amber-300/90" title={item.review_reason}>
+        <div className="text-amber-300" title={item.review_reason}>
           ? {humanizeReason(item.review_reason)}
         </div>
       )}
@@ -346,45 +346,45 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
           preload="metadata"
           poster={item.media_thumbnail_url ?? undefined}
           src={item.clip_url ?? item.evidence ?? undefined}
-          className="max-h-40 w-full rounded bg-black object-contain"
+          className="max-h-40 w-full rounded-sm bg-black object-contain"
         >
           Tarayıcınız olay klibini oynatamıyor.
         </video>
       )}
       {!verdict ? (
-        <div className="grid grid-cols-2 gap-1">
+        <div className="flex gap-1">
           <button
             onClick={() => setVerdict("anomali")}
-            className="rounded bg-emerald-700 px-2 py-1 text-white hover:bg-emerald-600"
+            className="btn btn-primary flex-1"
           >
             ✔ Anomali
           </button>
           <button
             onClick={() => setVerdict("sorun_degil")}
-            className="rounded bg-zinc-700 px-2 py-1 hover:bg-zinc-600"
+            className="btn btn-outline flex-1"
           >
             ✘ Sorun değil
           </button>
         </div>
       ) : (
-        <div className="space-y-2 rounded border border-zinc-700 bg-zinc-950/70 p-2">
+        <div className="space-y-2 rounded-md border border-zinc-800 bg-zinc-900 p-2">
           <div className="flex items-center justify-between">
-            <span className={verdict === "anomali" ? "text-emerald-300" : "text-zinc-300"}>
+            <span className={`font-medium ${verdict === "anomali" ? "text-emerald-300" : "text-zinc-300"}`}>
               {verdict === "anomali" ? "Anomali geri bildirimi" : "Yanlış alarm geri bildirimi"}
             </span>
-            <button onClick={() => setVerdict("")} className="text-zinc-500 hover:text-zinc-200">
+            <button onClick={() => setVerdict("")} className="btn btn-ghost h-6 px-2">
               Vazgeç ×
             </button>
           </div>
 
           {verdict === "anomali" ? (
             <>
-              <label className="block text-zinc-400">
-                Doğru olay türü
+              <label className="block space-y-1">
+                <span className="microlabel block">Doğru olay türü</span>
                 <select
                   value={cat}
                   onChange={(event) => setCat(event.target.value)}
-                  className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-zinc-200"
+                  className="field w-full"
                 >
                   {categories.map((category) => (
                     <option key={category} value={category}>
@@ -393,12 +393,12 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
                   ))}
                 </select>
               </label>
-              <label className="block text-zinc-400">
-                Doğru risk seviyesi
+              <label className="block space-y-1">
+                <span className="microlabel block">Doğru risk seviyesi</span>
                 <select
                   value={risk}
                   onChange={(event) => setRisk(event.target.value)}
-                  className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-zinc-200"
+                  className="field w-full"
                 >
                   {Object.entries(RISK_TR).map(([value, label]) => (
                     <option key={value} value={value}>{label}</option>
@@ -406,22 +406,22 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
                 </select>
               </label>
               <div>
-                <div className="mb-0.5 text-zinc-400">Olay zamanı (saniye)</div>
+                <div className="microlabel mb-1">Olay zamanı (saniye)</div>
                 <div className="grid grid-cols-3 gap-1">
                   {([
                     ["Başlangıç", start, setStart],
                     ["Zirve", peak, setPeak],
                     ["Bitiş", end, setEnd],
                   ] as const).map(([label, value, setter]) => (
-                    <label key={label} className="text-[10px] text-zinc-500">
-                      {label}
+                    <label key={label} className="block space-y-1">
+                      <span className="microlabel block">{label}</span>
                       <input
                         type="number"
                         min="0"
                         step="0.1"
                         value={value}
                         onChange={(event) => setter(Number(event.target.value))}
-                        className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-1 py-1 text-right text-xs text-zinc-200"
+                        className="field w-full text-right"
                       />
                     </label>
                   ))}
@@ -430,12 +430,12 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
               </div>
             </>
           ) : (
-            <label className="block text-zinc-400">
-              Yanlış alarm nedeni
+            <label className="block space-y-1">
+              <span className="microlabel block">Yanlış alarm nedeni</span>
               <select
                 value={falseAlarmReason}
                 onChange={(event) => setFalseAlarmReason(event.target.value)}
-                className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-zinc-200"
+                className="field w-full"
               >
                 <option value="">Neden seçin</option>
                 {Object.entries(FALSE_ALARM_TR).map(([value, label]) => (
@@ -445,38 +445,40 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
             </label>
           )}
 
-          <label className="block text-zinc-400">
-            Müdahale gerekli miydi?
+          <label className="block space-y-1">
+            <span className="microlabel block">Müdahale gerekli miydi?</span>
             <select
               value={intervention}
               onChange={(event) => setIntervention(event.target.value as "" | "yes" | "no")}
-              className="mt-0.5 w-full rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-zinc-200"
+              className="field w-full"
             >
               <option value="">Seçin</option>
               <option value="yes">Evet, gerekliydi</option>
               <option value="no">Hayır, gerekli değildi</option>
             </select>
           </label>
-          <label className="block text-zinc-400">
-            Operatör notu {falseAlarmReason === "other" ? "(zorunlu)" : "(isteğe bağlı)"}
+          <label className="block space-y-1">
+            <span className="microlabel block">
+              Operatör notu {falseAlarmReason === "other" ? "(zorunlu)" : "(isteğe bağlı)"}
+            </span>
             <textarea
               value={note}
               onChange={(event) => setNote(event.target.value)}
               maxLength={2000}
               rows={2}
-              className="mt-0.5 w-full resize-none rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-zinc-200"
+              className="field-area resize-none"
               placeholder="Kararı açıklayan kısa not"
             />
           </label>
           {failed && (
-            <div className="rounded border border-red-900 bg-red-950/50 px-1.5 py-1 text-red-200">
+            <div className="rounded-sm border border-red-900 bg-red-950/40 px-2 py-1 text-xs text-red-200">
               Karar kaydedilemedi. Bağlantıyı denetleyin ve yeniden deneyin.
             </div>
           )}
           <button
             disabled={busy || !canSubmit}
             onClick={submit}
-            className="w-full rounded bg-sky-700 px-2 py-1.5 font-medium text-white hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-40"
+            className="btn btn-accent w-full"
           >
             {busy ? "Kaydediliyor…" : "Kararı kalıcı kaydet"}
           </button>
@@ -638,12 +640,12 @@ export default function TriagePanel({
   };
 
   const rootClass = layout === "workspace"
-    ? "h-full min-h-0 grid grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)] gap-2 text-sm"
-    : "w-80 shrink-0 flex flex-col gap-2 min-h-0 text-sm";
+    ? "h-full min-h-0 grid grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)] gap-1.5 text-sm"
+    : "w-80 shrink-0 flex flex-col gap-1.5 min-h-0 text-sm";
   if (!snap) {
     return (
       <div className={rootClass}>
-        <div className="rounded-lg border border-red-900 bg-red-950/30 p-3 text-sm text-red-200">
+        <div className="rounded-md border border-red-900 bg-red-950/40 p-3 text-sm text-red-200">
           {error || "İnceleme kayıtları yükleniyor…"}
         </div>
       </div>
@@ -655,37 +657,39 @@ export default function TriagePanel({
     ? snap.confirmed : snap.confirmed.filter((item) => item.feed === scopeFeed);
   return (
     <div className={rootClass}>
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-2 flex-1 min-h-0 flex flex-col">
-        <div className="font-bold mb-1.5">
-          ⚑ {title}
+      <div className="panel flex-1">
+        <div className="panel-title">
+          <span className="flex-1 truncate">⚑ {title}</span>
           {pending.length > 0 && (
-            <span className="ml-1 rounded-full bg-amber-700 text-white px-1.5 text-xs">
+            <span className="chip border border-amber-900 bg-amber-950/40 font-mono text-amber-300">
               {pending.length}
             </span>
           )}
         </div>
-        <label className="mb-1.5 flex items-center gap-2 text-xs text-zinc-500">
-          İnceleyen
-          <input
-            value={reviewer}
-            onChange={(event) => setReviewer(event.target.value)}
-            maxLength={120}
-            className="min-w-0 flex-1 rounded border border-zinc-700 bg-zinc-950 px-1.5 py-1 text-zinc-300"
-          />
-        </label>
-        {error && (
-          <div className="mb-1.5 rounded border border-red-900 bg-red-950/50 px-2 py-1 text-xs text-red-200">
-            {error}
-          </div>
-        )}
-        {snap.critical_overflow_count > 0 && (
-          <div className="mb-1.5 rounded border border-red-800 bg-red-950/60 px-2 py-1 text-xs text-red-100">
-            Kuyruk dolu. {snap.critical_overflow_count} kritik olay güvenlik için kuyrukta tutuluyor.
-          </div>
-        )}
-        <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5">
+        <div className="flex shrink-0 flex-col gap-1.5 p-2 pb-0">
+          <label className="flex items-center gap-2">
+            <span className="microlabel shrink-0">İnceleyen</span>
+            <input
+              value={reviewer}
+              onChange={(event) => setReviewer(event.target.value)}
+              maxLength={120}
+              className="field min-w-0 flex-1"
+            />
+          </label>
+          {error && (
+            <div className="rounded-sm border border-red-900 bg-red-950/40 px-2 py-1 text-xs text-red-200">
+              {error}
+            </div>
+          )}
+          {snap.critical_overflow_count > 0 && (
+            <div className="rounded-sm border border-red-800 bg-red-950/40 px-2 py-1 text-xs text-red-100">
+              Kuyruk dolu. {snap.critical_overflow_count} kritik olay güvenlik için kuyrukta tutuluyor.
+            </div>
+          )}
+        </div>
+        <div className="panel-body space-y-1.5 p-1.5">
           {pending.length === 0 && (
-            <div className="text-zinc-500 text-xs">Bekleyen olay yok.</div>
+            <div className="text-xs text-zinc-500">Bekleyen olay yok.</div>
           )}
           {pending.map((i) => (
             <div key={i.key} onClick={() => onSelectFeed?.(i.feed)}>
@@ -697,13 +701,17 @@ export default function TriagePanel({
         </div>
         {/* Üç ret yalnız öneri üretir. Ayrı onay ve süre olmadan kural çalışmaz. */}
         {snap.rule_proposals.length > 0 && (
-          <div className="mt-1.5 pt-1.5 border-t border-zinc-800 text-xs space-y-1">
+          <div className="shrink-0 space-y-1.5 border-t border-zinc-800 p-2 text-xs">
             <div className="text-zinc-500">
               Kontrollü kural önerileri · {snap.auto_dismissed} süreli elendi
             </div>
             {snap.rule_proposals.map((proposal) => (
               <div key={proposal.proposal_id}
-                   className="rounded border border-zinc-800 p-1.5 text-zinc-400 space-y-1">
+                   className={`space-y-1 rounded-md p-1.5 text-zinc-400 ${
+                     proposal.status === "approved"
+                       ? "border-l-2 border-amber-700 bg-zinc-950"
+                       : "border border-zinc-800 bg-zinc-950"
+                   }`}>
                 <div>
                   {feedNames[proposal.feed] || proposal.feed}: {CATEGORY_TR[proposal.category] ?? proposal.category}
                   {" "}· {proposal.dismissal_count} operatör reddi
@@ -712,14 +720,14 @@ export default function TriagePanel({
                   <div className="flex gap-1">
                     <button
                       onClick={() => ruleAction(proposal, "approve")}
-                      className="rounded bg-amber-800 px-1.5 py-0.5 text-amber-100 hover:bg-amber-700"
+                      className="btn btn-outline-warn h-6"
                       title="Kuralı yalnız 24 saat için etkinleştir"
                     >
                       24 saat onayla
                     </button>
                     <button
                       onClick={() => ruleAction(proposal, "reject")}
-                      className="rounded bg-zinc-800 px-1.5 py-0.5 hover:bg-zinc-700"
+                      className="btn btn-outline h-6"
                     >
                       Reddet
                     </button>
@@ -745,33 +753,31 @@ export default function TriagePanel({
           </div>
         )}
       </div>
-      <div className={`rounded-lg border border-zinc-800 bg-zinc-900/60 p-2 flex flex-col ${
-        layout === "sidebar" ? "max-h-[45%]" : "min-h-0"
-      }`}>
-        <div className="font-bold mb-1.5">
-          ✔ Bu oturumda tespit edilenler
-          <span className="ml-1 text-zinc-500 text-xs font-normal">
-            {confirmed.length} anomali · {snap.dismissed_count} elendi
+      <div className={`panel ${layout === "sidebar" ? "max-h-[45%]" : ""}`}>
+        <div className="panel-title">
+          <span className="flex-1 truncate" title="Bu oturumda tespit edilenler">✔ Tespit edilenler</span>
+          <span className="chip border border-zinc-800 text-zinc-400">
+            <span className="font-mono">{confirmed.length}</span> anomali · <span className="font-mono">{snap.dismissed_count}</span> elendi
           </span>
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto space-y-1 text-xs">
+        <div className="panel-body space-y-1 p-1.5 text-xs">
           {confirmed.length === 0 && (
             <div className="text-zinc-500">Henüz doğrulanan anomali yok.</div>
           )}
           {confirmed.map((i) => (
-            <div key={i.key} className="rounded border border-emerald-900/60 bg-emerald-950/20 px-2 py-1 space-y-1">
+            <div key={i.key} className="space-y-1 rounded-sm border-l-2 border-emerald-700 bg-zinc-950 px-2 py-1.5">
               <span className="font-medium text-emerald-300">
                 {CATEGORY_TR[i.operator_category] ?? i.operator_category}
               </span>
-              <span className={`ml-1 rounded px-1 ${PRIORITY_CLS[i.intervention_band]}`}>
-                {i.intervention_score} · {PRIORITY_TR[i.intervention_band]}
+              <span className={`chip ml-1 ${PRIORITY_CLS[i.intervention_band]}`}>
+                <span className="font-mono">{i.intervention_score}</span> · {PRIORITY_TR[i.intervention_band]}
               </span>
               <span className="text-zinc-400">
-                {" "}· {feedNames[i.feed] || i.feed || "ana akış"} · {clock(i.t)}
-                {i.decided_wall && ` · ${wallClock(i.decided_wall)}`}
+                {" "}· {feedNames[i.feed] || i.feed || "ana akış"} · <span className="font-mono">{clock(i.t)}</span>
+                {i.decided_wall && <span className="font-mono"> · {wallClock(i.decided_wall)}</span>}
               </span>
-              <div className="text-zinc-300 truncate">{i.title}</div>
-              {i.note && <div className="text-zinc-500 truncate">{i.note}</div>}
+              <div className="truncate text-zinc-300">{i.title}</div>
+              {i.note && <div className="truncate text-zinc-500">{i.note}</div>}
               <div className="text-zinc-500">
                 Risk: {RISK_TR[i.operator_risk || i.risk] ?? (i.operator_risk || i.risk)}
                 {i.intervention_required != null
@@ -781,15 +787,15 @@ export default function TriagePanel({
               {onOpenTraining && i.event_id && (
                 <button
                   onClick={() => onOpenTraining(i.event_id!)}
-                  className="mt-1 rounded border border-indigo-800 px-1.5 py-0.5 text-indigo-300 hover:bg-indigo-950/40"
+                  className="btn btn-outline-accent mt-1 h-6"
                   title="Sonucu yeniden incele ve ayrı geliştirme izni ver"
                 >
                   Ayrıntılı incele
                 </button>
               )}
               {(i.suggested_actions ?? []).length > 0 && (
-                <div className="border-t border-emerald-900/50 pt-1">
-                  <div className="mb-1 text-[9px] uppercase tracking-wide text-zinc-500">
+                <div className="border-t border-zinc-800 pt-1">
+                  <div className="microlabel mb-1">
                     Güvenli yerel taslak önerileri
                   </div>
                   <div className="flex flex-wrap gap-1">
@@ -798,7 +804,7 @@ export default function TriagePanel({
                         key={suggestion.action}
                         disabled={suggestion.status !== "available"}
                         onClick={() => requestAction(i, suggestion.action)}
-                        className="rounded border border-amber-800 px-1.5 py-0.5 text-[9px] text-amber-200 hover:bg-amber-950/50 disabled:border-zinc-800 disabled:text-zinc-600"
+                        className="btn btn-outline-warn h-6 px-1.5 text-[10px] disabled:border-zinc-800 disabled:text-zinc-600"
                         title="Yalnız operatör onayına gidecek yerel taslak isteği oluşturur"
                       >
                         {suggestion.status === "available"

@@ -1,20 +1,96 @@
 @import "tailwindcss";
+
 :root {
-  --risk-dusuk: #3b82f6;
-  --risk-orta: #eab308;
-  --risk-yuksek: #f97316;
-  --risk-kritik: #ef4444;
+  --risk-dusuk: #38bdf8;
+  --risk-orta: #fbbf24;
+  --risk-yuksek: #fb923c;
+  --risk-kritik: #f87171;
 }
+
+html {
+  background: #09090b;
+  color-scheme: dark;
+}
+
 body {
-  @apply bg-zinc-950 text-zinc-200 antialiased;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  @apply bg-zinc-950 text-zinc-300 antialiased;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
 }
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f46 transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:focus-visible {
+  outline: 1px solid #0284c7;
+  outline-offset: 1px;
+}
+
 .panel {
-  @apply rounded-lg border border-zinc-800 bg-zinc-900/60 flex flex-col overflow-hidden;
+  @apply flex min-h-0 flex-col overflow-hidden rounded-md border border-zinc-800 bg-zinc-900;
 }
 .panel-title {
-  @apply px-3 py-2 text-xs font-semibold uppercase tracking-wider text-zinc-400 border-b border-zinc-800 shrink-0;
+  @apply flex h-8 shrink-0 items-center gap-2 border-b border-zinc-800 px-2.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400;
 }
+.panel-body {
+  @apply min-h-0 flex-1 overflow-y-auto;
+}
+
+.btn {
+  @apply inline-flex h-7 shrink-0 cursor-pointer select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-sm border px-2.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40;
+}
+.btn-ghost {
+  @apply border-transparent text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100;
+}
+.btn-outline {
+  @apply border-zinc-700 bg-transparent text-zinc-300 hover:border-zinc-500 hover:text-zinc-100;
+}
+.btn-outline-accent {
+  @apply border-sky-900 bg-transparent text-sky-300 hover:border-sky-700 hover:bg-sky-950/50;
+}
+.btn-outline-warn {
+  @apply border-amber-900 bg-transparent text-amber-300 hover:border-amber-700 hover:bg-amber-950/50;
+}
+.btn-primary {
+  @apply border-emerald-600 bg-emerald-600 text-white hover:border-emerald-500 hover:bg-emerald-500;
+}
+.btn-accent {
+  @apply border-sky-700 bg-sky-700 text-white hover:border-sky-600 hover:bg-sky-600;
+}
+.btn-danger {
+  @apply border-red-700 bg-red-700 text-white hover:border-red-600 hover:bg-red-600;
+}
+
+.field {
+  @apply h-7 rounded-sm border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200 outline-none transition-colors focus:border-sky-800 disabled:cursor-not-allowed disabled:opacity-40;
+}
+.field-area {
+  @apply w-full rounded-sm border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs leading-relaxed text-zinc-200 outline-none transition-colors focus:border-sky-800 disabled:cursor-not-allowed disabled:opacity-40;
+}
+
+.chip {
+  @apply inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-sm px-1.5 py-px text-[10px] font-medium leading-4;
+}
+.microlabel {
+  @apply text-[10px] font-semibold uppercase tracking-wider text-zinc-500;
+}
+
 .risk-dusuk { color: var(--risk-dusuk); border-color: var(--risk-dusuk); }
 .risk-orta { color: var(--risk-orta); border-color: var(--risk-orta); }
 .risk-yuksek { color: var(--risk-yuksek); border-color: var(--risk-yuksek); }

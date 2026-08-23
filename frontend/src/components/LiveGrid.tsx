@@ -15,12 +15,12 @@ interface LiveFeed {
 }
 
 function lagBadge(f: LiveFeed): { text: string; cls: string } {
-  if (f.state === "hata") return { text: "KOPUK", cls: "bg-red-700" };
-  if (f.lag_s == null) return { text: "başlıyor…", cls: "bg-zinc-700" };
+  if (f.state === "hata") return { text: "KOPUK", cls: "bg-red-800 text-red-100" };
+  if (f.lag_s == null) return { text: "başlıyor…", cls: "bg-zinc-700 text-zinc-200" };
   const s = Math.round(f.lag_s);
-  if (s <= 45) return { text: `CANLI −${s}s`, cls: "bg-emerald-700" };
-  if (s <= 120) return { text: `−${s}s geride`, cls: "bg-amber-700" };
-  return { text: `−${Math.round(s / 60)}dk geride`, cls: "bg-red-700" };
+  if (s <= 45) return { text: `CANLI −${s}s`, cls: "bg-emerald-800 text-emerald-100" };
+  if (s <= 120) return { text: `−${s}s geride`, cls: "bg-amber-800 text-amber-100" };
+  return { text: `−${Math.round(s / 60)}dk geride`, cls: "bg-red-800 text-red-100" };
 }
 
 export default function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
@@ -71,30 +71,30 @@ export default function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
   const zoomed = zoom ? feeds.find((f) => f.name === zoom) : null;
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col gap-2">
-      <div className="flex items-center gap-3 text-sm">
+    <div className="flex min-h-0 flex-1 flex-col gap-1.5">
+      <div className="flex h-9 shrink-0 items-center gap-3 text-xs">
         <button
           onClick={active ? stop : start}
-          className={`rounded px-3 py-1 font-medium text-white ${
-            active ? "bg-red-600 hover:bg-red-500" : "bg-emerald-600 hover:bg-emerald-500"
-          }`}
+          className={`btn w-44 ${active ? "btn-danger" : "btn-primary"}`}
         >
           {active ? "Canlıyı durdur" : "Canlı akışları başlat"}
         </button>
         {active && (
-          <span className="text-zinc-400">
+          <span className="font-mono text-zinc-400">
             {feeds.filter((f) => f.state !== "hata").length}/{feeds.length} akış ·{" "}
             {feeds.filter((f) => (f.lag_s ?? 1e9) <= 45).length} canlıya yetişik ·{" "}
             {feeds.reduce((a, f) => a + f.segments_done, 0)} segment işlendi
           </span>
         )}
-        <label className="ml-auto flex items-center gap-1 text-zinc-400">
-          kare tazeleme
+        {error && <span className="truncate text-red-400">{error}</span>}
+        <span className="flex-1" />
+        <label className="flex shrink-0 items-center gap-1.5 text-zinc-500">
+          <span className="microlabel">kare tazeleme</span>
           <select
             value={rate}
             onChange={(e) => changeRate(Number(e.target.value))}
             title="Izgara karesi kaç segmentte bir indirilsin — yavaş bağlantıda yükseltin (büyütülmüş görünüm her zaman en tazedir)"
-            className="bg-zinc-800 border border-zinc-700 rounded px-1 py-0.5"
+            className="field"
           >
             <option value={1}>her segment</option>
             <option value={2}>2 segmentte 1</option>
@@ -102,41 +102,50 @@ export default function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
             <option value={8}>8 segmentte 1</option>
           </select>
         </label>
-        {error && <span className="text-red-400">{error}</span>}
       </div>
 
       {zoomed && (
-        <div className="flex gap-3 items-start rounded-lg border border-zinc-700 bg-zinc-900/80 p-2">
+        <div className="flex shrink-0 items-start gap-3 rounded-md border border-zinc-700 bg-zinc-900 p-2">
           <img
             src={`${zoomed.snapshot}?v=${zoomed.segments_done}`}
             alt={zoomed.name}
-            className="max-h-64 rounded"
+            className="max-h-64 rounded-sm"
           />
-          <div className="text-sm space-y-1 min-w-0">
-            <div className="font-bold">{zoomed.desc || zoomed.name}</div>
-            <div className={`inline-block rounded px-2 py-0.5 text-xs text-white ${lagBadge(zoomed).cls}`}>
+          <div className="min-w-0 space-y-1 text-xs">
+            <div className="text-sm font-bold text-zinc-100">{zoomed.desc || zoomed.name}</div>
+            <div className={`chip ${lagBadge(zoomed).cls}`}>
               {lagBadge(zoomed).text}
             </div>
-            <div className="text-zinc-400">
+            <div className="font-mono text-zinc-400">
               {zoomed.segments_done} segment · {zoomed.state}
               {zoomed.dropped_s > 0 && ` · ${Math.round(zoomed.dropped_s)} sn atlandı`}
             </div>
-            {zoomed.last_error && <div className="text-red-400 truncate">{zoomed.last_error}</div>}
+            {zoomed.last_error && <div className="truncate text-red-400">{zoomed.last_error}</div>}
             {(incidents[zoomed.name] ?? []).slice(-3).map((i) => (
-              <div key={i.incident_id} className="text-amber-300 truncate">
+              <div key={i.incident_id} className="truncate text-amber-300">
                 ⚠ {i.title} · risk {i.risk}
               </div>
             ))}
-            <button onClick={() => setZoom(null)} className="text-zinc-500 hover:text-zinc-300">
+            <button onClick={() => setZoom(null)} className="btn btn-ghost h-6 px-1.5">
               kapat ✕
             </button>
           </div>
         </div>
       )}
 
-      <div className="flex-1 min-h-0 flex gap-2">
+      <div className="flex min-h-0 flex-1 gap-1.5">
+      <div className="panel flex-1">
+      <div className="panel-title">
+        <span>Akış Duvarı</span>
+        <span className="flex-1" />
+        {feeds.length > 0 && (
+          <span className="chip border border-zinc-700 font-mono normal-case tracking-normal text-zinc-300">
+            {feeds.length}
+          </span>
+        )}
+      </div>
       <div
-        className="flex-1 min-h-0 grid gap-1 overflow-auto content-start"
+        className="panel-body grid content-start gap-1 p-1.5"
         style={{
           gridTemplateColumns: `repeat(${Math.max(1, Math.ceil(Math.sqrt(feeds.length)))}, minmax(0, 1fr))`,
         }}
@@ -148,9 +157,9 @@ export default function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
             <button
               key={f.name}
               onClick={() => { setZoom(f.name); onSelectFeed(f.name); }}
-              className={`relative aspect-video rounded overflow-hidden border text-left ${
-                inc > 0 ? "border-amber-600" : "border-zinc-800"
-              } bg-black hover:border-zinc-500`}
+              className={`relative aspect-video overflow-hidden rounded-sm border bg-black text-left transition-colors ${
+                inc > 0 ? "border-amber-700" : "border-zinc-800"
+              } hover:border-zinc-500`}
               title={`${f.name} · ${f.state}`}
             >
               {f.snapshot ? (
@@ -159,30 +168,30 @@ export default function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
                   alt={f.name}
                   loading="lazy"
                   decoding="async"
-                  className="w-full h-full object-cover opacity-90"
+                  className="h-full w-full object-cover opacity-90"
                 />
               ) : (
-                <div className="w-full h-full min-h-20 flex items-center justify-center text-zinc-600 text-xs">
+                <div className="flex h-full min-h-20 w-full items-center justify-center text-xs text-zinc-600">
                   {f.state === "hata" ? "bağlantı yok" : "bağlanıyor…"}
                 </div>
               )}
-              <div className="absolute top-0 left-0 right-0 flex justify-between px-1 pt-0.5 text-[10px]">
-                <span className="bg-black/70 rounded px-1 truncate max-w-[60%]"
+              <div className="absolute left-0 right-0 top-0 flex justify-between gap-1 px-1 pt-1 text-[10px]">
+                <span className="max-w-[60%] truncate rounded-sm bg-black/70 px-1 leading-4"
                       title={f.desc || f.name}>
                   {f.desc || f.name}
                 </span>
-                <span className={`rounded px-1 text-white ${badge.cls}`}>{badge.text}</span>
+                <span className={`rounded-sm px-1 font-mono leading-4 ${badge.cls}`}>{badge.text}</span>
               </div>
               {(f.state === "isleniyor" || inc > 0 || f.dropped_s > 0) && (
-                <div className="absolute bottom-0 left-0 right-0 flex gap-1 px-1 pb-0.5 text-[10px]">
+                <div className="absolute bottom-0 left-0 right-0 flex gap-1 px-1 pb-1 text-[10px]">
                   {f.state === "isleniyor" && (
-                    <span className="bg-sky-900/80 rounded px-1">⚙ işleniyor</span>
+                    <span className="rounded-sm bg-sky-950/90 px-1 leading-4 text-sky-200">⚙ işleniyor</span>
                   )}
                   {inc > 0 && (
-                    <span className="bg-amber-800/90 rounded px-1">⚠ {inc} olay</span>
+                    <span className="rounded-sm bg-amber-900/90 px-1 leading-4 text-amber-100">⚠ {inc} olay</span>
                   )}
                   {f.dropped_s > 0 && (
-                    <span className="bg-red-900/80 rounded px-1">
+                    <span className="rounded-sm bg-red-950/90 px-1 font-mono leading-4 text-red-200">
                       ⏭ {Math.round(f.dropped_s)}s
                     </span>
                   )}
@@ -192,10 +201,12 @@ export default function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
           );
         })}
         {!active && feeds.length === 0 && (
-          <div className="col-span-full flex items-center justify-center text-zinc-500 py-20">
-            Canlı kip kapalı — config/live_feeds.json'daki akışlarla başlatın.
+          <div className="col-span-full flex flex-col items-center gap-2 py-20 text-zinc-500">
+            <span className="text-3xl text-zinc-800">▦</span>
+            <span className="text-xs">Canlı kip kapalı — config/live_feeds.json'daki akışlarla başlatın.</span>
           </div>
         )}
+      </div>
       </div>
       <TriagePanel
         onSelectFeed={onSelectFeed}

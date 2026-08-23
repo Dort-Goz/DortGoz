@@ -58,29 +58,25 @@ export default function LearningOrchestratorPanel({
   }, [load]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
-      <section className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-sky-900 bg-zinc-950 shadow-2xl">
-        <header className="flex items-center gap-3 border-b border-zinc-800 px-4 py-3">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+      <section className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 shadow-2xl">
+        <header className="flex h-12 shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
           <div>
-            <h2 className="font-semibold text-sky-100">Öğrenme Merkezi</h2>
+            <h2 className="text-sm font-semibold text-zinc-100">Öğrenme Merkezi</h2>
             <p className="text-[10px] text-zinc-500">
               İnsan onaylı geliştirme akışları · salt-okunur yönlendirme · gölge kayma gözcüsü
             </p>
           </div>
-          <div className="ml-auto flex items-center gap-2 text-xs">
+          <div className="ml-auto flex items-center gap-2">
             <button
               type="button"
               onClick={() => void load()}
               disabled={loading}
-              className="rounded border border-zinc-700 px-2 py-1 text-zinc-300 hover:bg-zinc-800 disabled:opacity-40"
+              className="btn btn-outline"
             >
               {loading ? "Yenileniyor…" : "Yenile"}
             </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded px-2 py-1 text-zinc-400 hover:bg-zinc-800"
-            >
+            <button type="button" onClick={onClose} className="btn btn-ghost">
               Kapat ×
             </button>
           </div>
@@ -88,7 +84,7 @@ export default function LearningOrchestratorPanel({
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4 text-xs">
           {error && (
-            <div className="mb-3 rounded border border-red-800 bg-red-950/40 p-3 text-red-200">
+            <div className="mb-3 rounded-md border border-red-900 bg-red-950/40 p-2.5 text-xs text-red-200">
               {error}
             </div>
           )}
@@ -105,18 +101,18 @@ export default function LearningOrchestratorPanel({
                   ["Eski izin", overview.stale_approval_events],
                   ["Hazır rota", overview.ready_routes],
                 ].map(([label, value]) => (
-                  <div key={label} className="rounded border border-zinc-800 bg-zinc-900/60 p-2">
-                    <div className="text-[10px] text-zinc-500">{label}</div>
-                    <div className="mt-1 text-lg font-semibold text-zinc-100">{value}</div>
+                  <div key={label} className="rounded-md border border-zinc-800 bg-zinc-900 p-2">
+                    <div className="microlabel">{label}</div>
+                    <div className="mt-1 font-mono text-lg font-semibold text-zinc-100">{value}</div>
                   </div>
                 ))}
               </div>
 
               <div className="grid gap-3 lg:grid-cols-[18rem_minmax(0,1fr)]">
-                <section className="rounded border border-sky-900/70 bg-sky-950/20 p-3">
+                <section className="rounded-md border border-sky-900 bg-zinc-900 p-2.5">
                   <div className="flex items-center justify-between">
                     <h3 className="font-medium text-sky-100">Kayma gözcüsü</h3>
-                    <span className="rounded bg-sky-900 px-2 py-0.5 font-semibold text-sky-100">
+                    <span className="chip border border-sky-900 bg-sky-950/40 font-mono text-sky-200">
                       {overview.drift.score}/100
                     </span>
                   </div>
@@ -126,7 +122,7 @@ export default function LearningOrchestratorPanel({
                   </p>
                   <div className="mt-2 space-y-1">
                     {overview.drift.metrics.map((metric) => (
-                      <div key={metric.name} className="rounded border border-zinc-800 bg-zinc-950/50 p-1.5">
+                      <div key={metric.name} className="rounded-md border border-zinc-800 bg-zinc-950 p-1.5">
                         <div className="flex justify-between text-zinc-300">
                           <span>{metric.detail}</span>
                           <span>{metric.points} puan</span>
@@ -139,11 +135,11 @@ export default function LearningOrchestratorPanel({
                   </div>
                 </section>
 
-                <section className="rounded border border-zinc-800 bg-zinc-900/30 p-3">
+                <section className="rounded-md border border-zinc-800 bg-zinc-900 p-2.5">
                   <h3 className="mb-2 font-medium text-zinc-200">Öğrenme rotaları</h3>
                   <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
                     {overview.route_summaries.map((route) => (
-                      <div key={route.use} className="rounded border border-zinc-800 bg-zinc-950/60 p-2">
+                      <div key={route.use} className="rounded-md border border-zinc-800 bg-zinc-950 p-2">
                         <div className="flex items-center justify-between">
                           <span className="font-medium text-zinc-200">{USE_TR[route.use]}</span>
                           <span className="text-emerald-400">{route.ready_count} hazır</span>
@@ -160,7 +156,7 @@ export default function LearningOrchestratorPanel({
                 </section>
               </div>
 
-              <section className="rounded border border-zinc-800 bg-zinc-900/30 p-3">
+              <section className="rounded-md border border-zinc-800 bg-zinc-900 p-2.5">
                 <div className="mb-2 flex items-center justify-between">
                   <h3 className="font-medium text-zinc-200">Öncelikli inceleme kuyruğu</h3>
                   <span className="text-[10px] text-zinc-600">Öğrenme değeri, müdahale önceliğinden ayrıdır.</span>
@@ -174,10 +170,10 @@ export default function LearningOrchestratorPanel({
                       key={candidate.event_id}
                       type="button"
                       onClick={() => onOpenEvent(candidate.event_id)}
-                      className="grid w-full grid-cols-[5rem_minmax(0,1fr)_auto] items-center gap-3 rounded border border-zinc-800 bg-zinc-950/60 p-2 text-left hover:border-sky-800"
+                      className="grid w-full grid-cols-[5rem_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-zinc-800 bg-zinc-950 p-2 text-left transition-colors hover:border-sky-800"
                     >
                       <span className="text-center">
-                        <span className="block text-lg font-semibold text-sky-200">
+                        <span className="block font-mono text-lg font-semibold text-sky-200">
                           {candidate.learning_score}
                         </span>
                         <span className="text-[9px] text-zinc-600">{BAND_TR[candidate.learning_band]}</span>
@@ -202,7 +198,7 @@ export default function LearningOrchestratorPanel({
                 </div>
               </section>
 
-              <div className="rounded border border-amber-900/70 bg-amber-950/20 p-3 text-amber-200">
+              <div className="rounded-md border border-amber-900 bg-amber-950/30 p-2.5 text-xs text-amber-200">
                 Otomatik yürütme, otomatik eğitim ve canlı modele otomatik terfi kapalıdır.
                 Hazır rota yalnız ilgili insan onaylı hazırlık kuyruğuna giriş iznidir.
               </div>
