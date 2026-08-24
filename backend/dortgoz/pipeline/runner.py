@@ -609,6 +609,9 @@ async def run_video(
                         detail=f"{start:.0f}-{end:.0f} sn algı hatası: {str(exc)[:100]}"))
             if det_enabled and idx + 1 < len(wins) and (idx + 1) not in percep_prefetch:
                 percep_prefetch[idx + 1] = asyncio.create_task(_scan_window(idx + 1))
+            if idx + 1 < len(wins):
+                nstart, nend = wins[idx + 1]
+                ingest.prefetch_clip(path, nstart, nend, settings.video_input_width)
 
             gated = not settings.dynamic_windows and peak < gate
             screened_out = bool(cand_spans is not None
@@ -903,10 +906,10 @@ async def run_video(
                 kanit = None
                 if serious and was_open is None:
                     peak = max(serious, key=lambda e: RISK_ORDER.index(e.severity_hint))
-                    thumb = await save_thumbnail(path, peak.t, run_id,
-                                                 f"{int(start)}")
-                    kanit = await save_evidence_clip(path, start, end, run_id,
-                                                     f"{int(start)}")
+                    thumb, kanit = await asyncio.gather(
+                        save_thumbnail(path, peak.t, run_id, f"{int(start)}"),
+                        save_evidence_clip(path, start, end, run_id, f"{int(start)}"),
+                    )
                     exemplar_bank.append(
                         settings.runs_dir,
                         exemplar_bank.key_for(run_id, f"{int(start)}"),
@@ -924,15 +927,17 @@ async def run_video(
                     )
                 sig = window_signals(start, end, screen_samples, profile, call)
                 if not updates and not serious and _sample_this_window():
+                    sample_thumb, sample_clip = await asyncio.gather(
+                        save_thumbnail(path, start, run_id, f"ornek_{int(start)}"),
+                        save_evidence_clip(path, start, end, run_id, f"ornek_{int(start)}"),
+                    )
                     await rec.emit(ReviewSample(
                         sample_id=uuid.uuid4().hex[:8],
                         t=start, window_start=start, window_end=end,
                         summary=(ledger_report.summary if ledger_report else ""),
                         signals=sig,
-                        thumbnail=await save_thumbnail(path, start, run_id,
-                                                      f"ornek_{int(start)}"),
-                        evidence=await save_evidence_clip(path, start, end, run_id,
-                                                         f"ornek_{int(start)}"),
+                        thumbnail=sample_thumb,
+                        evidence=sample_clip,
                     ))
                     exemplar_bank.append(
                         settings.runs_dir,
@@ -1066,6 +1071,7 @@ async def run_video(
     finally:
         for _t in list(locals().get("percep_prefetch", {}).values()):
             _t.cancel()
+        await ingest.drain_clip_tasks()
         try:
             rec.record_metrics()
         except Exception:

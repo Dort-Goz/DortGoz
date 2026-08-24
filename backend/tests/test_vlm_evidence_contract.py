@@ -137,7 +137,7 @@ async def test_evren_video_part_contains_mp4_and_timeline(monkeypatch):
     async def fake_grab_clip(*_args, **_kwargs):
         return b"mp4"
 
-    monkeypatch.setattr(interpret, "grab_clip", fake_grab_clip)
+    monkeypatch.setattr(interpret, "shared_clip", fake_grab_clip)
     refs = interpret.build_video_references(10, 13)
 
     parts = await interpret._video_parts(Path("unused.mp4"), 10, 13, refs)

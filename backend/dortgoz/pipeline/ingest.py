@@ -50,7 +50,7 @@ async def grab_clip(video: Path, start: float, end: float, width: int = 720) -> 
     if start < 0 or end <= start:
         raise ValueError("video aralığı geçersiz")
     return await _run(
-        "ffmpeg", "-v", "error", "-ss", f"{start:.3f}", "-to", f"{end:.3f}",
+        "ffmpeg", "-nostdin", "-v", "error", "-ss", f"{start:.3f}", "-to", f"{end:.3f}",
         "-i", str(video), "-map", "0:v:0", "-an",
         "-vf", f"scale={width}:-2:force_original_aspect_ratio=decrease",
         "-c:v", "mpeg4", "-q:v", "5", "-f", "mp4",
@@ -150,6 +150,43 @@ def prefetch_frames(video: Path, ts: list[float], width: int = 512) -> None:
     for t in ts:
         _frame_task(video, t, width)
 
+_clip_tasks: dict[tuple[str, float, float, int], asyncio.Task] = {}
+_CLIP_TASKS_MAX = 4
+
+def clip_task(video: Path, start: float, end: float, width: int) -> asyncio.Task:
+    key = (str(video), round(start, 3), round(end, 3), width)
+    task = _clip_tasks.pop(key, None)
+    loop = asyncio.get_running_loop()
+    stale = task is not None and (
+        (task.done() and (task.cancelled() or task.exception() is not None))
+        or (not task.done() and task.get_loop() is not loop)
+    )
+    if task is None or stale:
+        task = loop.create_task(grab_clip(video, start, end, width))
+        task.add_done_callback(
+            lambda tk: tk.exception() if not tk.cancelled() else None)
+    _clip_tasks[key] = task
+    while len(_clip_tasks) > _CLIP_TASKS_MAX:
+        _clip_tasks.pop(next(iter(_clip_tasks)))
+    return task
+
+def prefetch_clip(video: Path, start: float, end: float, width: int) -> None:
+    if end > start:
+        clip_task(video, start, end, width)
+
+async def shared_clip(video: Path, start: float, end: float, width: int) -> bytes:
+    return await asyncio.shield(clip_task(video, start, end, width))
+
+
+async def drain_clip_tasks() -> None:
+    loop = asyncio.get_running_loop()
+    tasks = [task for task in _clip_tasks.values()
+             if task.get_loop() is loop and not task.done()]
+    _clip_tasks.clear()
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 async def drain_frame_tasks(video: Path) -> None:
 

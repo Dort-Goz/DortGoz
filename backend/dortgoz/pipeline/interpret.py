@@ -17,7 +17,7 @@ from ..domain.taxonomy import CanonicalEventType, legacy_ws_label_from_canonical
 from ..events import EventEvidenceRef, FrameReference, Risk, WindowReport
 from ..tools.protocols import VlmSchemaError
 from ..utils import inline_defs
-from .ingest import grab_clip, grab_frame
+from .ingest import grab_frame, shared_clip
 from .thinking import thinking_extra
 
 
@@ -629,7 +629,7 @@ async def _video_parts(
             f"EVREN video süresi 0-{settings.video_input_max_seconds:.0f} sn arasında olmalı",
         )
     clip = await asyncio.wait_for(
-        grab_clip(video, start, end, settings.video_input_width),
+        shared_clip(video, start, end, settings.video_input_width),
         timeout=settings.vlm_context_clip_timeout_seconds,
     )
     if len(clip) > 190 * 1024 * 1024:
@@ -638,11 +638,23 @@ async def _video_parts(
         f"{frame.frame_id}: klip {frame.timestamp - start:.3f} sn, video {frame.timestamp:.3f} sn"
         for frame in frame_refs
     )
-    encoded = base64.b64encode(clip).decode()
+    encoded = _encoded_clip(clip)
     return [
         {"type": "video_url", "video_url": {"url": f"data:video/mp4;base64,{encoded}"}},
         {"type": "text", "text": "Kanıt zaman çizelgesi:\n" + mapping},
     ]
+
+_encoded_cache: dict[int, tuple[int, str]] = {}
+
+def _encoded_clip(clip: bytes) -> str:
+    key = id(clip)
+    cached = _encoded_cache.get(key)
+    if cached is not None and cached[0] == len(clip):
+        return cached[1]
+    encoded = base64.b64encode(clip).decode()
+    _encoded_cache.clear()
+    _encoded_cache[key] = (len(clip), encoded)
+    return encoded
 
 
 async def _capture_evidence_frames(
