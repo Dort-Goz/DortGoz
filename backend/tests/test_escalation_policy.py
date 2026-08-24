@@ -52,7 +52,7 @@ def test_calibration_may_lower_the_threshold(_runs_dir, monkeypatch):
 
 
 def test_calibration_may_never_raise_the_threshold(_runs_dir, monkeypatch):
-    # B çok negatif -> hedefe karşılık gelen ham eşik sabitin ÜSTÜNDE kalır
+
     _write_cal(_runs_dir, a=1.0, b=-5.0)
     monkeypatch.setattr(escalation_policy.settings, "escalate_target_p", 0.5)
 

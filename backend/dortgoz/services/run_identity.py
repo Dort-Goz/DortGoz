@@ -1,4 +1,4 @@
-"""Koşu kimliklerini güvenli, platformlar arası dosya adlarına sınırla."""
+
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ _WINDOWS_RESERVED = {
 
 
 def require_safe_run_id(value: str) -> str:
-    """Traversal ve Windows aygıt adlarını içermeyen tek dosya gövdesi döndür."""
+
 
     if not value or len(value) > _MAX_RUN_ID_LENGTH:
         raise ValueError("koşu kimliği boş veya çok uzun")
@@ -40,7 +40,7 @@ def require_safe_run_id(value: str) -> str:
 
 
 def safe_run_file(runs_dir: Path, run_id: str, suffix: str) -> Path:
-    """Koşu dosyasını çöz ve symlink dahil runs kökü dışına çıkışı reddet."""
+
 
     safe_id = require_safe_run_id(run_id)
     root = runs_dir.resolve()

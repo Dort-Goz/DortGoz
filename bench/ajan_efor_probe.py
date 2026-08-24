@@ -9,10 +9,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-from dortgoz.agent import tools                       # noqa: E402
-from dortgoz.agent.llm import create_chat, main_client  # noqa: E402
-from dortgoz.config import settings                   # noqa: E402
-from dortgoz.pipeline.thinking import EFFORT_LADDER, thinking_extra  # noqa: E402
+from dortgoz.agent import tools
+from dortgoz.agent.llm import create_chat, main_client
+from dortgoz.config import settings
+from dortgoz.pipeline.thinking import EFFORT_LADDER, thinking_extra
 
 SENARYOLAR = [
     ("düz yanıt", "Merhaba, şu an sistemde kaç kamera akışı izleniyor ve "

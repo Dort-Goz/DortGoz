@@ -1,4 +1,4 @@
-"""Human-verified object-detection training contracts."""
+
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ class TrainingSampleStatus(StrEnum):
 
 
 class VerifiedBoundingBox(BaseModel):
-    """One reviewed COCO-style pixel-space box."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -37,7 +37,7 @@ class VerifiedBoundingBox(BaseModel):
 
 
 class TrainingFrameReview(BaseModel):
-    """A frame review bound to one immutable dataset manifest and source video."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -88,7 +88,7 @@ class TrainingFrameReview(BaseModel):
 
 
 class TrainingSample(BaseModel):
-    """Prepared local frame and its controlled human-review lifecycle."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

@@ -24,8 +24,8 @@ BACKEND = ROOT / "backend"
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
-from dortgoz.agent.llm import call_stats, create_chat, main_client  # noqa: E402
-from dortgoz.benchmark_metrics import (  # noqa: E402
+from dortgoz.agent.llm import call_stats, create_chat, main_client
+from dortgoz.benchmark_metrics import (
     agreement_rate,
     binary_cohens_kappa,
     event_has_valid_evidence,
@@ -36,10 +36,10 @@ from dortgoz.benchmark_metrics import (  # noqa: E402
     raw_binary_agreement,
     temporal_absolute_error,
 )
-from dortgoz.config import settings  # noqa: E402
-from dortgoz.domain.taxonomy import CanonicalEventType  # noqa: E402
-from dortgoz.pipeline.ingest import grab_frame  # noqa: E402
-from dortgoz.pipeline.interpret import (  # noqa: E402
+from dortgoz.config import settings
+from dortgoz.domain.taxonomy import CanonicalEventType
+from dortgoz.pipeline.ingest import grab_frame
+from dortgoz.pipeline.interpret import (
     FRAME_TIMESTAMP_TOLERANCE_SECONDS,
     SYSTEM_TR,
     TASK_TR,

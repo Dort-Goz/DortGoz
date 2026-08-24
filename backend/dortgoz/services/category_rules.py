@@ -11,7 +11,7 @@ MIN_EVIDENCE = 2
 
 @dataclass
 class CategoryRule:
-    """Operatör düzeltmelerinden çıkarılmış, bir kategoriyi AYIRT EDEN ölçüt."""
+
 
     category: str
     criterion: str
@@ -22,7 +22,7 @@ class CategoryRule:
 
     @property
     def supported(self) -> bool:
-        # Tohum ölçütler taksonomi TANIMIDIR, kanıt saymaz; çıkarılanlar kanıt ister.
+
         if self.source == "seed":
             return True
         return len(self.evidence) >= MIN_EVIDENCE
@@ -51,7 +51,7 @@ def save(runs_dir: Path, rules: list[CategoryRule]) -> None:
 
 def merge(existing: list[CategoryRule],
           proposed: list[CategoryRule]) -> list[CategoryRule]:
-    """Onaylanmış kuralları KORUR; aynı kategori+ölçüt yeniden önerilmez."""
+
     seen = {(r.category, r.criterion.strip()) for r in existing}
     out = list(existing)
     for r in proposed:
@@ -63,11 +63,7 @@ def merge(existing: list[CategoryRule],
 
 
 def prompt_block(rules: list[CategoryRule]) -> str:
-    """Onaylı ölçütleri isteme yazar — kategori başına EN FAZLA BİR tane.
 
-    Aynı kategoride hem çıkarılmış hem taban ölçüt varsa çıkarılmış olan
-    kazanır: operatörün gerçek düzeltmelerine dayanır.
-    """
     live = [r for r in rules if r.approved and r.supported and r.criterion.strip()]
     if not live:
         return ""
@@ -85,7 +81,7 @@ def prompt_block(rules: list[CategoryRule]) -> str:
 
 
 def seed_rules(defaults_dir: Path) -> list[CategoryRule]:
-    """Taksonomi taban ölçütleri — düzeltme olmadan da kategoriyi tanımlar."""
+
     try:
         raw = json.loads(
             (defaults_dir / "kategori_olcutleri.json").read_text(encoding="utf-8"))
@@ -101,7 +97,7 @@ def seed_rules(defaults_dir: Path) -> list[CategoryRule]:
 
 
 def corrections(ledger: Path) -> list[dict]:
-    """(model_category -> operator_category) düzeltmelerini döndürür."""
+
     try:
         text = ledger.read_text(encoding="utf-8")
     except OSError:

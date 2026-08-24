@@ -1,4 +1,4 @@
-"""Controlled D-FINE worker and candidate registry tests."""
+
 
 from __future__ import annotations
 

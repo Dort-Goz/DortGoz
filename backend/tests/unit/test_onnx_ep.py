@@ -12,7 +12,7 @@ CUDA = "CUDAExecutionProvider"
 def _reset(monkeypatch):
     monkeypatch.setattr(onnx_ep.settings, "onnx_device", "cpu")
     monkeypatch.setattr(onnx_ep.settings, "onnx_providers", "")
-    monkeypatch.setattr(onnx_ep, "_preloaded", True)  # gercek dlopen yapma
+    monkeypatch.setattr(onnx_ep, "_preloaded", True)
     onnx_ep._warned.clear()
 
 
@@ -33,7 +33,7 @@ def test_device_gpu_selects_cuda(monkeypatch, value):
 
 
 def test_gpu_falls_back_to_cpu_when_cuda_missing(monkeypatch):
-    """Masaustu AMD: gpu istense bile calismali."""
+
     monkeypatch.setattr(onnx_ep.settings, "onnx_device", "gpu")
     _available(monkeypatch, [CPU])
 

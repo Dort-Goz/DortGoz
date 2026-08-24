@@ -62,7 +62,7 @@ class HumanReviewInput(BaseModel):
 
 
 class TriageDecisionInput(BaseModel):
-    """Nöbet kartındaki yapılandırılmış operatör kararı."""
+
 
     model_config = ConfigDict(extra="forbid")
 
@@ -211,7 +211,7 @@ class EventListResponse(BaseModel):
 
 
 class ReportResponse(AnalysisResult):
-    """AnalysisResult modelinin REST görünümü."""
+    pass
 
 
 def event_to_json(event: VerifiedEvent) -> dict[str, Any]:

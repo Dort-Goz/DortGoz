@@ -1,4 +1,4 @@
-"""Backend başlangıcında yarım kalmış kalıcı işleri uzlaştır."""
+
 
 from __future__ import annotations
 
@@ -24,12 +24,7 @@ class StartupReconciliationReport:
 
 
 class StartupReconciliationService:
-    """Kalıcı işlerin durumunu gerçek süreç sahipliği ile eşleştir.
 
-    Faz 1 yalnız eğitim işlerini uzlaştırır. Analiz ve shadow alanları aynı
-    başlangıç sınırında tutulur. Bu alanlar kendi kalıcı çalışma kayıtları
-    eklendiğinde ayrı uzlaştırma yöntemleri kazanacaktır.
-    """
 
     def __init__(
         self,
@@ -68,8 +63,8 @@ class StartupReconciliationService:
 
         owner = self.execution_coordinator.active_exclusive()
         if owner is not None and owner.workload == ExclusiveWorkload.TRAINING:
-            # Eğitim lease'i canlı bir PID'ye aittir. Sahip metadatası eski veya
-            # tutarsız olsa bile ikinci backend çalışan işi terminal yapmaz.
+
+
             return _TrainingResult(scanned=len(running), active_skipped=len(running))
 
         result = _TrainingResult(scanned=len(running))
@@ -78,8 +73,8 @@ class StartupReconciliationService:
             try:
                 self.repository.update_training_job(interrupted)
             except RepositoryConflictError:
-                # Başka süreç aynı revision'ı önce tamamladı. SQLite CAS sonucu
-                # yeniden yükler. Tamamlanan işi uzlaştırma sonucu ile ezme.
+
+
                 current = self.repository.get_training_job(job.job_id)
                 if current is not None and current.status == TrainingJobStatus.RUNNING:
                     raise

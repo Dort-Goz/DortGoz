@@ -1,4 +1,4 @@
-"""Fail-closed COCO export for human-verified D-FINE training frames."""
+
 
 from __future__ import annotations
 
@@ -17,10 +17,6 @@ from ..domain.training import TrainingFrameReview, TrainingSample, TrainingSampl
 from .dataset_manifest import sha256_file
 from .training_selection import TrainingSelectionReport
 
-# D-FINE eğitim ve export komutları `remap_mscoco_category=False` kullanır. Bu modda
-# D-FINE COCO yükleyicisi `category_id` değerini doğrudan sınıf indeksi kabul eder ve
-# komut `num_classes=len(category_names)` verir. Bu yüzden kategori kimlikleri sıfır
-# tabanlıdır; deployment tarafındaki runtime `id2label` eşlemesi de aynı tabanı kullanır.
 CATEGORY_ID_BASE = 0
 
 
@@ -78,7 +74,7 @@ def export_verified_frames_to_coco(
     output_dir: Path,
     selection_report: TrainingSelectionReport | None = None,
 ) -> CocoExportResult:
-    """Validate provenance and emit COCO JSON without copying any image or video."""
+
 
     ensure_training_manifest_allowed(dataset_manifest)
     root = frame_root.resolve()

@@ -2,9 +2,9 @@
 import argparse, asyncio, json, statistics as st, sys, time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from dortgoz.agent.llm import call_stats, create_chat, main_client   # noqa: E402
-from dortgoz.config import settings                                  # noqa: E402
-from dortgoz.pipeline import interpret as I                          # noqa: E402
+from dortgoz.agent.llm import call_stats, create_chat, main_client
+from dortgoz.config import settings
+from dortgoz.pipeline import interpret as I
 
 
 async def tur(klip: Path, bas: float, sure: float, gramer: bool) -> dict:

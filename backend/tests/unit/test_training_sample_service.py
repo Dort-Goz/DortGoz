@@ -1,4 +1,4 @@
-"""Controlled event-to-D-FINE training sample bridge tests."""
+
 
 from __future__ import annotations
 

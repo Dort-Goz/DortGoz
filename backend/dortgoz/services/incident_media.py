@@ -1,4 +1,4 @@
-"""Canonical olaylardan kalıcı klip ve thumbnail üretir."""
+
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ FrameReader = Callable[[Path, float, int], Awaitable[bytes]]
 
 
 class IncidentMediaError(RuntimeError):
-    """Olay medyası güvenli biçimde üretilemedi."""
+
 
     def __init__(self, code: str, detail: str) -> None:
         super().__init__(detail)
@@ -52,7 +52,7 @@ class IncidentMediaService:
         self.frame_reader = frame_reader
 
     async def finalize_analysis(self, analysis_id: str) -> list[IncidentMedia]:
-        """Analizin tüm olaylarını üret; tek olay hatası diğerlerini engellemez."""
+
 
         analysis = self.repository.get_analysis(analysis_id)
         if analysis is None or analysis.status not in {

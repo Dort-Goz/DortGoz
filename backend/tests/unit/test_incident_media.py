@@ -1,4 +1,4 @@
-"""Olay klibi üretimi, idempotency ve event revision yenilemesi."""
+
 
 from __future__ import annotations
 

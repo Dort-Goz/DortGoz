@@ -165,8 +165,8 @@ def test_validated_event_is_admitted_only_as_provisional_review() -> None:
 
     assert decision.admitted_event_indices == (0,)
     assert decision.held_event_indices == ()
-    # Rozet yalnız sorunlu gözlem varken yakılır; risk yine de otomatik
-    # doğrulamaya kapalı kalır.
+
+
     assert decision.review_reason == ""
     assert not updates[0].needs_review
     assert decision.risk is not None
@@ -215,7 +215,7 @@ def test_fully_validated_window_leaves_open_incident_badge_untouched() -> None:
     updates = _ingest(decision, ledger)
 
     assert decision.review_reason == ""
-    # Sticky bayrak kaldırılmaz, fakat temiz pencere yeni gerekçe eklemez.
+
     assert updates[0].needs_review
     assert updates[0].review_reason == "ilk geçiş provisional"
 

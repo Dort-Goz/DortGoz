@@ -40,7 +40,7 @@ describe("WebSocket sıra eşleme", () => {
   });
 });
 
-/** Sahte soket: gerçek ağ olmadan open/close olaylarını sürer. */
+
 class FakeSocket {
   readyState = 0;
   sent: string[] = [];
@@ -52,9 +52,9 @@ class FakeSocket {
   send(data: string) { this.sent.push(data); }
   close() { this.closeCalls += 1; }
 
-  /** Sunucu bağlantıyı kabul etti. */
+
   accept() { this.readyState = 1; this.onopen?.(); }
-  /** Sunucu bağlantıyı düşürdü (ör. yavaş istemci tahliyesi). */
+
   drop() { this.readyState = 3; this.onclose?.(); }
 }
 
@@ -124,7 +124,6 @@ describe("WebSocket yeniden bağlanma", () => {
 
     expect(timers[0].cancelled).toBe(true);
     expect(states[states.length - 1]).toBe("closed");
-    // İptal edilen zamanlayıcı yine de tetiklenirse soket AÇILMAMALI.
     timers[0].fn();
     expect(sockets).toHaveLength(1);
     expect(socket.connection).toBe("closed");

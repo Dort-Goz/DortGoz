@@ -1,4 +1,4 @@
-"""Project runtime incidents into the canonical, persistent event repository."""
+
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ _RISK_SCORE = {"dusuk": 0.25, "orta": 0.5, "yuksek": 0.75, "kritik": 1.0}
 
 
 class RuntimeAnalysisProjection:
-    """Keep the WS runtime and canonical feedback store on one event identity."""
+
 
     def __init__(
         self,
@@ -48,7 +48,7 @@ class RuntimeAnalysisProjection:
         self._event_by_incident: dict[tuple[str, str], str] = {}
 
     def observe(self, envelope: Event) -> None:
-        """ConnectionManager observer; failures are logged and never break analysis."""
+
 
         try:
             payload = envelope.payload
@@ -115,7 +115,7 @@ class RuntimeAnalysisProjection:
     async def register_runtime_source(
         self, run_id: str, media_path: str, source: Path
     ) -> VideoMetadata:
-        """Canlı segmenti kopyalamadan canonical video parent'ına kaydet."""
+
 
         resolved = source.resolve()
         if not resolved.is_file() or resolved.is_symlink():
@@ -142,7 +142,7 @@ class RuntimeAnalysisProjection:
         return stored
 
     def event_id_for(self, feed: str, incident_id: str) -> str | None:
-        """Nöbet kuyruğu ile canonical event kimliğini aynı kayda bağla."""
+
 
         return self._event_by_incident.get((feed, incident_id))
 
@@ -154,8 +154,8 @@ class RuntimeAnalysisProjection:
         current = self.repository.get_event(event_id)
 
         if current is not None:
-            # Operatör kararı append-only review ile geldikten sonra runtime
-            # yaşam döngüsü o kararı ve düzeltilmiş alanları geri yazamaz.
+
+
             if current.review is not None:
                 return event_id
             start = (
@@ -260,7 +260,7 @@ class RuntimeAnalysisProjection:
 
     @staticmethod
     def _virtual_video(run_id: str) -> VideoMetadata:
-        """Mock arayüz feedback'ini de canonical kimliğe bağlayan kaynak."""
+
 
         video_id = str(uuid5(NAMESPACE_URL, f"dortgoz-mock:{run_id}"))
         return VideoMetadata(

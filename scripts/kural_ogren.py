@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""Operatör kategori düzeltmelerinden AYIRT EDİCİ ölçüt çıkarır.
 
-Kare eşleştirmez; kategorinin TANIMINI öğrenir. Örnek: 'kavga' yerine
-'silahli_olay' düzeltmesi tekrar ediyorsa, silahın baskın olduğu ölçütünü yazar.
-
-Çıkan kurallar ONAYSIZ yazılır; operatör onaylamadan isteme girmez.
-"""
 
 from __future__ import annotations
 
@@ -17,9 +11,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from dortgoz.agent.llm import create_chat, main_client  # noqa: E402
-from dortgoz.config import settings  # noqa: E402
-from dortgoz.services import category_rules  # noqa: E402
+from dortgoz.agent.llm import create_chat, main_client
+from dortgoz.config import settings
+from dortgoz.services import category_rules
 
 SYSTEM = (
     "Sen bir güvenlik video analiz sisteminin sınıflandırma ölçütlerini yazan "

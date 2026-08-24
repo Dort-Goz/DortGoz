@@ -1,4 +1,4 @@
-"""Reproducible D-FINE detector evaluation adapter tests."""
+
 
 from __future__ import annotations
 

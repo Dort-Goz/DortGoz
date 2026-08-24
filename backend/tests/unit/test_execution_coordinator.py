@@ -1,4 +1,4 @@
-"""Canlı öncelikli süreçler arası çalışma koordinatörü testleri."""
+
 
 from __future__ import annotations
 

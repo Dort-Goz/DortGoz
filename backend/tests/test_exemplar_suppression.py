@@ -8,8 +8,8 @@ from dortgoz.services import exemplar_bank as bank
 from dortgoz.services.exemplar_bank import Matcher
 
 BENIGN = [bank.Exemplar("run/10", "kamera1", (1.0, 0.0, 0.0))]
-NEAR = (0.999, 0.045, 0.0)      # kosinüs ~0.999
-FAR = (0.0, 1.0, 0.0)           # kosinüs 0.0
+NEAR = (0.999, 0.045, 0.0)
+FAR = (0.0, 1.0, 0.0)
 
 
 def _matcher(tmp_path: Path, monkeypatch) -> Matcher:
@@ -60,7 +60,7 @@ def test_shadow_mode_matches_but_never_suppresses(tmp_path, monkeypatch):
 
     assert m.suppress is False
     assert m.shadow is True
-    assert m.similarity > 0.97          # eşleşmeyi yine de bildirir
+    assert m.similarity > 0.97
 
 
 def test_disabled_short_circuits(tmp_path, monkeypatch):

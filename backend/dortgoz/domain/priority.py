@@ -1,4 +1,4 @@
-"""Sürümlü ve açıklanabilir müdahale önceliği sözleşmesi."""
+
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def intervention_band_for_score(score: int) -> InterventionBand:
 
 
 class InterventionPriority(BaseModel):
-    """Bir canonical olayın operatör kuyruğundaki açıklanabilir önceliği."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

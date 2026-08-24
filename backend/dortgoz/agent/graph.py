@@ -88,7 +88,7 @@ def build_system_prompt() -> str:
 
 
 def _observation_block(text: str) -> str:
-    """VLM metnini sistem talimatından sözdizimsel olarak ayır."""
+
 
     return (
         "\n<untrusted_observation_data>\n"
@@ -158,7 +158,7 @@ def _build_graph(manager: ConnectionManager):
 async def _step(manager: ConnectionManager, node: str,
                 status: str, detail: str = "") -> None:
     await manager.broadcast(Event.wrap(
-        AgentStep(node=node, status=status, detail=detail)))  # type: ignore[arg-type]
+        AgentStep(node=node, status=status, detail=detail)))
 
 
 async def _stream_text(manager: ConnectionManager, text: str) -> None:

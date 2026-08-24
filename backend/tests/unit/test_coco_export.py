@@ -1,4 +1,4 @@
-"""Human review and fail-closed COCO export tests."""
+
 
 from __future__ import annotations
 
@@ -245,12 +245,12 @@ def test_coco_category_ids_share_the_runtime_id2label_base(tmp_path: Path) -> No
     )
     id2label = json.loads(config_path.read_text(encoding="utf-8"))["id2label"]
 
-    # Eğitimin gördüğü kimlik ile canlı analizin okuduğu kimlik aynı ismi vermelidir.
+
     assert coco_ids == {name: int(key) for key, name in id2label.items()}
     assert sorted(coco_ids.values()) == list(
         range(CATEGORY_ID_BASE, CATEGORY_ID_BASE + len(categories))
     )
-    # num_classes uzunluk olarak verilir; en büyük kimlik sınır dışına çıkamaz.
+
     assert max(coco_ids.values()) < len(categories)
 
 

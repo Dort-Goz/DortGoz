@@ -150,7 +150,7 @@ class ActionDispatcher:
     def register_ui_fixture(
         self, request: ActuatorRequest
     ) -> tuple[ActuatorRequest, bool]:
-        """Register one explicit UI-only preview without bypassing the real incident gate."""
+
         with self._lock:
             self._ensure_loaded()
             self._validate_request_id(request.request_id)

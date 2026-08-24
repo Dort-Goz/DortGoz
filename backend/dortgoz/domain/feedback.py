@@ -1,9 +1,4 @@
-"""Controlled development feedback contracts.
 
-Operator review and development approval are separate decisions.  A review can
-correct an event without authorising that event for prompts, calibration,
-training, or evaluation.
-"""
 
 from __future__ import annotations
 
@@ -39,7 +34,7 @@ class DevelopmentApprovalStatus(StrEnum):
 
 
 class RuleProposalStatus(StrEnum):
-    """Kamera kuralının kontrollü yaşam döngüsü."""
+
 
     COLLECTING = "collecting"
     PROPOSED = "proposed"
@@ -50,7 +45,7 @@ class RuleProposalStatus(StrEnum):
 
 
 class RuleProposal(BaseModel):
-    """Aynı kamera ve olay tipi için süreli bastırma önerisi."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -104,7 +99,7 @@ class RuleProposal(BaseModel):
 
 
 class DevelopmentApproval(BaseModel):
-    """Append-only operator decision for development use of one reviewed event."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

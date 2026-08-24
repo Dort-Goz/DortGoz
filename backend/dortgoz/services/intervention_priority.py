@@ -1,4 +1,4 @@
-"""GPU kullanmayan, deterministik müdahale önceliği motoru."""
+
 
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ def calculate_priority_score(
     phase: str,
     needs_review: bool,
 ) -> PriorityScore:
-    """Aynı girdiler için daima aynı puanı üretir."""
+
 
     if risk not in RISK_POINTS:
         raise ValueError(f"geçersiz risk girdisi: {risk}")

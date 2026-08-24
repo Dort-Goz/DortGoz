@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
-"""31 klipte uçtan uca ölçüm: yakalama, yanlış alarm, kategori, huni, hız.
 
-Aynı komut her makinede aynı tabloyu üretir; makineler arası KIYASLANABİLİR.
-
-    # backend ayakta olmalı (DORTGOZ_MOCK=0)
-    cd backend && uv run python ../bench/tam_olcum.py
-
-    # koşuyu tekrar yapmadan yalnız çözümle:
-    cd backend && uv run python ../bench/tam_olcum.py --analiz-et
-"""
 
 from __future__ import annotations
 
@@ -25,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MEDIA = ROOT / "media"
 RUNS = ROOT / "runs"
 
-# UCF klip ailesi -> beklenen kategori (events.py taksonomisi)
+
 AILE = {
     "Abuse": "kavga", "Arrest": "bilinmeyen", "Arson": "yangin",
     "Assault": "saldiri", "Burglary": "hirsizlik", "Explosion": "patlama",
@@ -74,7 +65,7 @@ async def kostur(base: str, videos: list[str], timeout: float) -> float:
 
 
 def topla(baslangic: float) -> list[dict]:
-    """Her klip için EN SON koşuyu al."""
+
     en_son: dict[str, Path] = {}
     for f in RUNS.glob("*.jsonl"):
         if "canli-" in f.name or f.stat().st_mtime < baslangic:

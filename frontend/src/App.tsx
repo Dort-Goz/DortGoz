@@ -18,7 +18,6 @@ import { consoleReducer, emptyFeed, initialState } from "./state";
 
 const EXPERIMENT_KEY = "dortgoz.experiment";
 
-// Bağlantı rozeti: kopukken operatör BAYAT veriye baktığını görmelidir.
 const CONNECTION_TR: Record<ConnectionState, string> = {
   connecting: "bağlanıyor",
   open: "bağlı",
@@ -92,7 +91,6 @@ export default function App() {
   const [showLearningOrchestrator, setShowLearningOrchestrator] = useState(false);
   const [fixtureMode, setFixtureMode] = useState(false);
   const [triagePending, setTriagePending] = useState(0);
-  // Sunucu bağlantısı — üst çubuktaki kalıcı rozet
   const [connection, setConnection] = useState<ConnectionState>("connecting");
 
   useEffect(() => {
@@ -344,7 +342,7 @@ export default function App() {
           </button>
         )}
 
-        {/* Rozet HER kipte görünür: kopuk bağlantıda ekrandaki her şey bayattır. */}
+        {}
         <span
           title={connection === "open"
             ? "Sunucu bağlantısı açık — olaylar canlı akıyor"

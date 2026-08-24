@@ -1,4 +1,4 @@
-"""Candidate evaluation, champion promotion, and rollback gates."""
+
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ class ModelRegistryError(RuntimeError):
 
 
 class ModelRegistryService:
-    """Keep weights immutable and switch only a small hash-bound manifest."""
+
 
     def __init__(
         self,

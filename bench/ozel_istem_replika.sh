@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# ÖZEL ikinci-görüş istemi (v2) r2/r3 doğrulaması — Madde 14.
 set -u
 cd ~/DortGoz/backend
 for R in _r2 _r3; do

@@ -47,7 +47,7 @@ async def test_hakem_confusable_sinifi_duzeltir(monkeypatch) -> None:
 async def test_hakem_kume_disinda_calismaz(monkeypatch) -> None:
     monkeypatch.setattr(settings, "adjudicate_confusable", "hirsizlik,kavga")
 
-    async def fake_adjudicate(*_a, **_k):  # pragma: no cover - çağrılmamalı
+    async def fake_adjudicate(*_a, **_k):
         raise AssertionError("hakem küme dışında çağrıldı")
 
     monkeypatch.setattr(interpret, "adjudicate_category", fake_adjudicate)
@@ -80,7 +80,7 @@ async def test_hakem_ayni_sinifta_dokunmaz(monkeypatch) -> None:
 async def test_hakem_bos_anahtar_kapali(monkeypatch) -> None:
     monkeypatch.setattr(settings, "adjudicate_confusable", "")
 
-    async def fake_adjudicate(*_a, **_k):  # pragma: no cover - çağrılmamalı
+    async def fake_adjudicate(*_a, **_k):
         raise AssertionError("hakem kapalıyken çağrıldı")
 
     monkeypatch.setattr(interpret, "adjudicate_category", fake_adjudicate)

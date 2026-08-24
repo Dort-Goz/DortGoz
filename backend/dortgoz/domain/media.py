@@ -1,4 +1,4 @@
-"""Kalıcı olay klibi ve önizleme sözleşmesi."""
+
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class IncidentMedia(BaseModel):
-    """Bir canonical olay için yeniden üretilebilir medya artifact'i."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

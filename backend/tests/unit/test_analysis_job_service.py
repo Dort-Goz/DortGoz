@@ -88,7 +88,7 @@ async def wait_for_status(
 
 
 def write_status(path: Path, analysis_id: str, state: str) -> None:
-    event = Event.wrap(RunStatus(run_id=analysis_id, state=state))  # type: ignore[arg-type]
+    event = Event.wrap(RunStatus(run_id=analysis_id, state=state))
     path.write_text(event.model_dump_json() + "\n", encoding="utf-8")
 
 
@@ -485,7 +485,7 @@ async def test_mock_ws_start_never_launches_runner(monkeypatch, tmp_path: Path) 
 
 
 def test_iter_run_lines_skips_broken_lines_and_reports_count(tmp_path: Path) -> None:
-    """Tek bozuk satır tüm koşuyu erişilemez yapmamalı; atlanan sayılmalı."""
+
     path = tmp_path / "kirik.jsonl"
     path.write_text(
         '{"seq": 0, "payload": {"type": "agent_step"}}\n'

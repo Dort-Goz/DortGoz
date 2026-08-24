@@ -1,4 +1,4 @@
-"""Rank review value, expose approved learning routes, and watch data drift."""
+
 
 from __future__ import annotations
 
@@ -90,7 +90,7 @@ def learning_band_for_score(score: int) -> LearningBand:
 
 
 class LearningOrchestrator:
-    """Metadata-only planner. It never starts training or promotes a model."""
+
 
     def __init__(self, repository: EventRepository) -> None:
         self.repository = repository
@@ -187,7 +187,7 @@ class LearningOrchestrator:
         return LearningRouteQueue(use=use, items=items, count=len(items))
 
     def overview(self, *, candidate_limit: int = 12) -> LearningOrchestratorOverview:
-        """Build one read-only view of every learning route and safety gate."""
+
         if candidate_limit < 1 or candidate_limit > 100:
             raise ValueError("candidate_limit 1 ile 100 arasında olmalıdır")
         events = self.repository.list_all_events()

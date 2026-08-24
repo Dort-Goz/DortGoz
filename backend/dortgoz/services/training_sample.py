@@ -1,4 +1,4 @@
-"""Prepare and verify D-FINE frames behind explicit human approval gates."""
+
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ class TrainingSampleError(RuntimeError):
 
 
 class TrainingSampleService:
-    """Bind reviewed events to local frames without bypassing dataset policy."""
+
 
     def __init__(
         self,
@@ -370,7 +370,7 @@ class TrainingSampleService:
 
 
 def jpeg_dimensions(payload: bytes) -> tuple[int, int]:
-    """Read JPEG SOF dimensions without adding an image-library dependency."""
+
 
     if len(payload) < 4 or payload[:2] != b"\xff\xd8":
         raise TrainingSampleError("TRAINING_FRAME_INVALID", "Training frame geçerli JPEG değil.")

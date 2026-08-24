@@ -1,8 +1,4 @@
-"""Thread-safe, process içi event memory adapter'ı.
 
-Bu adapter Görev 05'in ilk kalıcı sınırıdır. Süreç yeniden başlatılınca veri
-silinir; API/SQLite/PostgreSQL adapter'ları aynı protocol'e sonradan bağlanır.
-"""
 
 from __future__ import annotations
 
@@ -131,7 +127,7 @@ class InMemoryEventRepository:
         *,
         state_fields: tuple[str, ...],
     ) -> _T:
-        """İşlemi yalıtılmış RAM kopyasında çalıştır ve tek adımda yayımla."""
+
 
         with self._lock:
             original = {name: getattr(self, name) for name in state_fields}
@@ -434,7 +430,7 @@ class InMemoryEventRepository:
             return _copy(approval)
 
     def save_feedback_bundle(self, bundle: FeedbackWriteBundle) -> FeedbackWriteResult:
-        """Feedback modellerini aynı RAM yayın sınırında kaydet."""
+
 
         def operation() -> FeedbackWriteResult:
             _validate_feedback_bundle_links(bundle)
@@ -445,7 +441,7 @@ class InMemoryEventRepository:
             written_approvals: set[str] = set()
             written_proposals: set[str] = set()
 
-            # Revision çatışmasını ilişkili yeni kayıtları hazırlamadan önce yakala.
+
             for proposal in bundle.rule_proposals:
                 existing = self._rule_proposals.get(proposal.proposal_id)
                 if existing is None:
@@ -1150,7 +1146,7 @@ class InMemoryEventRepository:
         trace_items: list[TraceRecord],
         event: VerifiedEvent,
     ) -> VerifiedEvent:
-        """Candidate + trace + event'i tek lock altında atomik kaydeder."""
+
 
         def operation() -> VerifiedEvent:
             self.save_candidate(candidate)

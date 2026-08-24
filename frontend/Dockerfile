@@ -1,5 +1,4 @@
 # syntax=docker/dockerfile:1
-# The frozen Bun lockfile is installed while preparing the pre-air-gap image.
 FROM oven/bun:1.3.14
 
 WORKDIR /home/bun/app

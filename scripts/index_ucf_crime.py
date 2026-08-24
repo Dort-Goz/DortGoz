@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Index a local UCF-Crime copy without copying media into the repository.
 
-The generated manifest is benchmark-only because UCF-Crime has no verified
-redistribution or training license in the project policy.
-"""
 
 from __future__ import annotations
 
@@ -16,7 +12,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 
-from dortgoz.services.dataset_manifest import (  # noqa: E402
+from dortgoz.services.dataset_manifest import (
     build_ucf_crime_manifest,
     write_dataset_manifest,
 )

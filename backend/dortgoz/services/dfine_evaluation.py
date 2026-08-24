@@ -1,4 +1,4 @@
-"""Prepare and normalize reproducible D-FINE detector evaluations."""
+
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ _COCO_METRIC_PATTERN = re.compile(
 
 
 class CocoEvaluationInventory(BaseModel):
-    """Immutable identity of the COCO test annotations and their local frames."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -72,7 +72,7 @@ class CocoEvaluationInventory(BaseModel):
 
 
 class DfineDetectorEvaluationPlan(BaseModel):
-    """Hash-bound inputs for one official D-FINE test-only run."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -109,7 +109,7 @@ class DfineDetectorEvaluationPlan(BaseModel):
 
 
 def inspect_project_revision(workspace_root: Path) -> str:
-    """Return a clean, committed project revision."""
+
 
     root = workspace_root.resolve()
     revision = _git_output(root, "rev-parse", "HEAD")
@@ -137,7 +137,7 @@ def prepare_dfine_detector_evaluation(
     shadow_repetitions: int = 3,
     now: datetime | None = None,
 ) -> DfineDetectorEvaluationPlan:
-    """Validate all local inputs and freeze their identities in one plan."""
+
 
     if candidate.stage != ModelStage.CANDIDATE or candidate.evaluation is not None:
         raise EvaluationReportError(
@@ -232,7 +232,7 @@ def inspect_coco_evaluation_inventory(
     expected_dataset_fingerprint: str | None = None,
     allowed_source_sha256s: set[str] | None = None,
 ) -> CocoEvaluationInventory:
-    """Validate COCO references and hash every frame used by the test set."""
+
 
     workspace = workspace_root.resolve()
     annotations = _workspace_path(workspace, coco_annotations, must_be_file=True)
@@ -425,7 +425,7 @@ def build_dfine_test_command(
     batch_size: int = 2,
     workers: int = 2,
 ) -> list[str]:
-    """Revalidate a plan and return a shell-free official test-only argv."""
+
 
     if not 1 <= batch_size <= 128 or not 0 <= workers <= 64:
         raise EvaluationReportError(
@@ -499,7 +499,7 @@ def normalize_dfine_evaluation_log(
     output_path: Path | None = None,
     measured_at: datetime | None = None,
 ) -> DetectorEvaluationArtifact:
-    """Convert official D-FINE/pycocotools output to the canonical artifact."""
+
 
     log = log_path.resolve()
     if not log.is_file() or log.is_symlink():
@@ -547,7 +547,7 @@ def execute_dfine_detector_evaluation(
     process_runner: ProcessRunner | None = None,
     execution_coordinator: ExecutionCoordinator | None = None,
 ) -> tuple[DetectorEvaluationArtifact, ProcessOutcome, Path]:
-    """Run one bounded evaluation under a live-preemptible exclusive lease."""
+
 
     exclusive_lease = None
     if execution_coordinator is not None:
@@ -598,7 +598,7 @@ def _execute_dfine_detector_evaluation_under_lease(
     stop_probe: Callable[[], bool],
     process_runner: ProcessRunner | None,
 ) -> tuple[DetectorEvaluationArtifact, ProcessOutcome, Path]:
-    """Validate and execute after the caller owns the exclusive lease."""
+
 
     if not 0 <= gpu_index <= 31 or not 1 <= max_gpu_minutes <= 1440:
         raise EvaluationReportError(
@@ -659,7 +659,7 @@ def _execute_dfine_detector_evaluation_under_lease(
 
 
 def parse_dfine_coco_metrics(text: str) -> tuple[float, float]:
-    """Read one unambiguous COCO AP/AP50 pair from official evaluation output."""
+
 
     structured_candidates: list[tuple[float, float]] = []
     for line in text.splitlines():
@@ -680,8 +680,8 @@ def parse_dfine_coco_metrics(text: str) -> tuple[float, float]:
     for match in _COCO_METRIC_PATTERN.finditer(text):
         summary[match.group("iou")].append(float(match.group("value")))
     summary_candidates = list(zip(summary["0.50:0.95"], summary["0.50"], strict=False))
-    # D-FINE JSON logs keep more decimal places than pycocotools stdout. Prefer
-    # the structured values when both representations are present.
+
+
     candidates = structured_candidates or summary_candidates
 
     valid = {

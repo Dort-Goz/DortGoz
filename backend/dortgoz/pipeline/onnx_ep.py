@@ -13,11 +13,7 @@ _preloaded = False
 
 
 def _preload_cuda_libs() -> None:
-    """CUDA/cuDNN kitaplıklarını süreç içinde yükler.
 
-    Böylece LD_LIBRARY_PATH ayarlamaya gerek kalmaz: pip ile gelen
-    nvidia-*-cu12 paketleri doğrudan bulunur.
-    """
     global _preloaded
     if _preloaded:
         return
@@ -45,10 +41,7 @@ def _requested() -> list[str]:
 
 
 def providers() -> list[str]:
-    """Yürütme sağlayıcılarını çözer; istenen yoksa CPU'ya düşer.
 
-    Varsayılan CPU'dur: masaüstü AMD'dir, CUDA yalnız dizüstünde vardır.
-    """
     want = _requested()
     if not want:
         return [CPU]
@@ -73,7 +66,7 @@ def providers() -> list[str]:
 
 
 def session_options():
-    """İplik sınırlı oturum ayarları; 0 = onnxruntime varsayılanı."""
+
     import onnxruntime as ort
 
     opts = ort.SessionOptions()

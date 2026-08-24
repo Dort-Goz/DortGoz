@@ -240,7 +240,7 @@ class Ledger:
         return _update(inc, peak.t, report.summary)
 
     def _close(self) -> list[IncidentUpdate]:
-        inc = self.incidents[self._open_id]        # type: ignore[index]
+        inc = self.incidents[self._open_id]
         self._open_id = None
         self._quiet = 0
         inc.phase = "sonuclandi"
@@ -309,7 +309,7 @@ def _update(inc: Incident, t: float, detail: str) -> IncidentUpdate:
     return IncidentUpdate(
         incident_id=inc.incident_id,
         t=t,
-        phase=inc.phase,                           # type: ignore[arg-type]
+        phase=inc.phase,
         title=inc.title,
         anomaly_type=inc.anomaly_type,
         risk=inc.risk,

@@ -1,4 +1,4 @@
-"""Event memory repository adapter'ları."""
+
 
 from .errors import (
     RepositoryConflictError,

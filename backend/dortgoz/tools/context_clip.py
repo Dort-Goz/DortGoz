@@ -1,4 +1,4 @@
-"""Candidate için local context clip üretimi; orijinal medya değiştirilmez."""
+
 
 from __future__ import annotations
 

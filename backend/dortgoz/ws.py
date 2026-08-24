@@ -37,7 +37,7 @@ class ConnectionManager:
         self._send_locks.pop(ws, None)
 
     async def replay_since(self, ws: WebSocket, from_seq: int) -> None:
-        """Eksik olayları sırayla gönder ve ardından canlı yayını aç."""
+
 
         if ws not in self._connections:
             return

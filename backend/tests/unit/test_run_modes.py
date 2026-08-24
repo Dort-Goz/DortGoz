@@ -26,7 +26,7 @@ def test_mode_flags_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_operator_message_mode_validated() -> None:
     assert OperatorMessage(kind="start_run", video="v.mp4", mode="genis").mode == "genis"
     with pytest.raises(ValueError):
-        OperatorMessage(kind="start_run", video="v.mp4", mode="turbo")  # type: ignore[arg-type]
+        OperatorMessage(kind="start_run", video="v.mp4", mode="turbo")
 
 
 @pytest.mark.asyncio

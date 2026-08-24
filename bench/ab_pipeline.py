@@ -13,7 +13,7 @@ from dortgoz.pipeline import ingest, windowing
 from dortgoz.pipeline.interpret import glance_window, interpret_window
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from make_long_feed import resolve_ucf  # noqa: E402  (veri seti yolu tek konvansiyondan)
+from make_long_feed import resolve_ucf
 
 RESULTS = Path(__file__).parent / "results"
 THRESHOLDS = [0.01, 0.05, 0.10, 0.20, 0.30, 0.50, 0.70, 0.90]

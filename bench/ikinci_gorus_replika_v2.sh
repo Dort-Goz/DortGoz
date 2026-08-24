@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# DONMUŞ profil üzerinde 3 replika (Madde 14). Profil 2026-08-18 optimizasyonundan
-# sonra DEĞİŞMEYECEK: VULKAN_XCHAIN_DENSE (GFXQ yok) · -c 24576 · -np 4 --kv-unified · q8 KV.
-# ⚠ SIRALI koşulur (--esz 1): ilk replika seti de sıralıydı; yığınlama varyansı
-# replika varyansına KARIŞMAMALI. np4 slotları sıralı istekte sonucu değiştirmiyor.
 set -u
 cd ~/DortGoz/backend
 for R in "" _r2 _r3; do

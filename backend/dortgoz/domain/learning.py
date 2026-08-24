@@ -1,4 +1,4 @@
-"""Explainable active-learning and drift-monitoring contracts."""
+
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ class DriftMetric(BaseModel):
 
 
 class DriftSnapshot(BaseModel):
-    """Read-only sentinel result. It never changes a live model or threshold."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -87,7 +87,7 @@ class LearningRoute(BaseModel):
 
 
 class LearningPlan(BaseModel):
-    """One event's learning value and safe downstream routing plan."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -157,7 +157,7 @@ class LearningCandidateSummary(BaseModel):
 
 
 class LearningOrchestratorOverview(BaseModel):
-    """System-wide read model for the human-gated learning loop."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

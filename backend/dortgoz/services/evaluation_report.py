@@ -1,4 +1,4 @@
-"""Build one hash-bound model evaluation from detector and shadow artifacts."""
+
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ class EvaluationReportError(RuntimeError):
 
 
 class DetectorEvaluationArtifact(BaseModel):
-    """Normalized COCO evaluation emitted by the D-FINE evaluation adapter."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -51,7 +51,7 @@ class DetectorEvaluationArtifact(BaseModel):
 
 
 class ShadowEvaluationRecord(BaseModel):
-    """One video-level row from a candidate run executed in shadow mode."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -89,7 +89,7 @@ class ShadowEvaluationRecord(BaseModel):
 
 
 class DfineEvaluationReport(BaseModel):
-    """Exact payload accepted by ``ModelRegistryService.record_evaluation``."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

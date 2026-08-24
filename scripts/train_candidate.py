@@ -11,13 +11,13 @@ from pathlib import Path, PurePath
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from dortgoz.pipeline.ingest import motion_profile
-from dortgoz.pipeline.temporal_cnn import (  # noqa: E402
+from dortgoz.pipeline.temporal_cnn import (
     TemporalCnnCandidateModel,
     TemporalCnnTrainingExample,
     evaluate_temporal_cnn,
     train_temporal_cnn,
 )
-from dortgoz.services.dataset_manifest import (  # noqa: E402
+from dortgoz.services.dataset_manifest import (
     load_dataset_manifest,
     verify_training_sources,
 )

@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Sabit pencerelerde VLM çıktısını ölçer; iki koşuyu eşleştirerek karşılaştırır.
 
-Amaç: bir hızlandırmanın KALİTEYİ değiştirip değiştirmediğini, koşu-içi
-gürültü tabanına karşı ölçmek. Önce aynı ayarla iki kez koşun (taban),
-sonra değişiklikle koşun.
-"""
 
 from __future__ import annotations
 
@@ -19,13 +14,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from dortgoz.config import settings  # noqa: E402
-from dortgoz.pipeline.interpret import interpret_window  # noqa: E402
+from dortgoz.config import settings
+from dortgoz.pipeline.interpret import interpret_window
 
 MEDIA = ROOT / "media"
 
-# (klip, pencere, kare) — olaylı ve olaysız karışık, sabit ve tekrar edilebilir
-# Pencere ve kareler klip SÜRESİNİN İÇİNDE kalmalı; aşarsa ffmpeg EOF hatası verir.
+
+
 def _win(dur: float) -> tuple[tuple[float, float], list[float]]:
     end = round(dur - 0.6, 1)
     step = end / 6.0
@@ -63,7 +58,7 @@ async def _one(name: str, window: tuple[float, float],
     try:
         rep = await interpret_window(video, window, keys, think=think,
                                      stats=stats)
-    except Exception as exc:  # ölçüm aracı: hata da veridir
+    except Exception as exc:
         return {"klip": name, "hata": f"{type(exc).__name__}: {exc}"}
     return {
         "klip": name,

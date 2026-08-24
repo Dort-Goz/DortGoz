@@ -1,6 +1,3 @@
-# Bu akış yalnız arayüz bileşenlerini sınar. Video analizi çalıştırılmaz.
-# Her satır bir Event zarfıdır. delay yalnız ekrandaki oynatma temposudur.
-# Sunucu run_id, request_id, feed ve video alanlarını seçilen yerel videoya göre doldurur.
 {"delay":0.3,"feed":"TEST-KAMERA-01","payload":{"type":"run_status","run_id":"fixture-ui-crime","state":"processing","progress":0.05,"detail":"ARAYÜZ TEST AKIŞI · SEÇİLEN VİDEO ANALİZ EDİLMEDİ","video":""}}
 {"delay":0.4,"feed":"TEST-KAMERA-01","payload":{"type":"agent_step","node":"fixture_start","status":"start","detail":"Hazır olay sözleşmesi arayüze yükleniyor"}}
 {"delay":0.5,"feed":"TEST-KAMERA-01","payload":{"type":"window_report","window_start":0,"window_end":30,"anomaly_type":"hirsizlik","summary":"Temsili arayüz verisi: kapalı bir alana zorla giriş şüphesi gösteriliyor.","events":[{"t":12,"desc":"Kapı bölgesinde zorlayıcı hareket şüphesi","evidence":[{"frame_id":"f_001","timestamp":12,"claim":"Kapı bölgesinde olağan dışı temas görülüyor."}],"severity_hint":"yuksek"}],"uncertainties":["Bu kayıt gerçek analiz sonucu değildir."]}}

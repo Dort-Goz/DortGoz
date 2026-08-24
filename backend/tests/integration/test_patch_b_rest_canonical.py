@@ -91,7 +91,7 @@ class CanonicalApi:
 
 
 def assert_control_plane_has_no_duplicate_analysis(repository) -> None:
-    """REST job başlangıcı kalıcı event memory'de ikinci bir analiz açmamalı."""
+
 
     metrics = repository.snapshot_metrics()
     assert metrics["total_videos"] == 1

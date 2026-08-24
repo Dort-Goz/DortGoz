@@ -1,4 +1,4 @@
-"""Birden çok feedback kaydını tek mantıksal yazımda taşıyan sözleşmeler."""
+
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from ..domain.provenance import HumanReview
 
 @dataclass(frozen=True, slots=True)
 class FeedbackWriteBundle:
-    """Önceden kimliklendirilmiş feedback kayıtları."""
+
 
     reviews: tuple[HumanReview, ...] = ()
     development_approvals: tuple[DevelopmentApproval, ...] = ()
@@ -23,7 +23,7 @@ class FeedbackWriteBundle:
 
 @dataclass(frozen=True, slots=True)
 class FeedbackWriteResult:
-    """Kaydedilen modeller ve bu çağrıda gerçekten değişen kimlikler."""
+
 
     reviews: tuple[HumanReview, ...]
     development_approvals: tuple[DevelopmentApproval, ...]

@@ -1,4 +1,4 @@
-"""Hash-bound detector and shadow evaluation report tests."""
+
 
 from __future__ import annotations
 

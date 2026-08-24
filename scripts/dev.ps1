@@ -6,8 +6,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Winget/Bun/uv kurulumlarından sonra açık kalan PowerShell, güncel kullanıcı
-# PATH'ini miras almaz. Launcher her açılışta kayıtlı PATH'i yeniden yükler.
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
 $env:PATH = "$userPath;$machinePath;$env:PATH"
@@ -20,7 +18,6 @@ if ($Mock -and $Real) {
     throw "-Mock ve -Real birlikte kullanılamaz."
 }
 
-# Yeni klonda model/FFmpeg olmadan ilk açılışın çalışması için varsayılan mock'tur.
 $UseMock = -not $Real.IsPresent
 
 function Resolve-Executable {
@@ -52,8 +49,6 @@ function Invoke-NativeChecked {
         [scriptblock]$Command
     )
 
-    # PowerShell 7, bazı araçların normal ilerleme bilgisini stderr'den ErrorRecord
-    # olarak geçirir. Native aracın gerçek başarısızlık sinyali exit code'dur.
     $previousPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = "Continue"
@@ -142,8 +137,6 @@ $backendJob = Start-Job -Name "dortgoz-backend" -ArgumentList $BackendDir, $uvPa
         $env:DORTGOZ_DEPLOYMENT_PROFILE = $DeploymentProfile
         $env:DORTGOZ_EVENT_STORE_PATH = $EventStorePath
     }
-    # Windows'ta uvicorn --reload SelectorEventLoop kullanır; asyncio subprocess
-    # (ffmpeg/ffprobe) desteklenmediği için video hattı NotImplementedError ile düşer.
     & $UvExecutable run uvicorn dortgoz.main:app --host 0.0.0.0 --port 8000
 }
 

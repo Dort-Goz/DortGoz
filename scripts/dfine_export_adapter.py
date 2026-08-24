@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""Call the official D-FINE exporter with the training-time class contract.
 
-The upstream exporter does not expose ``num_classes`` as a CLI argument. A
-custom checkpoint therefore cannot be loaded with the stock COCO value (80).
-This adapter injects only the two values used by our official training command
-and then delegates all graph export work to D-FINE's own ``main`` function.
-"""
 
 from __future__ import annotations
 

@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Madde 14: rapora giren sayı tek koşudan alınmaz. Tırmandırma kolunu birincil
-# tabanın r2 ve r3 replikaları üzerinde de ölçer (r1 2026-08-18'de koşuldu).
 set -u
 cd ~/DortGoz/backend
 for R in r2 r3; do

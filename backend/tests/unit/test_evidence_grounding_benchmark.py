@@ -14,7 +14,7 @@ BENCH = ROOT / "bench"
 if str(BENCH) not in sys.path:
     sys.path.insert(0, str(BENCH))
 
-from ab_evidence_grounding import (  # noqa: E402
+from ab_evidence_grounding import (
     Arm,
     EvaluationStage,
     FramePayload,

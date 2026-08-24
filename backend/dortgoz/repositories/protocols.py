@@ -1,4 +1,4 @@
-"""Memory adapter'larının ortak, storage'dan bağımsız protokolü."""
+
 
 from __future__ import annotations
 

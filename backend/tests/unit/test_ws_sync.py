@@ -1,4 +1,4 @@
-"""WebSocket sıra geçmişi ve yeniden bağlanma eşleme testi."""
+
 
 import asyncio
 import json
@@ -26,19 +26,19 @@ class FakeSocket:
 async def test_reconnect_replays_only_missing_events_in_sequence() -> None:
     manager = ConnectionManager()
     first = FakeSocket()
-    await manager.connect(first)  # type: ignore[arg-type]
+    await manager.connect(first)
     await manager.broadcast(Event.wrap(ChatMessage(role="agent", text="bir")))
     await manager.broadcast(Event.wrap(ChatMessage(role="agent", text="iki")))
-    assert first.sent == []  # sync tamamlanmadan canlı delta gönderilmez
+    assert first.sent == []
 
-    await manager.replay_since(first, 0)  # type: ignore[arg-type]
+    await manager.replay_since(first, 0)
     assert [json.loads(item)["seq"] for item in first.sent] == [1, 2]
-    manager.disconnect(first)  # type: ignore[arg-type]
+    manager.disconnect(first)
 
     second = FakeSocket()
-    await manager.connect(second)  # type: ignore[arg-type]
+    await manager.connect(second)
     await manager.broadcast(Event.wrap(ChatMessage(role="agent", text="üç")))
-    await manager.replay_since(second, 1)  # type: ignore[arg-type]
+    await manager.replay_since(second, 1)
 
     assert [json.loads(item)["seq"] for item in second.sent] == [2, 3]
 
@@ -48,11 +48,11 @@ async def test_history_gap_requests_client_state_reset() -> None:
     manager = ConnectionManager()
     manager._history = deque(maxlen=2)
     socket = FakeSocket()
-    await manager.connect(socket)  # type: ignore[arg-type]
+    await manager.connect(socket)
     for number in range(4):
         await manager.broadcast(Event.wrap(ChatMessage(role="agent", text=str(number))))
 
-    await manager.replay_since(socket, 1)  # type: ignore[arg-type]
+    await manager.replay_since(socket, 1)
 
     control = json.loads(socket.sent[0])
     assert control == {"kind": "sync_reset", "oldest_seq": 3, "latest_seq": 4}
@@ -63,9 +63,9 @@ async def test_history_gap_requests_client_state_reset() -> None:
 async def test_backend_restart_resets_ahead_client_cursor() -> None:
     manager = ConnectionManager()
     socket = FakeSocket()
-    await manager.connect(socket)  # type: ignore[arg-type]
+    await manager.connect(socket)
 
-    await manager.replay_since(socket, 500)  # type: ignore[arg-type]
+    await manager.replay_since(socket, 500)
     await manager.broadcast(Event.wrap(ChatMessage(role="agent", text="yeni süreç")))
 
     control = json.loads(socket.sent[0])
@@ -75,7 +75,7 @@ async def test_backend_restart_resets_ahead_client_cursor() -> None:
 
 @pytest.mark.asyncio
 async def test_dropped_slow_client_socket_is_closed() -> None:
-    """Düşürülen istemcinin soketi de kapanmalı — yoksa arayüz yeniden bağlanmaz."""
+
 
     class StalledSocket(FakeSocket):
         def __init__(self) -> None:
@@ -92,8 +92,8 @@ async def test_dropped_slow_client_socket_is_closed() -> None:
     manager.SEND_TIMEOUT = 0.05
     stalled = StalledSocket()
     healthy = FakeSocket()
-    await manager.connect(stalled)  # type: ignore[arg-type]
-    await manager.connect(healthy)  # type: ignore[arg-type]
+    await manager.connect(stalled)
+    await manager.connect(healthy)
     manager._syncing.clear()
 
     await manager.broadcast(Event.wrap(ChatMessage(role="agent", text="x")))
@@ -105,7 +105,7 @@ async def test_dropped_slow_client_socket_is_closed() -> None:
 
 @pytest.mark.asyncio
 async def test_close_failure_does_not_break_broadcast() -> None:
-    """Kapatma hatası yutulur; yayın diğer istemciler için tamamlanır."""
+
 
     class UnclosableSocket(FakeSocket):
         async def send_text(self, data: str) -> None:
@@ -117,8 +117,8 @@ async def test_close_failure_does_not_break_broadcast() -> None:
     manager = ConnectionManager()
     broken = UnclosableSocket()
     healthy = FakeSocket()
-    await manager.connect(broken)  # type: ignore[arg-type]
-    await manager.connect(healthy)  # type: ignore[arg-type]
+    await manager.connect(broken)
+    await manager.connect(healthy)
     manager._syncing.clear()
 
     await manager.broadcast(Event.wrap(ChatMessage(role="agent", text="x")))

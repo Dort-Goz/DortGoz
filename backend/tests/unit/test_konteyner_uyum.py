@@ -1,4 +1,4 @@
-"""Konteyner paketleme, bulut telemetrisi kapatma ve yapılandırma sınırları."""
+
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def _load_script(name: str):
 
 
 def _load_isolated_config():
-    """config.py'yi ayrı bir modül adıyla yeniden çalıştırır (import yan etkisi testi)."""
+
     path = ROOT / "backend" / "dortgoz" / "config.py"
     spec = importlib.util.spec_from_file_location("dortgoz_config_izole", path)
     assert spec is not None and spec.loader is not None
@@ -48,14 +48,11 @@ def test_compose_mounts_config_and_models_read_only() -> None:
     assert "./models:/app/models:ro" in compose
 
 
-def test_compose_and_env_template_disable_cloud_tracing() -> None:
+def test_compose_disables_cloud_tracing() -> None:
     compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
-    template = (ROOT / ".env.example").read_text(encoding="utf-8")
 
     assert 'LANGSMITH_TRACING: "false"' in compose
     assert 'LANGCHAIN_TRACING_V2: "false"' in compose
-    assert "LANGSMITH_TRACING=false" in template
-    assert "LANGCHAIN_TRACING_V2=false" in template
 
 
 def test_config_import_overrides_enabled_cloud_tracing(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -6,7 +6,7 @@ from dortgoz.config import Settings, settings
 
 
 def test_good_pipeline_is_the_default():
-    """dev.sh yalnız DORTGOZ_MOCK verir; geri kalanı varsayılan olmalı."""
+
     assert settings.onnx_device == "cpu"
     assert Path(settings.candidate_model_manifest).as_posix().endswith(
         "models/semantic/manifest.json"
@@ -16,7 +16,7 @@ def test_good_pipeline_is_the_default():
 
 
 def test_learned_suppression_stays_off_by_default():
-    """Öğrenilmiş bastırma ölçülene kadar açılmaz."""
+
     assert settings.exemplar_suppress is False
     assert settings.exemplar_shadow is True
     assert settings.escalate_shadow is True
@@ -43,7 +43,7 @@ def test_existing_dfine_path_is_left_alone(tmp_path):
 
 
 def test_missing_everywhere_keeps_the_configured_value(tmp_path, monkeypatch):
-    """Bulunamazsa yol korunur; dedektör kendi hata mesajını versin."""
+
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
 
     assert Settings(dfine_onnx="/yok/x.onnx").dfine_onnx == "/yok/x.onnx"

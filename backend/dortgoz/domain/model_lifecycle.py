@@ -1,4 +1,4 @@
-"""Controlled D-FINE training and model-registry contracts."""
+
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ class ModelStage(StrEnum):
 
 
 class DfineTrainingPolicy(BaseModel):
-    """Hard resource and data limits for one local training worker."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -69,7 +69,7 @@ class DfineTrainingPolicy(BaseModel):
 
 
 class PromotionPolicy(BaseModel):
-    """Fail-closed gate used before a candidate can become champion."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -86,7 +86,7 @@ class PromotionPolicy(BaseModel):
 
 
 class TrainingJob(BaseModel):
-    """Persistent record for one bounded, reproducible D-FINE run."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -218,7 +218,7 @@ class TrainingJob(BaseModel):
 
 
 class ModelEvaluation(BaseModel):
-    """End-to-end evaluation bound to one immutable candidate checkpoint."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -253,7 +253,7 @@ class ModelEvaluation(BaseModel):
 
 
 class DfineDeploymentArtifact(BaseModel):
-    """Production ONNX derived from one immutable candidate checkpoint."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -291,7 +291,7 @@ class DfineDeploymentArtifact(BaseModel):
 
 
 class ModelVersion(BaseModel):
-    """Candidate/champion registry row. Model weights remain outside Git."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

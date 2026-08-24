@@ -106,7 +106,7 @@ def decide_runtime_policy(
 
 
 def _review_reason(statuses: dict[int, RuntimeValidationStatus]) -> str:
-    """Yalnız validated olmayan gözlemler için insan incelemesi gerekçesi üret."""
+
 
     flagged = sorted(
         (index, status)

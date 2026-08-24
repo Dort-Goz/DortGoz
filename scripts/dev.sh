@@ -1,10 +1,4 @@
 #!/usr/bin/env bash
-# Backend + vite dev sunucusunu birlikte başlatır.
-#
-#   ./scripts/dev.sh          arayüz test akışı — GPU/model gerekmez, video analizi yapılmaz
-#   ./scripts/dev.sh real     gerçek mod — .env'deki yerel model ucuna bağlanır
-#
-# Konsol: http://localhost:5173   (API/WS 8000'e proxy'lenir)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MODE="${1:-mock}"

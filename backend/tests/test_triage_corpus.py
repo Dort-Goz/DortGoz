@@ -315,7 +315,7 @@ def test_prompt_change_is_detectable_across_decisions(tmp_path):
 
 def test_shadow_hit_is_recorded_so_the_activation_gate_is_measurable(tmp_path,
                                                                     monkeypatch):
-    """Gölge isabeti deftere düşmezse 'yanlış bastırma oldu mu' ölçülemez."""
+
     from dortgoz.services import exemplar_bank
 
     monkeypatch.setattr(triage.settings, "exemplar_suppress", True)
@@ -338,4 +338,4 @@ def test_shadow_hit_is_recorded_so_the_activation_gate_is_measurable(tmp_path,
 
     assert line["emsal_golge"] is True
     assert line["emsal_key"] == "run/9"
-    assert line["verdict"] == "anomali"   # => YANLIŞ bastırma olurdu
+    assert line["verdict"] == "anomali"

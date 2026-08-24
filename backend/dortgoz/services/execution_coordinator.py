@@ -1,9 +1,4 @@
-"""Canlı analiz öncelikli, süreçler arası çalışma lease'leri.
 
-Canlı analizler paylaşımlı lease alır. Eğitim, detector evaluation ve shadow
-işleri tek bir münhasır lease alır. Canlı istek, münhasır işe kooperatif durma
-sinyali verir ve iş bütün kaynaklarını bırakmadan başlayamaz.
-"""
 
 from __future__ import annotations
 
@@ -27,7 +22,7 @@ class ExclusiveWorkload(StrEnum):
 
 
 class ExecutionCoordinationError(RuntimeError):
-    """Bir çalışma lease'i güvenli biçimde verilemedi."""
+    pass
 
 
 class LiveWorkloadActive(ExecutionCoordinationError):
@@ -84,12 +79,7 @@ class ExclusiveExecutionLease:
 
 
 class ExecutionCoordinator:
-    """Ters öncelikli okuyucu-yazıcı kilidini SQLite lease'leriyle uygula.
 
-    Canlı çalışma okuyucudur ve birlikte çalışabilir. Münhasır işler yazıcıdır.
-    Fark klasik RW kilidinden canlı önceliğidir: yeni canlı istek mevcut yazıcıya
-    dur sinyali verir, teardown bitene kadar bekler, sonra lease alır.
-    """
 
     def __init__(self, database_path: Path, *, poll_seconds: float = 0.05) -> None:
         if poll_seconds <= 0:
@@ -100,7 +90,7 @@ class ExecutionCoordinator:
         self._initialize()
 
     async def acquire_live(self, *, timeout_seconds: float = 60.0) -> LiveExecutionLease:
-        """Münhasır işi durdur ve temiz kapanıştan sonra paylaşımlı lease al."""
+
 
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds pozitif olmalıdır")
@@ -113,7 +103,7 @@ class ExecutionCoordinator:
         owner_ref: str = "",
         owner_boot_id: str = "",
     ) -> ExclusiveExecutionLease:
-        """Canlı veya başka münhasır iş yoksa tek münhasır lease'i al."""
+
 
         if len(owner_ref) > 240 or len(owner_boot_id) > 64:
             raise ValueError("lease sahip kimliği izin verilen uzunluğu aşıyor")
@@ -157,7 +147,7 @@ class ExecutionCoordinator:
         return ExclusiveExecutionLease(self, lease_id, workload)
 
     def active_exclusive(self) -> ExclusiveLeaseOwner | None:
-        """Canlı PID'ye ait güncel münhasır iş sahibini döndür."""
+
 
         with self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -328,20 +318,20 @@ def _process_is_alive(pid: int) -> bool:
     if os.name == "nt":
         process_query_limited_information = 0x1000
         still_active = 259
-        handle = ctypes.windll.kernel32.OpenProcess(  # type: ignore[attr-defined]
+        handle = ctypes.windll.kernel32.OpenProcess(
             process_query_limited_information, False, pid
         )
         if not handle:
             return False
         try:
             exit_code = ctypes.c_ulong()
-            if not ctypes.windll.kernel32.GetExitCodeProcess(  # type: ignore[attr-defined]
+            if not ctypes.windll.kernel32.GetExitCodeProcess(
                 handle, ctypes.byref(exit_code)
             ):
                 return False
             return exit_code.value == still_active
         finally:
-            ctypes.windll.kernel32.CloseHandle(handle)  # type: ignore[attr-defined]
+            ctypes.windll.kernel32.CloseHandle(handle)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:

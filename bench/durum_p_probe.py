@@ -2,7 +2,7 @@
 import argparse, asyncio, json, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from dortgoz.pipeline.interpret import interpret_window  # noqa: E402
+from dortgoz.pipeline.interpret import interpret_window
 
 
 async def main() -> None:

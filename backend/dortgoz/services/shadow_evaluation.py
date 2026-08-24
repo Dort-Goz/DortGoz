@@ -1,4 +1,4 @@
-"""Run a deployed D-FINE candidate through three isolated canonical shadow passes."""
+
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ from .execution_coordinator import (
 
 
 class ShadowCase(BaseModel):
-    """Human-labelled video-level expectation for one shadow case."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -55,7 +55,7 @@ class ShadowCase(BaseModel):
 
 
 class ShadowCaseManifest(BaseModel):
-    """Small human-authored case list; video bytes remain outside Git."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -84,7 +84,7 @@ class ShadowCaseManifest(BaseModel):
 
 
 class ShadowEvaluationPlan(BaseModel):
-    """Immutable candidate, videos, code, and three repetition identities."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -141,7 +141,7 @@ def prepare_shadow_evaluation(
     repetitions: int = 3,
     now: datetime | None = None,
 ) -> ShadowEvaluationPlan:
-    """Verify candidate/video provenance and freeze one three-pass plan."""
+
 
     if (
         candidate.stage != ModelStage.CANDIDATE
@@ -251,7 +251,7 @@ async def execute_shadow_evaluation(
     peak_ram_probe: Callable[[], float] = lambda: _process_peak_ram_mb(),
     revision_probe: Callable[[Path], str] = inspect_project_revision,
 ) -> list[Path]:
-    """Execute every case three times without activating the candidate."""
+
 
     if not 1 <= max_minutes <= 1440:
         raise EvaluationReportError(
@@ -377,7 +377,7 @@ async def execute_shadow_evaluation(
 
 
 def summarize_canonical_shadow_run(path: Path) -> dict[str, Any]:
-    """Read final incident states and canonical runtime metrics from one JSONL."""
+
 
     if not path.is_file() or path.is_symlink() or path.stat().st_size > 64 * 1024 * 1024:
         raise EvaluationReportError(
@@ -473,8 +473,8 @@ async def _run_with_guards(
                 stop_reason, "canlı analiz shadow worker'ını güvenli biçimde durdurdu"
             )
     except asyncio.CancelledError:
-        # Sert asyncio iptali shield/to_thread işini öldürmez. Global ayarlar ancak
-        # canonical runner bütün alt işlerini boşalttıktan sonra geri yüklenebilir.
+
+
         await asyncio.shield(task)
         raise
     finally:

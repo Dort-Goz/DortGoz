@@ -10,12 +10,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from dortgoz.pipeline.interpret import (  # noqa: E402
+from dortgoz.pipeline.interpret import (
     SYSTEM_TR_GENIS, SYSTEM_TR_IKINCI, interpret_window)
-from dortgoz.pipeline.windowing import select_keyframes   # noqa: E402
-from dortgoz.pipeline import ingest                       # noqa: E402
-from dortgoz.config import settings                       # noqa: E402
-from make_long_feed import resolve_ucf                    # noqa: E402
+from dortgoz.pipeline.windowing import select_keyframes
+from dortgoz.pipeline import ingest
+from dortgoz.config import settings
+from make_long_feed import resolve_ucf
 
 SEVERITY = ["dusuk", "orta", "yuksek", "kritik"]
 ALARM_FLOOR = 1

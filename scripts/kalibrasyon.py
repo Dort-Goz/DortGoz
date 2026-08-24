@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from dortgoz.services import calibration  # noqa: E402
+from dortgoz.services import calibration
 
 BUCKETS = [(0.0, 0.01), (0.01, 0.1), (0.1, 0.5), (0.5, 0.9), (0.9, 1.01)]
 

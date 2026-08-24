@@ -15,13 +15,13 @@ def test_fit_refuses_when_one_class_is_too_thin():
 
 
 def test_calibration_improves_a_badly_overconfident_signal():
-    # model 0.99 diyor ama vakaların yarısı aslında olay değil
+
     pairs = [(0.99, 1)] * 6 + [(0.99, 0)] * 6 + [(0.01, 0)] * 6
     cal = calibration.calibrate(pairs, now=0.0)
 
     assert cal.brier_after < cal.brier_before
     assert cal.logloss_after < cal.logloss_before
-    # 0.99'luk grup gerçekte ~%50 -> kalibre edilmiş değer aşağı çekilmeli
+
     assert 0.25 < cal.apply(0.99) < 0.75
 
 

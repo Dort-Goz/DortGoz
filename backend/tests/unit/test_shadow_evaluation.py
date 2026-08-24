@@ -1,4 +1,4 @@
-"""Three-pass candidate shadow evaluation tests."""
+
 
 from __future__ import annotations
 

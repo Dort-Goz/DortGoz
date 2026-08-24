@@ -1,8 +1,4 @@
-"""Normalized SQLite-backed, local-only event memory adapter.
 
-Schema v7 stores each entity in its own row. Existing schema-v1 JSON snapshots
-are imported once and kept untouched as a rollback artifact.
-"""
 
 from __future__ import annotations
 
@@ -36,7 +32,7 @@ _LEGACY_SNAPSHOT_VERSION = 1
 
 
 class SqliteEventRepository(InMemoryEventRepository):
-    """Persist the repository contract in indexed, append-friendly SQLite rows."""
+
 
     def __init__(self, database_path: Path) -> None:
         super().__init__()
@@ -355,7 +351,7 @@ class SqliteEventRepository(InMemoryEventRepository):
     @staticmethod
     def _model_from_payload(model_type: type[_T], raw_payload: str) -> _T:
         try:
-            return model_type.model_validate_json(raw_payload)  # type: ignore[attr-defined,no-any-return]
+            return model_type.model_validate_json(raw_payload)
         except (ValidationError, ValueError) as exc:
             raise RepositoryError(f"event store satırı okunamadı: {exc}") from exc
 

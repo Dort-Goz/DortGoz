@@ -137,7 +137,7 @@ def resolve_production_model_path(
     fallback_onnx: str | Path | None = None,
     workspace_root: Path | None = None,
 ) -> Path:
-    """Terfi edilmiş ONNX dosyasını manifest ve SHA-256 ile doğrula."""
+
 
     if _detector_override is not None:
         return _detector_override

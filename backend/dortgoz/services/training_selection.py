@@ -1,4 +1,4 @@
-"""Select a bounded, diverse D-FINE training snapshot without GPU work."""
+
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ class SelectionExclusion(StrEnum):
 
 
 class TrainingSelectionPolicy(BaseModel):
-    """Resource and diversity limits for one immutable export snapshot."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -112,7 +112,7 @@ class TrainingSelectionCounts(BaseModel):
 
 
 class TrainingSelectionReport(BaseModel):
-    """Audit record bound to exact sample revisions, annotations, and policy."""
+
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -183,7 +183,7 @@ def select_training_samples(
     policy: TrainingSelectionPolicy,
     created_at: datetime | None = None,
 ) -> TrainingSelectionResult:
-    """Return a deterministic metadata-only selection and its audit report."""
+
 
     _ensure_training_manifest_allowed(dataset_manifest)
     entries = {entry.dataset_video_id: entry for entry in dataset_manifest.entries}

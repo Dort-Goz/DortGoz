@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Export human-verified local frames as D-FINE-compatible COCO JSON.
 
-No image or video is copied. The generated JSON refers to files below
-``--frame-root``. The dataset manifest must explicitly allow local training.
-"""
 
 from __future__ import annotations
 
@@ -16,14 +12,14 @@ from pydantic import ValidationError
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 
-from dortgoz.repositories.sqlite import SqliteEventRepository  # noqa: E402
-from dortgoz.services.coco_export import (  # noqa: E402
+from dortgoz.repositories.sqlite import SqliteEventRepository
+from dortgoz.services.coco_export import (
     export_verified_frames_to_coco,
     load_training_frame_reviews,
     training_reviews_from_samples,
 )
-from dortgoz.services.dataset_manifest import load_dataset_manifest  # noqa: E402
-from dortgoz.services.training_selection import (  # noqa: E402
+from dortgoz.services.dataset_manifest import load_dataset_manifest
+from dortgoz.services.training_selection import (
     TrainingSelectionError,
     load_training_selection_policy,
     select_training_samples,

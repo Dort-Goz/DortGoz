@@ -67,8 +67,8 @@ def test_completed_runtime_run_projects_one_reviewable_event(tmp_path: Path) -> 
             olay_bitis=20,
         ),
     )
-    # Event koşu bitmeden oluşur. Nöbet kararı aynı yayın turunda bu kimliğe
-    # bağlanabilir; JSONL yan kanalı gerekmez.
+
+
     assert projection.event_id_for("", "incident-1") == f"{run_id}:incident-1"
     assert repository.get_event(f"{run_id}:incident-1") is not None
     _emit(

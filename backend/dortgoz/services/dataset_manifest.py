@@ -1,4 +1,4 @@
-"""Local dataset indexing, hashing, and training-eligibility gates."""
+
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ def build_ucf_crime_manifest(
     annotation_dir: Path | None = None,
     progress: Callable[[int, int, Path], None] | None = None,
 ) -> OfflineDatasetManifest:
-    """Index a local UCF-Crime copy without authorising training or redistribution."""
+
 
     videos_root = resolve_ucf_videos_root(dataset_root)
     annotations = _load_annotation_index(annotation_dir) if annotation_dir else {}
@@ -163,7 +163,7 @@ def verify_training_sources(
     video_root: Path,
     expected_splits: Mapping[str, str],
 ) -> None:
-    """Fail closed before training and re-hash each referenced source video."""
+
 
     if not manifest.training_allowed or DatasetUse.TRAINING not in manifest.allowed_uses:
         raise ValueError(

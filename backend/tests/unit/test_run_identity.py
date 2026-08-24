@@ -1,4 +1,4 @@
-"""Koşu kimliğinin platformlar arası dosya sınırı."""
+
 
 from pathlib import Path
 

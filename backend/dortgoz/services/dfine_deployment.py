@@ -1,4 +1,4 @@
-"""Export one candidate checkpoint to a verified production D-FINE ONNX."""
+
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def build_dfine_export_command(
     checkpoint_copy: Path,
     category_count: int,
 ) -> list[str]:
-    """Return the official deployment exporter adapter argv without a shell."""
+
 
     exporter = dfine_repository / "tools" / "deployment" / "export_onnx.py"
     if not exporter.is_file() or exporter.is_symlink():
@@ -81,7 +81,7 @@ def build_dfine_export_command(
 
 
 def inspect_deployed_dfine_onnx(path: Path, *, category_count: int) -> DfineOnnxContract:
-    """Load the deployed graph and run one contract smoke inference on CPU."""
+
 
     import numpy as np
     import onnxruntime as ort
@@ -160,7 +160,7 @@ def execute_dfine_onnx_export(
     onnx_inspector: Callable[..., DfineOnnxContract] = inspect_deployed_dfine_onnx,
     now: datetime | None = None,
 ) -> tuple[ModelVersion, ProcessOutcome, Path]:
-    """Export, smoke-test, fingerprint, and attach a deployment to a candidate."""
+
 
     if candidate.stage != ModelStage.CANDIDATE or candidate.evaluation is not None:
         raise EvaluationReportError(
@@ -341,7 +341,7 @@ def verify_dfine_deployment(*, candidate: ModelVersion, workspace_root: Path) ->
 
 
 def _verify_export_category_contract(workspace: Path, training_job: TrainingJob) -> None:
-    """COCO aktarımının kategori kimlik tabanını runtime eşlemesine kilitle."""
+
 
     manifest = _workspace_file(workspace, f"{training_job.export_ref}/export_manifest.json")
     try:

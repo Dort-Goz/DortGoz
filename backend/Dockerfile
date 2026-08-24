@@ -1,5 +1,4 @@
 # syntax=docker/dockerfile:1
-# Images are built before air-gapping, then saved by scripts/offline_bundle.py.
 FROM python:3.12-slim
 
 ARG UV_VERSION=0.12.1
@@ -22,9 +21,6 @@ COPY backend/dortgoz ./dortgoz
 RUN uv sync --frozen --no-dev
 
 COPY defaults /app/defaults
-# services/live_cctv canlı akış listesini /app/config altından okur; bu dizin
-# olmadan /api/live/start konteynerde FileNotFoundError verir. Gerçek liste
-# çalışma anında compose bind mount'u ile üzerine bindirilir.
 COPY config /app/config
 COPY data/procedures /app/data/procedures
 COPY models /app/models

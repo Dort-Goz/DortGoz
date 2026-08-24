@@ -8,7 +8,7 @@ interface SuggestedAction {
   request_id: string | null;
 }
 
-/** `/api/triage` kaydı (backend TriageItem aynası). */
+
 interface TriageItem {
   key: string;
   feed: string;
@@ -93,9 +93,7 @@ interface Snapshot {
   critical_overflow_count: number;
 }
 
-/** Teknik gerekçe metnini operatör diline çevirir (ham metin tooltip'te kalır).
- *  "Runtime evidence yalnız provisional... (event[0]=VALIDATED)" gibi satırlar
- *  mühendis jargonu — operatöre KARARINI etkileyen bilgiyi söyler. */
+
 function humanizeReason(reason: string): string {
   return reason
     .split(" · ")
@@ -219,8 +217,6 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
       : Boolean(falseAlarmReason)
         && (falseAlarmReason !== "other" || Boolean(note.trim())));
 
-  // Gönderim düşerse kart KİLİTLENMEMELİ: busy her yolda temizlenir, form
-  // açık kalır ve operatör aynı olayı yeniden karara bağlayabilir.
   const submit = async () => {
     if (!verdict || !canSubmit) return;
     setBusy(true);
@@ -503,7 +499,7 @@ export default function TriagePanel({
   onSelectFeed?: (feed: string) => void;
   onOpenTraining?: (eventId: string) => void;
   onSeek?: (feed: string, timestamp: number, video: string) => void;
-  /** akış kimliği → insan-okur ad (canlı ızgaradan; yoksa kimlik gösterilir) */
+
   feedNames?: Record<string, string>;
   scopeFeed?: string;
   title?: string;
@@ -559,7 +555,6 @@ export default function TriagePanel({
         body: JSON.stringify({ ...decision, reviewer: reviewer.trim() }),
       });
     } catch {
-      // İstek hiç ulaşmadı — kart açık kalır, operatör yeniden dener.
       setError("Karar sunucuya iletilemedi. Bağlantıyı denetleyip yeniden deneyin.");
       return false;
     }
@@ -569,12 +564,10 @@ export default function TriagePanel({
       return false;
     }
     setError("");
-    // Kuyruğu hemen tazele (sonraki poll'u bekletme). Tazeleme hatası kararı
-    // geçersiz kılmaz; sonraki poll kuyruğu düzeltir.
     try {
       const r = await fetch("/api/triage");
       setSnap(await r.json());
-    } catch { /* geçici kopukluk */ }
+    } catch {  }
     return true;
   };
 
@@ -635,7 +628,6 @@ export default function TriagePanel({
     try {
       await loadSnapshot();
     } catch {
-      // İstek kaydedildi. Sonraki poll görünümü yeniler.
     }
   };
 
@@ -699,7 +691,7 @@ export default function TriagePanel({
             </div>
           ))}
         </div>
-        {/* Üç ret yalnız öneri üretir. Ayrı onay ve süre olmadan kural çalışmaz. */}
+        {}
         {snap.rule_proposals.length > 0 && (
           <div className="shrink-0 space-y-1.5 border-t border-zinc-800 p-2 text-xs">
             <div className="text-zinc-500">

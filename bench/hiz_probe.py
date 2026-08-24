@@ -2,8 +2,8 @@
 import argparse, asyncio, json, statistics as st, sys, time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from dortgoz.config import settings                      # noqa: E402
-from dortgoz.pipeline.interpret import interpret_window   # noqa: E402
+from dortgoz.config import settings
+from dortgoz.pipeline.interpret import interpret_window
 
 
 async def main() -> None:

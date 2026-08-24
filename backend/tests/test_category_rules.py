@@ -24,7 +24,7 @@ def test_approved_rule_is_rendered_for_its_category():
 
     assert "silahli_olay" in block
     assert "silah görünüyorsa" in block
-    assert "olay olup olmadığını" in block   # kapsam uyarısı
+    assert "olay olup olmadığını" in block
 
 
 def test_empty_ruleset_adds_nothing():

@@ -315,8 +315,8 @@ async def import_run(request: Request) -> dict:
             "incidents": len(ctx.incidents), "reports": len(ctx.reports)}
 
 
-from .services.analysis_projection import RuntimeAnalysisProjection  # noqa: E402
-from .services.live_cctv import LiveCctvService, load_feeds  # noqa: E402
+from .services.analysis_projection import RuntimeAnalysisProjection
+from .services.live_cctv import LiveCctvService, load_feeds
 
 runtime_projection = RuntimeAnalysisProjection(
     api_runtime.repository,
@@ -331,9 +331,8 @@ live_cctv = LiveCctvService(
 )
 app.state.live_cctv = live_cctv
 
-from .services import triage  # noqa: E402
+from .services import triage
 
-# Projection ilk observer'dır. Triage aynı yayın turunda kalıcı event_id alır.
 triage.store.configure(
     api_runtime.repository,
     api_runtime.events,

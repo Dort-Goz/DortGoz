@@ -73,12 +73,12 @@ def cosine(a: tuple[float, ...], b: tuple[float, ...]) -> float:
 
 
 def benign_exemplars(runs_dir: Path, ledger: Path) -> dict[str, list[Exemplar]]:
-    """Kamera başına 'sorun değil' denmiş tespitlerin gömmeleri."""
+
     bank = load(runs_dir)
     verdicts: dict[str, tuple[str, str]] = {}
     try:
-        # Eski Windows koşuları yerel kod sayfasıyla yazılmış olabilir.
-        # Bozuk bir eski satır gölge eşleştiriciyi veya operatör arayüzünü durdurmasın.
+
+
         text = ledger.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return {}
@@ -105,7 +105,7 @@ def benign_exemplars(runs_dir: Path, ledger: Path) -> dict[str, list[Exemplar]]:
     return out
 
 
-# Bu sınıflar ASLA bastırılmaz — öğrenilmiş hiçbir davranış bunları gizleyemez.
+
 HARD_FLOOR_CATEGORIES = frozenset({"silahli_olay", "yangin", "patlama"})
 HARD_FLOOR_RISK = frozenset({"kritik"})
 
@@ -120,7 +120,7 @@ class Match:
 
 
 class Matcher:
-    """Kamera başına iyi-huylu emsalleri tutar; defter değişince tazeler."""
+
 
     def __init__(self, runs_dir: Path, ledger: Path) -> None:
         self._runs_dir = runs_dir

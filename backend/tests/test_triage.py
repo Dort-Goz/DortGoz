@@ -1,4 +1,4 @@
-"""Nöbet kuyruğu, kalıcı feedback ve kontrollü kural yaşam döngüsü."""
+
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ from dortgoz.services import triage
 
 
 class CanonicalTriageStore(triage.TriageStore):
-    """Her test incident'ını gerçek canonical parent kayıtlarıyla hazırlar."""
+
 
     def __init__(
         self,

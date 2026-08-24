@@ -1,10 +1,4 @@
-"""Kalıcı anomali nöbet kuyruğu ve kontrollü kural önerileri.
 
-Her operatör kararı canonical ``HumanReview`` olarak event repository'ye
-yazılır. Aynı kamera ve sınıf için üç ret doğrudan kural üretmez. Yalnız bir
-``RuleProposal`` oluşturur. Öneri ayrı bir operatör onayı ve süre sonu olmadan
-etkinleşmez. Kritik olay sınıfları hiçbir zaman bastırılamaz.
-"""
 
 from __future__ import annotations
 
@@ -98,7 +92,7 @@ def _run_meta(run_id: str) -> dict[str, Any]:
 
 
 class TriagePersistenceError(RuntimeError):
-    """Karar canonical event kaydına güvenle bağlanamadı."""
+    pass
 
 
 @dataclass
@@ -193,7 +187,7 @@ class TriageStore:
         event_service: EventMemoryService,
         event_id_resolver: Callable[[str, str], str | None],
     ) -> None:
-        """Uygulama composition sınırındaki canonical adapterları bağla."""
+
 
         self.repository = repository
         self.event_service = event_service
@@ -219,7 +213,7 @@ class TriageStore:
 
     @staticmethod
     def _evidence_dicts(feed: str, incident_id: str) -> list[dict[str, Any]]:
-        """Olay defterindeki yapılandırılmış kare kanıtlarını güvenli biçimde kopyala."""
+
 
         from .. import session
 
@@ -524,8 +518,8 @@ class TriageStore:
                 reason == FalseAlarmReason.NORMAL_ACTIVITY
                 and not self._scope_is_protected(item.model_category, item.risk)
             ):
-                # İnceleme ile kural önerisi tek yazımda gider: öneri
-                # yazılamazsa yinelenen REJECT kaydı geride kalmaz.
+
+
                 review = self._save_dismissal(
                     item,
                     reviewer=reviewer.strip(),
@@ -574,7 +568,7 @@ class TriageStore:
         operator_start: float | None,
         operator_end: float | None,
     ) -> TriageItem:
-        """Save an explicitly enabled offline/evaluation label to the JSONL corpus."""
+
 
         self._pending.pop(item.key)
         item.verdict = verdict
@@ -608,7 +602,7 @@ class TriageStore:
         operator_start: float | None = None,
         operator_end: float | None = None,
     ) -> TriageItem:
-        """Append an operator correction without deleting the earlier ledger line."""
+
 
         from dataclasses import replace
 
@@ -884,11 +878,7 @@ class TriageStore:
         event_id: str | None,
         priority: tuple[int, str, list[str], str],
     ) -> TriageItem | None:
-        """Çözümlenmiş kartı yalnız yeni bir korumalı kapsama tırmandıysa geri al.
 
-        Aynı kapsam kartı ikinci kez açamaz; korumalı kapsam sayısı sonlu
-        olduğu için kart sonsuz döngüye giremez.
-        """
 
         scope = self._escalation_scope(payload.anomaly_type, payload.risk)
         seen = set(resolved.escalation_scopes)
@@ -1087,7 +1077,7 @@ class TriageStore:
         reason: FalseAlarmReason,
         intervention_required: bool,
     ) -> HumanReview:
-        """Ret incelemesini ve kural önerisini tek atomik sınırda yaz."""
+
 
         assert self.repository is not None
         assert item.event_id is not None
@@ -1113,7 +1103,7 @@ class TriageStore:
     def _prepare_dismissal(
         self, item: TriageItem, review_id: str, reviewer: str
     ) -> RuleProposal | None:
-        """Bu retten sonra yazılacak kural önerisini hazırla; gerekmezse None."""
+
 
         active = self._scope_proposal(item.feed, item.model_category)
         now = self._clock()
@@ -1130,8 +1120,8 @@ class TriageStore:
                 updated_at=now,
             )
         if active.status in {RuleProposalStatus.PROPOSED, RuleProposalStatus.APPROVED}:
-            # Öneri operatör kararını bekliyor. Repository proposed durumunda
-            # yeni bir geçiş kabul etmez; ret sayımı olduğu yerde kalır.
+
+
             return None
         count = active.dismissal_count + 1
         status = (
@@ -1331,7 +1321,7 @@ class TriageStore:
 
     @staticmethod
     def _escalation_scope(category: str, risk: str) -> str:
-        """Korumalı kapsamın kimliği; korumasız kart için boş string."""
+
 
         return "/".join(
             part

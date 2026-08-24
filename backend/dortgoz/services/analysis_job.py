@@ -27,16 +27,7 @@ PreStartCallable = Callable[[], Awaitable[None]]
 
 
 def iter_run_lines(path: Path, *, stats: dict | None = None) -> Iterator[dict]:
-    """Koşu JSONL'ini zarf zarf okur; bozuk satırı atlar ve sayısını bildirir.
 
-    Koşu yazılırken kesilirse SON satır yarım kalır. Katı okuyan taraf bu
-    yüzden tüm koşuyu erişilemez yapıyordu — burada bozuk satır atlanır,
-    atlanan sayısı log'a ve (verilirse) ``stats["atlanan"]``a yazılır. Koşu
-    JSONL'ini okuyan her taraf bu yardımcı üzerinden okur; tolerans tektir.
-
-    Bu yardımcı bilerek HAFİF modülde durur: durum çözümü ağır işleme hattını
-    içe aktarmadan da çalışabilmelidir.
-    """
 
     skipped = 0
     total = 0
@@ -87,7 +78,7 @@ class AnalysisJobExecutionDisabled(AnalysisJobStartError):
 
 
 class AnalysisJobNotReady(AnalysisJobStartError):
-    """Required production components failed the deployment readiness gate."""
+    pass
 
 
 @dataclass(frozen=True, slots=True)

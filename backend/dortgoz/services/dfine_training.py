@@ -1,4 +1,4 @@
-"""Bounded local D-FINE training planner and worker."""
+
 
 from __future__ import annotations
 
@@ -82,7 +82,7 @@ class ProcessRunner(Protocol):
 
 
 class LocalProcessRunner:
-    """Run without a shell and terminate the exact worker process tree on stop."""
+
 
     def run(
         self,
@@ -129,7 +129,7 @@ class LocalProcessRunner:
 
 
 class DfineTrainingService:
-    """Create a reproducible job, then run it under resource supervision."""
+
 
     def __init__(
         self,
@@ -344,7 +344,7 @@ class DfineTrainingService:
                 "BASE_CHECKPOINT_CHANGED",
                 "başlangıç checkpoint SHA-256 değeri değişti",
             )
-        # venv python Linux'ta her zaman symlink'tir; hedef ikili doğrulanır.
+
         python = _validated_file(python_executable.resolve())
         self.cuda_probe(python, job.gpu_index)
         export_dir = self._resolve_reference(job.export_ref)

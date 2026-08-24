@@ -1,4 +1,4 @@
-"""Başlangıç uzlaştırması ve eğitim işi CAS güvenliği testleri."""
+
 
 from __future__ import annotations
 

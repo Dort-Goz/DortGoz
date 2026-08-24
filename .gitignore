@@ -1,4 +1,3 @@
-# Python
 __pycache__/
 *.pyc
 .venv/
@@ -9,12 +8,10 @@ __pycache__/
 tmp/
 .ruff_cache/
 
-# Node
 node_modules/
 frontend/dist/
 *.tsbuildinfo
 
-# Data & runs — clips never enter the repo (see datasets policy)
 media/*
 !media/.gitkeep
 runs/
@@ -29,12 +26,10 @@ models/**/*.bin
 !backend/dortgoz/fixtures/ui_replay_events.jsonl
 !bench/results/**/*.jsonl
 
-# Local
 local/
 .env
 *.db
 .DS_Store
 
-# Team-internal access docs (real endpoint addresses) — never committed
 secrets/
 config/live_feeds.json
