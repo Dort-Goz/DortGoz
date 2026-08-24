@@ -8,6 +8,7 @@ from dortgoz.agent import tools
 from dortgoz.agent.actuators import registry as actuator_registry
 from dortgoz.agent.memory import Incident
 from dortgoz.events import WindowEvent, WindowReport
+from dortgoz.services.procedure_rag import ProcedureHit
 
 
 class FakeManager:
@@ -70,6 +71,30 @@ def test_pencere_sorgula_returns_report(ctx):
     out = asyncio.run(tools.execute("pencere_sorgula", {"t": 45, "gerekce": "?"}, m))
     assert "Yumruk atıldı" in out and "yuksek" in out
     assert "belirsiz" in out
+
+
+def test_prosedur_sorgula_returns_hash_cited_observation(ctx, monkeypatch):
+    class Rag:
+        async def query(self, _question):
+            return [ProcedureHit(
+                document_id="demo",
+                section="1. Kanıt",
+                action="Operatör kanıtı inceler.",
+                version="1.0",
+                content_hash="a" * 64,
+                score=0.9,
+            )]
+
+    monkeypatch.setattr(tools, "_procedure_rag", Rag())
+    m = FakeManager()
+
+    out = asyncio.run(tools.execute(
+        "prosedur_sorgula", {"soru": "Ne yapmalıyım?", "gerekce": "kaynak bul"}, m
+    ))
+
+    assert "sha256:" + "a" * 64 in out
+    assert "Operatör kanıtı inceler" in out
+    assert out.startswith("<untrusted_observation>")
 
 
 def test_tool_observation_cannot_close_its_trust_boundary(ctx):

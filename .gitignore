@@ -18,7 +18,6 @@ runs/
 cache/
 models/candidate/local/
 models/semantic/local/
-models/vlm/manifest.local.json
 models/**/*.gguf
 models/**/*.safetensors
 models/**/*.bin

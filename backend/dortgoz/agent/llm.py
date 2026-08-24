@@ -3,7 +3,13 @@ from __future__ import annotations
 import asyncio
 import random
 
-from openai import AsyncOpenAI, RateLimitError
+from openai import (
+    APIConnectionError,
+    APITimeoutError,
+    AsyncOpenAI,
+    InternalServerError,
+    RateLimitError,
+)
 
 from ..config import settings
 
@@ -18,7 +24,8 @@ def main_client() -> AsyncOpenAI:
     if key not in _clients:
         _clients[key] = AsyncOpenAI(base_url=settings.llama_base_url,
                                     api_key=settings.api_key,
-                                    timeout=1800.0)
+                                    timeout=settings.vlm_timeout_seconds,
+                                    max_retries=0)
     return _clients[key]
 
 
@@ -38,16 +45,26 @@ async def create_chat(client: AsyncOpenAI, **kwargs):
         try:
             async with _inflight():
                 return await client.chat.completions.create(**kwargs)
-        except RateLimitError:
+        except (RateLimitError, APIConnectionError, APITimeoutError, InternalServerError):
             if attempt == settings.llm_retries - 1:
                 raise
             await asyncio.sleep(delay + random.uniform(0, 1))
             delay = min(delay * 2, 20.0)
     raise RuntimeError("erişilemez")
 
+async def create_embedding(client: AsyncOpenAI, **kwargs):
+    delay = 2.0
+    for attempt in range(settings.llm_retries):
+        try:
+            async with _inflight():
+                return await client.embeddings.create(**kwargs)
+        except (RateLimitError, APIConnectionError, APITimeoutError, InternalServerError):
+            if attempt == settings.llm_retries - 1:
+                raise
+            await asyncio.sleep(delay + random.uniform(0, 1))
+            delay = min(delay * 2, 20.0)
+    raise RuntimeError("erişilemez")
 
-def triage_client() -> AsyncOpenAI:
-    return AsyncOpenAI(base_url=settings.vllm_base_url, api_key=settings.api_key)
 
 
 _CTX_CACHE: dict[str, int | None] = {}
@@ -65,23 +82,12 @@ def call_stats(resp) -> dict:
 
 
 async def context_size(model: str) -> int | None:
-    if model in _CTX_CACHE:
-        return _CTX_CACHE[model]
-    import asyncio
-    import json
-    import urllib.request
-
-    base = settings.llama_base_url.rsplit("/v1", 1)[0]
-
-    def fetch() -> int | None:
-        try:
-            with urllib.request.urlopen(f"{base}/upstream/{model}/props", timeout=5) as f:
-                props = json.load(f)
-            n = props.get("default_generation_settings", {}).get("n_ctx")
-            return int(n) if n else None
-        except Exception:
-            return None
-
-    ctx = await asyncio.to_thread(fetch)
-    _CTX_CACHE[model] = ctx
-    return ctx
+    if model not in _CTX_CACHE:
+        _CTX_CACHE[model] = {
+            "llm-fast": 262_144,
+            "llm-large": 262_144,
+            "vlm": 262_144,
+            "router": 40_960,
+            "guard": 32_768,
+        }.get(model)
+    return _CTX_CACHE[model]

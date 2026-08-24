@@ -15,7 +15,6 @@ from .execution_coordinator import (
     LiveExecutionLease,
     LivePreemptionTimeout,
 )
-from .weight_guard import guard as weight_guard
 
 LOGGER = logging.getLogger(__name__)
 
@@ -140,7 +139,7 @@ def _default_runtime_config() -> EffectiveRuntimeConfig:
     from ..pipeline.interpret import SYSTEM_TR, TASK_TR
 
     return EffectiveRuntimeConfig(
-        model=settings.main_model,
+        model=settings.video_model,
         system_prompt=SYSTEM_TR,
         task_prompt=TASK_TR,
     )
@@ -405,12 +404,6 @@ class CanonicalAnalysisJobService:
                     self._active_by_feed.pop(record.feed, None)
                 self._records.pop(record.analysis_id, None)
                 self._terminal_status[record.analysis_id] = record.status
-                idle = self._active_count_locked() == 0
-            if idle and weight_guard.needs_heal:
-                try:
-                    await weight_guard.heal()
-                except Exception:
-                    LOGGER.exception("weight_guard iyileşmesi başarısız")
             if record.live_lease is not None:
                 await record.live_lease.release_async()
 

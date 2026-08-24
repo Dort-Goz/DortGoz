@@ -510,7 +510,7 @@ async def test_escalation_calls_postprocess_only_for_final_report(
 
     async def fake_interpret(_path, window, _keyframes, **kwargs):
         kwargs["captured_frames"].update(_captured())
-        if kwargs.get("think"):
+        if kwargs.get("model") == settings.second_opinion_model:
             return _report()
         kwargs["stats"]["durum_p"] = 0.5
         return WindowReport(window_start=window[0], window_end=window[1], summary="Sakin.")

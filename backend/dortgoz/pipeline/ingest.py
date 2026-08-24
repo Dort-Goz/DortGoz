@@ -46,6 +46,17 @@ async def probe_duration(video: Path) -> float:
     )
     return float(out.decode().strip())
 
+async def grab_clip(video: Path, start: float, end: float, width: int = 720) -> bytes:
+    if start < 0 or end <= start:
+        raise ValueError("video aralığı geçersiz")
+    return await _run(
+        "ffmpeg", "-v", "error", "-ss", f"{start:.3f}", "-to", f"{end:.3f}",
+        "-i", str(video), "-map", "0:v:0", "-an",
+        "-vf", f"scale={width}:-2:force_original_aspect_ratio=decrease",
+        "-c:v", "mpeg4", "-q:v", "5", "-f", "mp4",
+        "-movflags", "frag_keyframe+empty_moov", "-",
+    )
+
 
 async def motion_profile(video: Path, base_fps: float = 1.0) -> list[MotionSample]:
     raw = await _run(
@@ -141,11 +152,7 @@ def prefetch_frames(video: Path, ts: list[float], width: int = 512) -> None:
 
 
 async def drain_frame_tasks(video: Path) -> None:
-    """Bu videonun paylaşılan ffmpeg görevleri gerçekten bitene kadar bekle.
 
-    Shadow teardown sırasında görevleri iptal etmek yeterli değildir. ``shield``
-    ile paylaşılan kare görevi iptalden sonra çalışmayı sürdürebilir.
-    """
 
     loop = asyncio.get_running_loop()
     tasks = [

@@ -32,7 +32,6 @@ from ..services import escalation_policy, exemplar_bank
 from ..services.runtime_metrics import CanonicalRunMetrics
 from ..services.runtime_policy import decide_runtime_policy
 from ..services.runtime_postprocess import RuntimeEvidenceScope, postprocess_finalized_report
-from ..services.weight_guard import guard as weight_guard
 from ..ws import ConnectionManager
 from . import ingest, interpret, perception, windowing
 from .candidate_intervals import IntervalConfig, build_candidate_intervals
@@ -47,7 +46,7 @@ StopProbe = Callable[[], bool]
 
 
 class PipelineStopRequested(RuntimeError):
-    """Canlı analiz önceliği düşük öncelikli koşuyu durdurdu."""
+    pass
 
 
 def _raise_if_stop_requested(stop_probe: StopProbe) -> None:
@@ -207,7 +206,7 @@ async def _adjudicate_if_confusable(
     metrics: CanonicalRunMetrics | None,
     video_duration: float,
 ) -> None:
-    """Kapanan olayın sınıfını anlatıdan bağımsız hakemle düzeltir."""
+
     confusable = {s.strip() for s in
                   settings.adjudicate_confusable.split(",") if s.strip()}
     inc = ledger.incidents.get(incident_id)
@@ -225,7 +224,7 @@ async def _adjudicate_if_confusable(
                     else nullcontext():
                 sonuc = await interpret.adjudicate_category(
                     path, (start, end), keyframes,
-                    model=model, stats=call, timing=qwen_timing)
+                    model=settings.main_model, stats=call, timing=qwen_timing)
         finally:
             if metrics is not None:
                 metrics.record_qwen_timing(qwen_timing)
@@ -298,7 +297,7 @@ async def review_if_closed(
                     (start, end),
                     keyframes,
                     inc.notes,
-                    model=model,
+                    model=settings.second_opinion_model,
                     stats=call,
                     timing=qwen_timing,
                     captured_frames=captured_frames,
@@ -372,7 +371,7 @@ async def review_if_closed(
                 status="end",
                 detail=f"{event_type.value} provisional olarak bütünlendi; "
                 "VLM risk ipucu final risk yapılmadı"
-                + perf_text(call, await context_size(model or settings.main_model)),
+                + perf_text(call, await context_size(settings.second_opinion_model)),
             )
         )
     except Exception as exc:
@@ -412,7 +411,7 @@ async def run_video(
     evidence_scope = RuntimeEvidenceScope.create(run_id)
     ctx = session.start(run_id, video, feed=feed, reset_chat=not live)
     ledger = ctx.ledger
-    effective_model = model or settings.main_model
+    effective_model = model or settings.video_model
     dual_or, confirm_and, sweep_on = _mode_flags(mode)
     if mode == "genis" and not system_prompt:
         system_prompt = interpret.SYSTEM_TR_GENIS
@@ -620,12 +619,6 @@ async def run_video(
                     profile, start, end, settings.keyframes_per_window
                 )
                 metrics.keyframes_selected_total += len(keyframes)
-                ingest.prefetch_frames(path, keyframes)
-                for nstart, nend in wins[idx + 1:]:
-                    if windowing.window_motion(profile, nstart, nend) >= gate:
-                        ingest.prefetch_frames(path, windowing.select_keyframes(
-                            profile, nstart, nend, settings.keyframes_per_window))
-                        break
                 call: dict = {}
                 qwen_timing: dict[str, float | int] = {}
                 captured_frames = {}
@@ -678,9 +671,9 @@ async def run_video(
                         esc = await interpret_window(
                             path, (start, end), esc_keyframes,
                             meta=percep.meta_text() if percep else "",
-                            model=model, system_prompt=system_prompt,
+                            model=settings.second_opinion_model, system_prompt=system_prompt,
                             task_prompt=task_prompt, context=hint,
-                            think=True,
+                            think=False,
                             timing=escalation_timing,
                             captured_frames=escalation_frames,
                         )
@@ -715,7 +708,7 @@ async def run_video(
                         dual = await interpret_window(
                             path, (start, end), kf12,
                             meta=percep.meta_text() if percep else "",
-                            model=model, system_prompt=system_prompt,
+                            model=settings.second_opinion_model, system_prompt=system_prompt,
                             task_prompt=task_prompt, context=hint,
                             timing=dual_timing,
                             captured_frames=dual_frames,
@@ -737,7 +730,7 @@ async def run_video(
                             conf = await interpret_window(
                                 path, (start, end), conf_kf,
                                 meta=percep.meta_text() if percep else "",
-                                model=model, system_prompt=system_prompt,
+                                model=settings.main_model, system_prompt=system_prompt,
                                 task_prompt=task_prompt, context=hint,
                                 timing=dual_timing,
                             )
@@ -828,10 +821,6 @@ async def run_video(
                               if "durum_p" in call else "")
                            + perf_text(call, n_ctx),
                 ))
-
-                for uyari in weight_guard.drain_alerts():
-                    await rec.emit(AgentStep(node="oversight", status="error",
-                                             detail=uyari))
 
                 ledger_report = policy.ledger_report
                 serious = ledger.serious(ledger_report) if ledger_report is not None else []

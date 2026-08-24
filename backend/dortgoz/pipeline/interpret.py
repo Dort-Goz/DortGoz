@@ -15,15 +15,14 @@ from ..config import settings
 from ..domain.evidence import FRAME_TIMESTAMP_TOLERANCE_SECONDS
 from ..domain.taxonomy import CanonicalEventType, legacy_ws_label_from_canonical
 from ..events import EventEvidenceRef, FrameReference, Risk, WindowReport
-from ..services.weight_guard import guard as weight_guard
 from ..tools.protocols import VlmSchemaError
 from ..utils import inline_defs
-from .ingest import grab_frame
-from .thinking import thinking_extra, thinking_on
+from .ingest import grab_clip, grab_frame
+from .thinking import thinking_extra
 
 
 def learned_category_block() -> str:
-    """Onaylanmış kategori ölçütlerini isteme ekler (yoksa boş döner)."""
+
     if not settings.category_rules_enabled:
         return ""
     from ..services import category_rules
@@ -177,17 +176,18 @@ def _drop_evidence_timestamp(evidence_schema: dict[str, Any]) -> None:
 
 
 def _anchor_event_time(event: dict[str, Any], start: float, end: float) -> None:
-    raw_t = event.get("t")
-    tolerance = 2.0
-    if isinstance(raw_t, int | float) and start - tolerance <= raw_t <= end + tolerance:
-        return
     evidence = event.get("evidence") or []
     anchored = next(
         (ref["timestamp"] for ref in evidence
          if isinstance(ref, dict) and isinstance(ref.get("timestamp"), int | float)),
-        (start + end) / 2,
+        None,
     )
-    event["t"] = float(anchored)
+    if anchored is not None:
+        event["t"] = float(anchored)
+        return
+    raw_t = event.get("t")
+    if not isinstance(raw_t, int | float) or not start <= raw_t <= end:
+        event["t"] = (start + end) / 2
 
 
 def _fill_evidence_timestamps(
@@ -213,19 +213,10 @@ async def review_incident(
     current_type: str = "",
 ) -> dict[str, Any]:
     start, end = span
-    frame_refs = build_frame_references(keyframes)
-    if not frame_refs:
-        raise VlmEvidenceContractError(
-            "NO_REVIEW_FRAMES", "2. geçiş için seçilebilir kare yok"
-        )
-    content = await _frame_parts(
-        video,
-        frame_refs,
-        captured_frames=captured_frames,
-        include_timestamps=True,
-    )
+    frame_refs = build_video_references(start, end)
+    content = await _video_parts(video, start, end, frame_refs)
     task = (
-        f"Yukarıdaki kareler {start:.0f}-{end:.0f} sn arasındaki TEK bir olayın "
+        f"Yukarıdaki video {start:.0f}-{end:.0f} sn arasındaki TEK bir olayın "
         f"tamamını kapsıyor ({end - start:.0f} sn). Olayı bütün olarak değerlendir: "
         "nasıl başladı, zirve anı hangisi, nasıl sonuçlandı. "
         "baslangic/zirve/sonuc alanlarına sahnede GÖRÜNENİ anlatan kısa Türkçe "
@@ -249,7 +240,7 @@ async def review_incident(
     started = time.monotonic()
     try:
         resp = await create_chat(client,
-            model=model or settings.main_model,
+            model=model or settings.second_opinion_model,
             messages=[{"role": "system", "content": REVIEW_SYSTEM_TR},
                       {"role": "user", "content": content}],
             max_tokens=settings.interpret_max_tokens,
@@ -259,15 +250,13 @@ async def review_incident(
                                              "schema": review_schema(
                                                  [f.frame_id for f in frame_refs]
                                              )}},
-            extra_body={"speculative.n_max": 0,
-                        "chat_template_kwargs": {"enable_thinking": False}},
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
     finally:
         _record_qwen_timing(timing, started)
     if stats is not None:
         stats.update(call_stats(resp))
     raw = resp.choices[0].message.content or "{}"
-    weight_guard.record(raw)
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError:
@@ -289,6 +278,12 @@ async def review_incident(
         payload["baslangic_t"], payload["zirve_t"], payload["bitis_t"] = b, z, e
     review = IncidentReviewResult.model_validate(payload)
     _guard_incident_review_evidence(review, frame_refs)
+    await _capture_evidence_frames(
+        video,
+        frame_refs,
+        [evidence.frame_id for evidence in review.evidence],
+        captured_frames,
+    )
     return review.model_dump(mode="json")
 
 
@@ -318,16 +313,12 @@ async def adjudicate_category(
     stats: dict[str, Any] | None = None,
     timing: dict[str, float | int] | None = None,
 ) -> tuple[str, float] | None:
-    """Anlatıdan bağımsız zorunlu-seçimli sınıf hakemi; (sınıf, güven) döndürür."""
+
     start, end = span
-    frame_refs = build_frame_references(keyframes)
-    if not frame_refs:
-        return None
-    content = await _frame_parts(
-        video, frame_refs, include_timestamps=True,
-        frame_width=settings.adjudicate_frame_width)
+    frame_refs = build_video_references(start, end)
+    content = await _video_parts(video, start, end, frame_refs)
     content.append({"type": "text", "text":
-                    f"Kareler {start:.0f}-{end:.0f} sn arasındaki tek bir "
+                    f"Video {start:.0f}-{end:.0f} sn arasındaki tek bir "
                     "olaya aittir. Olayın sınıfı nedir?"})
     client = main_client()
     started = time.monotonic()
@@ -346,8 +337,7 @@ async def adjudicate_category(
                            "properties": {"event_type": {
                                "type": "string", "enum": ADJUDICATE_TYPES}},
                            "required": ["event_type"]}}},
-            extra_body={"speculative.n_max": 0,
-                        "chat_template_kwargs": {"enable_thinking": False}},
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
     finally:
         _record_qwen_timing(timing, started)
@@ -366,7 +356,7 @@ async def adjudicate_category(
 
 
 def _enum_confidence(tokens: list, raw: str, value: str) -> float:
-    """Sınıf güveni: enum ayrım token'larında normalize seçim olasılığı."""
+
     try:
         start = raw.index(value)
     except ValueError:
@@ -603,6 +593,64 @@ def _image_part(jpeg: bytes) -> dict[str, Any]:
     return {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
 
 
+def build_video_references(start: float, end: float) -> list[FrameReference]:
+    count = min(260, max(1, math.ceil(end - start)))
+    return [
+        FrameReference(
+            frame_id=f"f_{index:03d}",
+            timestamp=min(end, start + index),
+        )
+        for index in range(count)
+    ]
+
+
+async def _video_parts(
+    video: Path,
+    start: float,
+    end: float,
+    frame_refs: list[FrameReference],
+) -> list[dict[str, Any]]:
+    duration = end - start
+    if duration <= 0 or duration > settings.video_input_max_seconds:
+        raise VlmEvidenceContractError(
+            "VIDEO_DURATION_INVALID",
+            f"EVREN video süresi 0-{settings.video_input_max_seconds:.0f} sn arasında olmalı",
+        )
+    clip = await asyncio.wait_for(
+        grab_clip(video, start, end, settings.video_input_width),
+        timeout=settings.vlm_context_clip_timeout_seconds,
+    )
+    if len(clip) > 190 * 1024 * 1024:
+        raise VlmEvidenceContractError("VIDEO_BODY_TOO_LARGE", "EVREN video gövdesi çok büyük")
+    mapping = "\n".join(
+        f"{frame.frame_id}: klip {frame.timestamp - start:.3f} sn, video {frame.timestamp:.3f} sn"
+        for frame in frame_refs
+    )
+    encoded = base64.b64encode(clip).decode()
+    return [
+        {"type": "video_url", "video_url": {"url": f"data:video/mp4;base64,{encoded}"}},
+        {"type": "text", "text": "Kanıt zaman çizelgesi:\n" + mapping},
+    ]
+
+
+async def _capture_evidence_frames(
+    video: Path,
+    frame_refs: list[FrameReference],
+    frame_ids: list[str],
+    captured_frames: dict[str, tuple[FrameReference, bytes]] | None,
+) -> None:
+    if captured_frames is None:
+        return
+    allowed = {frame.frame_id: frame for frame in frame_refs}
+    selected = [allowed[frame_id] for frame_id in dict.fromkeys(frame_ids) if frame_id in allowed]
+    jpegs = await asyncio.gather(
+        *(grab_frame(video, frame.timestamp) for frame in selected)
+    )
+    captured_frames.update(
+        {frame.frame_id: (frame, jpeg) for frame, jpeg in zip(selected, jpegs)}
+    )
+
+
 async def _frame_parts(
     video: Path,
     frame_refs: list[FrameReference],
@@ -651,7 +699,8 @@ async def glance_window(
     meta: str = "",
 ) -> float:
     start, end = window
-    content = await _frame_parts(video, build_frame_references(keyframes))
+    frame_refs = build_video_references(start, end)
+    content = await _video_parts(video, start, end, frame_refs)
     question = GLANCE_QUESTION
     if meta:
         question += f"\n\nDetector data:\n{meta}"
@@ -659,17 +708,14 @@ async def glance_window(
 
     client = main_client()
     resp = await create_chat(client,
-        model=settings.main_model,
+        model=settings.video_model,
         messages=[{"role": "system", "content": GLANCE_SYSTEM_EN},
                   {"role": "user", "content": content}],
         max_tokens=2,
         temperature=0,
         logprobs=True,
         top_logprobs=8,
-        extra_body={
-            "speculative.n_max": 0,
-            "chat_template_kwargs": {"enable_thinking": False},
-        },
+        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )
     return _yes_probability(resp)
 
@@ -727,16 +773,18 @@ async def interpret_window(
     frame_width: int = 512,
 ) -> WindowReport:
     start, end = window
-    eff = effort or settings.interpret_effort
-    thinks = thinking_on(think=think, effort=eff)
-    frame_refs = build_frame_references(keyframes)
+    frame_refs = build_video_references(start, end)
     request_frame_ids = [frame.frame_id for frame in frame_refs]
-    content = await _frame_parts(video, frame_refs, captured_frames=captured_frames,
-                                 frame_width=frame_width)
+    content = await _video_parts(video, start, end, frame_refs)
 
     task = ((task_prompt or TASK_TR)
+            .replace("Yukarıdaki kareler", "Yukarıdaki video")
             .replace("{start}", f"{start:.0f}")
             .replace("{end}", f"{end:.0f}"))
+    task += (
+        "\n\nKanıt için zaman çizelgesindeki en yakın FRAME_ID değerini seç. "
+        "Olay t alanını videonun mutlak saniyesi olarak yaz."
+    )
     if meta:
         task += f"\n\nAlgı katmanı verisi:\n{meta}"
     if context:
@@ -744,6 +792,8 @@ async def interpret_window(
     content.append({"type": "text", "text": task})
 
     system = system_prompt or SYSTEM_TR
+    system = system.replace("aynı zaman penceresinden alınmış kareler", "aynı zaman penceresinin videosu")
+    system += "\n\nVideo hareketini ve olayların zamansal sırasını birlikte değerlendir."
     if settings.two_tier:
         system = f"{system}\n\n{tier_prompt or TIER_TR}"
     system += learned_category_block()
@@ -752,13 +802,11 @@ async def interpret_window(
     started = time.monotonic()
     try:
         resp = await create_chat(client,
-            model=model or settings.main_model,
+            model=model or settings.video_model,
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": content}],
-            max_tokens=(max(4000, settings.interpret_max_tokens) if thinks
-                        else settings.interpret_max_tokens),
-            temperature=(settings.interpret_think_temp
-                         if thinks and settings.interpret_think_temp > 0 else 0),
+            max_tokens=settings.interpret_max_tokens,
+            temperature=0,
             logprobs=stats is not None,
             top_logprobs=8 if stats is not None else None,
             response_format={
@@ -768,11 +816,7 @@ async def interpret_window(
                                           if settings.two_tier
                                           else report_schema(request_frame_ids)},
             },
-            extra_body={
-                "speculative.n_max": 0,
-                **thinking_extra(think=think, effort=eff,
-                                 budget=settings.interpret_think_budget),
-            },
+            extra_body=thinking_extra(think=False, effort="", budget=0),
         )
     finally:
         _record_qwen_timing(timing, started)
@@ -781,14 +825,20 @@ async def interpret_window(
         if settings.two_tier and (p := _dikkat_probability(resp)) is not None:
             stats["durum_p"] = p
     raw = resp.choices[0].message.content or "{}"
-    weight_guard.record(raw)
-    return _to_report(
+    report = _to_report(
         start,
         end,
         raw,
         truncated=resp.choices[0].finish_reason == "length",
         frame_refs=frame_refs,
     )
+    await _capture_evidence_frames(
+        video,
+        frame_refs,
+        [evidence.frame_id for event in report.events for evidence in event.evidence],
+        captured_frames,
+    )
+    return report
 
 
 def _record_qwen_timing(

@@ -1,4 +1,4 @@
-"""Merkezî ve yerel çalışma yapılandırması."""
+
 
 import os
 from pathlib import Path
@@ -7,19 +7,51 @@ from typing import Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
-# LangGraph bağımlılık zincirinden gelebilen bulut izlemesini yarışma kuralı
-# gereği süreç başlamadan kesin olarak kapat.
 os.environ["LANGSMITH_TRACING"] = "false"
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
+_ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+_ENV_AUTHORITATIVE = {
+    "DORTGOZ_LLAMA_BASE_URL",
+    "DORTGOZ_API_KEY",
+    "DORTGOZ_MAIN_MODEL",
+    "DORTGOZ_VIDEO_MODEL",
+    "DORTGOZ_SECOND_OPINION_MODEL",
+    "DORTGOZ_AGENT_MODEL",
+    "DORTGOZ_ROUTER_MODEL",
+    "DORTGOZ_GUARD_MODEL",
+    "DORTGOZ_EMBEDDING_MODEL",
+    "DORTGOZ_QDRANT_URL",
+    "DORTGOZ_QDRANT_PREFIX",
+    "DORTGOZ_QDRANT_API_KEY",
+}
+
+if _ENV_PATH.is_file():
+    for raw_line in _ENV_PATH.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        if key.strip() in _ENV_AUTHORITATIVE:
+            os.environ[key.strip()] = value.strip().strip('"').strip("'")
+
 
 class Settings(BaseSettings):
-    llama_base_url: str = "http://127.0.0.1:8080/v1"
-    vllm_base_url: str = "http://127.0.0.1:8001/v1"
-    api_key: str = "local"
+    llama_base_url: str = "https://inference.example.invalid/v1"
+    api_key: str = ""
 
-    main_model: str = "qwen3.6-35b-a3b-vision"
-    triage_model: str = "minicpm-v-4.6"
+    main_model: str = "llm-fast"
+    video_model: str = "vlm"
+    second_opinion_model: str = "llm-large"
+    agent_model: str = "llm-fast"
+    router_model: str = "router"
+    guard_model: str = "guard"
+    embedding_model: str = "bge-m3-embed"
+    qdrant_url: str = ""
+    qdrant_prefix: str = ""
+    qdrant_api_key: str = ""
+    qdrant_collection: str = "dortgoz-procedures"
+    procedure_rag_top_k: int = Field(default=3, ge=1, le=10)
 
     mock: bool = False
     mock_speed: float = 1.0
@@ -48,23 +80,21 @@ class Settings(BaseSettings):
     exemplar_suppress: bool = False
     exemplar_shadow: bool = True
     exemplar_threshold: float = 0.97
-    second_opinion_model: str = "qwen3.8-27b-vision-dg"
     second_opinion_motion: float = 0.30
     interpret_effort: str = ""
     second_opinion_effort: str = ""
-    agent_model: str = ""
     agent_effort: str = ""
     agent_think_budget: int = 1200
     interpret_think_budget: int = 2500
     interpret_think_temp: float = 0.0
     dual_read: bool = False
     final_sweep: bool = False
-    max_inflight: int = 8
+    max_inflight: int = 4
     llm_retries: int = 6
 
-    # cpu VARSAYILAN: CUDA oturumu boru hattı içinde düşünce anlamsal tarayıcı
-    # sessizce motion-baseline'a geriliyor — hız kazancı (~%7-10) bu kalite
-    # kaybına değmez. GPU isteyen DORTGOZ_ONNX_DEVICE=gpu versin.
+
+
+
     onnx_device: str = "cpu"
     onnx_providers: str = ""
     onnx_intra_threads: int = 4
@@ -110,9 +140,10 @@ class Settings(BaseSettings):
     candidate_min_duration_seconds: float = 0.5
     candidate_threshold_version: str = "candidate-thresholds-v1"
 
-    vlm_manifest_path: Path | None = None
-    vlm_timeout_seconds: float = 90.0
-    vlm_context_clip_timeout_seconds: float = 90.0
+    vlm_timeout_seconds: float = 1800.0
+    vlm_context_clip_timeout_seconds: float = 180.0
+    video_input_max_seconds: float = Field(default=260.0, gt=0, le=260.0)
+    video_input_width: int = Field(default=720, ge=240, le=1280)
     vlm_context_before_seconds: float = 8.0
     vlm_context_after_seconds: float = 8.0
 
@@ -122,7 +153,6 @@ class Settings(BaseSettings):
     incident_pre_capture_seconds: float = Field(default=8.0, ge=0, le=120)
     incident_post_capture_seconds: float = Field(default=8.0, ge=0, le=120)
     incident_clip_timeout_seconds: float = Field(default=90.0, gt=0, le=600)
-    gguf_paths: str = ""
     max_feeds: int = 25
     live_feeds_path: Path = Path(__file__).resolve().parents[2] / "config" / "live_feeds.json"
     live_segment_seconds: int = 30
@@ -141,7 +171,6 @@ class Settings(BaseSettings):
         return "mock" if self.mock else self.deployment_profile
 
     @field_validator(
-        "vlm_manifest_path",
         "video_store_path",
         "event_store_path",
         mode="before",
@@ -175,11 +204,7 @@ class Settings(BaseSettings):
     @field_validator("dfine_onnx", mode="after")
     @classmethod
     def resolve_dfine_onnx(cls, value: str) -> str:
-        """Ağırlık yapılandırılan yolda yoksa taşınabilir yerlere bak.
 
-        Varsayılan masaüstüne özgü mutlak yoldur; başka makinede sessizce
-        dedektörü kapatıyordu. Bulunursa açık kalır.
-        """
         if value and Path(value).expanduser().is_file():
             return value
         repo = Path(__file__).resolve().parents[2]
@@ -188,15 +213,6 @@ class Settings(BaseSettings):
             if candidate.is_file():
                 return str(candidate)
         return value
-
-    @field_validator("vlm_manifest_path", mode="after")
-    @classmethod
-    def resolve_vlm_manifest_path(cls, value: Path | None) -> Path | None:
-        if value is None:
-            return None
-        if value.is_absolute():
-            return value.resolve()
-        return (Path(__file__).resolve().parents[2] / value).resolve()
 
     @field_validator("video_store_path", mode="after")
     @classmethod

@@ -1,4 +1,4 @@
-"""Mock, development ve competition-real çalışma kapıları."""
+
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ from typing import Any
 import httpx
 
 from ..config import Settings
-from ..infrastructure.vlm_manifest import load_vlm_manifest
 from ..pipeline.candidate_model import load_candidate_scorer
 from ..pipeline.perception import resolve_production_model_path
 from ..pipeline.semantic import SemanticCandidateModel
@@ -54,7 +53,7 @@ class ReadinessReport:
 
 
 class DeploymentReadinessService:
-    """Yerel artifact, araç, kalıcılık ve model endpoint'ini birlikte denetle."""
+
 
     def __init__(self, settings: Settings, repository: Any, *, cache_seconds: float = 3.0) -> None:
         self.settings = settings
@@ -101,6 +100,7 @@ class DeploymentReadinessService:
                     "dfine": self._mock_component("mock profilde kullanılmaz"),
                     "siglip": self._mock_component("mock profilde kullanılmaz"),
                     "procedures": self._mock_component("mock profilde kullanılmaz"),
+                    "procedure_rag": self._mock_component("mock profilde kullanılmaz"),
                 }
             )
             return ReadinessReport(profile=profile, components=components)
@@ -109,6 +109,7 @@ class DeploymentReadinessService:
         components["dfine"] = self._dfine(required=competition)
         components["siglip"] = self._siglip(required=competition)
         components["procedures"] = self._procedures(required=competition)
+        components["procedure_rag"] = await self._procedure_rag(required=competition)
         return ReadinessReport(profile=profile, components=components)
 
     def _storage(self) -> dict[str, Any]:
@@ -150,25 +151,22 @@ class DeploymentReadinessService:
         )
 
     async def _vlm(self, *, required: bool) -> dict[str, Any]:
-        path = self.settings.vlm_manifest_path
-        if path is None:
-            result = self._component(required, False, "DORTGOZ_VLM_MANIFEST_PATH ayarlanmadı")
-            result.update({"mode": "local_vlm", "endpoint_checked": False})
+        aliases = {
+            self.settings.video_model,
+            self.settings.main_model,
+            self.settings.second_opinion_model,
+            self.settings.agent_model,
+            self.settings.router_model,
+            self.settings.guard_model,
+            self.settings.embedding_model,
+        }
+        if not self.settings.api_key:
+            result = self._component(required, False, "DORTGOZ_API_KEY ayarlanmadı")
+            result.update({"mode": "evren", "endpoint_checked": False})
             return result
-        try:
-            manifest = load_vlm_manifest(path)
-            if manifest.model_id != self.settings.main_model:
-                raise ValueError("VLM manifest model_id ile DORTGOZ_MAIN_MODEL eşleşmiyor")
-        except Exception as exc:
-            result = self._component(required, False, str(exc))
-            result.update(
-                {"mode": "local_vlm", "manifest_path": str(path), "endpoint_checked": False}
-            )
-            return result
-
         endpoint = self.settings.llama_base_url.rstrip("/") + "/models"
         try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
+            async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(
                     endpoint,
                     headers={"Authorization": f"Bearer {self.settings.api_key}"},
@@ -180,20 +178,19 @@ class DeploymentReadinessService:
                 for item in payload.get("data", [])
                 if isinstance(item, dict) and isinstance(item.get("id"), str)
             }
-            if self.settings.main_model not in model_ids:
-                raise ValueError("yapılandırılmış ana model endpoint üzerinde bulunamadı")
+            missing = aliases - model_ids
+            if missing:
+                raise ValueError(f"EVREN model takma adları eksik: {', '.join(sorted(missing))}")
         except Exception as exc:
-            result = self._component(required, False, f"yerel VLM endpoint hazır değil: {exc}")
-            result.update(
-                {"mode": "local_vlm", "manifest_path": str(path), "endpoint_checked": True}
-            )
+            result = self._component(required, False, f"EVREN çıkarım servisi hazır değil: {exc}")
+            result.update({"mode": "evren", "endpoint_checked": True})
             return result
-        result = self._component(required, True, "VLM manifest, hash ve endpoint doğrulandı")
+        result = self._component(required, True, "EVREN kimliği ve model takma adları doğrulandı")
         result.update(
             {
-                "mode": "local_vlm",
-                "manifest_path": str(path),
-                "model_id": manifest.model_id,
+                "mode": "evren",
+                "model_id": self.settings.video_model,
+                "aliases": sorted(aliases),
                 "endpoint_checked": True,
             }
         )
@@ -234,6 +231,28 @@ class DeploymentReadinessService:
         result = self._component(required, True, "SigLIP manifest ve artifact hash'leri doğrulandı")
         result.update({"manifest_path": str(manifest), "model_id": scorer.model_id})
         return result
+
+    async def _procedure_rag(self, *, required: bool) -> dict[str, Any]:
+        if not (
+            self.settings.qdrant_url
+            and self.settings.qdrant_prefix
+            and self.settings.qdrant_api_key
+        ):
+            return self._component(required, False, "EVREN Qdrant kimliği ayarlanmadı")
+        base = self.settings.qdrant_url.rstrip("/")
+        prefix = self.settings.qdrant_prefix.strip("/")
+        if not base.endswith(f"/{prefix}"):
+            base = f"{base}/{prefix}"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    f"{base}/collections",
+                    headers={"api-key": self.settings.qdrant_api_key},
+                )
+                response.raise_for_status()
+        except Exception as exc:
+            return self._component(required, False, f"EVREN Qdrant hazır değil: {exc}")
+        return self._component(required, True, "EVREN Qdrant kimliği doğrulandı")
 
     def _procedures(self, *, required: bool) -> dict[str, Any]:
         root = self.settings.media_dir.parent / "data" / "procedures"

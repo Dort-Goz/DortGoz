@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
-import json
 import os
 import shutil
 import subprocess
@@ -19,14 +17,12 @@ REQUIRED_FILES = (
     "frontend/package.json",
     "frontend/bun.lock",
     "media/.gitkeep",
-    "models/vlm/manifest.template.json",
     "scripts/dev.ps1",
     "scripts/dev.sh",
 )
-FORBIDDEN_CLOUD_HOSTS = ("api.openai.com", "openai.azure.com", "api.anthropic.com")
-# langsmith langgraph/langchain zinciriyle gelir; bu değişkenler açıksa iz
-# kayıtları bulut uç noktasına gider. backend/dortgoz/config.py değerleri süreç
-# içinde zorlar, preflight ise ortamın ve .env'in açık bırakmadığını denetler.
+
+
+
 CLOUD_TELEMETRY_VARS = ("LANGSMITH_TRACING", "LANGCHAIN_TRACING_V2")
 DISABLED_VALUES = {"", "0", "false", "no", "off"}
 TRACKED_RUNTIME_PREFIXES = ("runs/", "cache/", "models/candidate/local/")
@@ -48,13 +44,6 @@ def _read_env(path: Path) -> dict[str, str]:
         values[key.strip()] = value.strip().strip('"').strip("'")
     return values
 
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _verify_repository(root: Path, errors: list[str]) -> None:
@@ -90,12 +79,12 @@ def _verify_repository(root: Path, errors: list[str]) -> None:
             errors.append(f"runtime/model çıktısı Git tarafından izleniyor: {relative}")
         if relative.startswith("media/") and relative != "media/.gitkeep":
             errors.append(f"video/medya Git tarafından izleniyor: {relative}")
-        if relative == "models/vlm/manifest.local.json" or relative.endswith(TRACKED_MODEL_SUFFIXES):
-            errors.append(f"yerel VLM manifesti/ağırlığı Git tarafından izleniyor: {relative}")
+        if relative.endswith(TRACKED_MODEL_SUFFIXES):
+            errors.append(f"model ağırlığı Git tarafından izleniyor: {relative}")
 
 
 def _verify_cloud_telemetry(root: Path, errors: list[str]) -> None:
-    """LangSmith/LangChain bulut izlemesinin kapalı olduğunu denetler."""
+
     sources: list[tuple[str, dict[str, str]]] = [("ortam", dict(os.environ))]
     env_path = root / ".env"
     if env_path.is_file():
@@ -123,14 +112,12 @@ def _verify_real_config(root: Path, errors: list[str]) -> None:
     if not env_path.is_file():
         errors.append("gerçek mod için .env yok; .env.example dosyasını kopyalayıp doldurun")
         return
-    values = _read_env(env_path)
-    values.update(
-        {
-            key: value
-            for key, value in os.environ.items()
-            if key.startswith("DORTGOZ_")
-        }
-    )
+    values = {
+        key: value
+        for key, value in os.environ.items()
+        if key.startswith("DORTGOZ_")
+    }
+    values.update(_read_env(env_path))
     if values.get("DORTGOZ_MOCK", "").casefold() in {"1", "true", "yes", "on"}:
         errors.append("gerçek modda DORTGOZ_MOCK=0 olmalı")
     if values.get("DORTGOZ_DEPLOYMENT_PROFILE") != "competition-real":
@@ -138,35 +125,28 @@ def _verify_real_config(root: Path, errors: list[str]) -> None:
     if not values.get("DORTGOZ_EVENT_STORE_PATH"):
         errors.append("competition-real profilinde DORTGOZ_EVENT_STORE_PATH zorunlu")
     base_url = values.get("DORTGOZ_LLAMA_BASE_URL", "")
-    if not base_url or "<" in base_url or any(host in base_url.casefold() for host in FORBIDDEN_CLOUD_HOSTS):
-        errors.append("DORTGOZ_LLAMA_BASE_URL yerel/özel ağ OpenAI-uyumlu endpoint'i olmalı")
-
-    manifest_value = values.get("DORTGOZ_VLM_MANIFEST_PATH", "")
-    if not manifest_value:
-        errors.append("gerçek candidate-only VLM için DORTGOZ_VLM_MANIFEST_PATH zorunlu")
-        return
-    manifest_path = Path(manifest_value).expanduser()
-    if not manifest_path.is_absolute():
-        manifest_path = (root / manifest_path).resolve()
-    if not manifest_path.is_file():
-        errors.append("DORTGOZ_VLM_MANIFEST_PATH mevcut bir manifest'e işaret etmiyor")
-        return
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        errors.append("VLM manifest geçerli JSON değil")
-        return
-    if manifest.get("license") not in {"Apache-2.0", "MIT"}:
-        errors.append("VLM manifest lisansı Apache-2.0 veya MIT olmalı")
-    artifact_path = Path(str(manifest.get("artifact_path", ""))).expanduser()
-    if not artifact_path.is_absolute():
-        artifact_path = (manifest_path.parent / artifact_path).resolve()
-    if not artifact_path.is_file():
-        print("NOT: VLM ağırlığı bu makinede yok — uzak servis varsayıldı, hash denetlenmedi")
-        return
-    expected_hash = manifest.get("artifact_sha256")
-    if not isinstance(expected_hash, str) or _sha256(artifact_path) != expected_hash:
-        errors.append("VLM artifact SHA-256 manifest ile eşleşmiyor")
+    if not base_url.startswith("https://") or "inference.example.invalid" not in base_url:
+        errors.append("DORTGOZ_LLAMA_BASE_URL EVREN HTTPS çıkarım ucunu göstermeli")
+    if not values.get("DORTGOZ_API_KEY"):
+        errors.append("DORTGOZ_API_KEY zorunlu")
+    expected = {
+        "DORTGOZ_MAIN_MODEL": "llm-fast",
+        "DORTGOZ_VIDEO_MODEL": "vlm",
+        "DORTGOZ_SECOND_OPINION_MODEL": "llm-large",
+        "DORTGOZ_AGENT_MODEL": "llm-fast",
+        "DORTGOZ_ROUTER_MODEL": "router",
+        "DORTGOZ_GUARD_MODEL": "guard",
+        "DORTGOZ_EMBEDDING_MODEL": "bge-m3-embed",
+    }
+    for key, expected_value in expected.items():
+        if values.get(key, expected_value) != expected_value:
+            errors.append(f"{key}={expected_value} olmalı")
+    if not values.get("DORTGOZ_QDRANT_URL", "").startswith("https://"):
+        errors.append("DORTGOZ_QDRANT_URL EVREN HTTPS vektör ucunu göstermeli")
+    if not values.get("DORTGOZ_QDRANT_PREFIX"):
+        errors.append("DORTGOZ_QDRANT_PREFIX zorunlu")
+    if not values.get("DORTGOZ_QDRANT_API_KEY"):
+        errors.append("DORTGOZ_QDRANT_API_KEY zorunlu")
 
 
 def main() -> None:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 from pathlib import Path
 
 import pytest
@@ -27,53 +26,50 @@ def test_fresh_clone_preflight_accepts_tracked_repository() -> None:
     assert errors == []
 
 
-def _real_env(tmp_path: Path, manifest: Path) -> Path:
+def _real_env(tmp_path: Path, **overrides: str) -> Path:
+    values = {
+        "DORTGOZ_MOCK": "0",
+        "DORTGOZ_DEPLOYMENT_PROFILE": "competition-real",
+        "DORTGOZ_EVENT_STORE_PATH": "runs/event_memory.sqlite3",
+        "DORTGOZ_LLAMA_BASE_URL": "https://inference.example.invalid/v1",
+        "DORTGOZ_API_KEY": "fixture-key",
+        "DORTGOZ_MAIN_MODEL": "llm-fast",
+        "DORTGOZ_VIDEO_MODEL": "vlm",
+        "DORTGOZ_SECOND_OPINION_MODEL": "llm-large",
+        "DORTGOZ_AGENT_MODEL": "llm-fast",
+        "DORTGOZ_ROUTER_MODEL": "router",
+        "DORTGOZ_GUARD_MODEL": "guard",
+        "DORTGOZ_EMBEDDING_MODEL": "bge-m3-embed",
+        "DORTGOZ_QDRANT_URL": "https://qdrant.example.invalid",
+        "DORTGOZ_QDRANT_PREFIX": "team-test",
+        "DORTGOZ_QDRANT_API_KEY": "qdr-fixture",
+    }
+    values.update(overrides)
     (tmp_path / ".env").write_text(
-        "DORTGOZ_MOCK=0\n"
-        "DORTGOZ_DEPLOYMENT_PROFILE=competition-real\n"
-        "DORTGOZ_EVENT_STORE_PATH=runs/event_memory.sqlite3\n"
-        "DORTGOZ_LLAMA_BASE_URL=http://127.0.0.1:8080/v1\n"
-        f"DORTGOZ_VLM_MANIFEST_PATH={manifest}\n",
+        "".join(f"{key}={value}\n" for key, value in values.items()),
         encoding="utf-8",
     )
     return tmp_path
 
 
-def test_preflight_accepts_manifest_whose_weights_live_on_remote_host(tmp_path: Path) -> None:
+def test_preflight_accepts_evren_configuration(tmp_path: Path) -> None:
     preflight = _load_script("preflight")
-    manifest = tmp_path / "manifest.json"
-    manifest.write_text(
-        '{"license": "Apache-2.0", "artifact_path": "/mnt/uzak/model.gguf",'
-        ' "artifact_sha256": "' + "0" * 64 + '"}',
-        encoding="utf-8",
-    )
     errors: list[str] = []
 
-    preflight._verify_real_config(_real_env(tmp_path, manifest), errors)
+    preflight._verify_real_config(_real_env(tmp_path), errors)
 
     assert errors == []
 
 
-def test_preflight_still_rejects_local_weights_whose_hash_disagrees(tmp_path: Path) -> None:
+def test_preflight_rejects_wrong_evren_alias(tmp_path: Path) -> None:
     preflight = _load_script("preflight")
-    weights = tmp_path / "model.gguf"
-    weights.write_bytes(b"agirlik")
-    manifest = tmp_path / "manifest.json"
-    manifest.write_text(
-        json.dumps(
-            {
-                "license": "Apache-2.0",
-                "artifact_path": str(weights),
-                "artifact_sha256": "0" * 64,
-            }
-        ),
-        encoding="utf-8",
-    )
     errors: list[str] = []
 
-    preflight._verify_real_config(_real_env(tmp_path, manifest), errors)
+    preflight._verify_real_config(
+        _real_env(tmp_path, DORTGOZ_VIDEO_MODEL="qwen3-vl"), errors
+    )
 
-    assert errors == ["VLM artifact SHA-256 manifest ile eşleşmiyor"]
+    assert errors == ["DORTGOZ_VIDEO_MODEL=vlm olmalı"]
 
 
 def test_long_feed_rejects_invalid_explicit_dataset_path_without_fallback(tmp_path: Path) -> None:

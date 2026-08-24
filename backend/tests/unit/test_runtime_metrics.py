@@ -395,7 +395,7 @@ async def test_run_metrics_summary_is_not_replayed_to_ws(tmp_path: Path) -> None
 
 @pytest.mark.asyncio
 async def test_interpret_records_only_the_existing_qwen_call(monkeypatch) -> None:
-    async def fake_frame_parts(*_args, **_kwargs):
+    async def fake_video_parts(*_args, **_kwargs):
         return []
 
     async def fake_create_chat(*_args, **_kwargs):
@@ -409,7 +409,7 @@ async def test_interpret_records_only_the_existing_qwen_call(monkeypatch) -> Non
         )
 
     ticks = iter([10.0, 10.025])
-    monkeypatch.setattr(runner.interpret, "_frame_parts", fake_frame_parts)
+    monkeypatch.setattr(runner.interpret, "_video_parts", fake_video_parts)
     monkeypatch.setattr(runner.interpret, "main_client", lambda: object())
     monkeypatch.setattr(runner.interpret, "create_chat", fake_create_chat)
     monkeypatch.setattr(
@@ -431,14 +431,14 @@ async def test_interpret_records_only_the_existing_qwen_call(monkeypatch) -> Non
 
 @pytest.mark.asyncio
 async def test_interpret_preserves_qwen_timing_when_call_fails(monkeypatch) -> None:
-    async def fake_frame_parts(*_args, **_kwargs):
+    async def fake_video_parts(*_args, **_kwargs):
         return []
 
     async def failing_create_chat(*_args, **_kwargs):
         raise RuntimeError("fixture failure")
 
     ticks = iter([20.0, 20.004])
-    monkeypatch.setattr(runner.interpret, "_frame_parts", fake_frame_parts)
+    monkeypatch.setattr(runner.interpret, "_video_parts", fake_video_parts)
     monkeypatch.setattr(runner.interpret, "main_client", lambda: object())
     monkeypatch.setattr(runner.interpret, "create_chat", failing_create_chat)
     monkeypatch.setattr(

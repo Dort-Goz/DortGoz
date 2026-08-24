@@ -9,12 +9,15 @@ from ..config import settings
 from ..events import Event, ToolCall, UICommand
 from ..services.action_dispatcher import ACTION_SPECS
 from ..services.action_dispatcher import dispatcher as action_dispatcher
+from ..services.procedure_index import LocalProcedureIndex
+from ..services.procedure_rag import EvrenProcedureRag
 from ..ws import ConnectionManager
 from .actuators import registry as actuator_registry
 
 ACTUATORS = ["saglik_ekibi_cagir", "alarm_ver", "alan_kapat", "kayit_baslat"]
 
 EVIDENCE_DIR = "_evidence"
+_procedure_rag: EvrenProcedureRag | None = None
 
 
 def _tool(name: str, desc: str, props: dict[str, dict]) -> dict:
@@ -53,6 +56,11 @@ TOOLS: list[dict] = [
           "(özet, olaylar, belirsizlikler). Defterde olmayan ayrıntı sorulunca "
           "UYDURMAK yerine bunu kullan.",
           {"t": {"type": "number", "description": "video zamanı (saniye)"},
+           "gerekce": _GEREKCE}),
+    _tool("prosedur_sorgula",
+          "Onaylı prosedür bölümlerinde anlamsal arama yapar ve kaynak kimliği, "
+          "sürüm ve içerik özetiyle alıntı döndürür.",
+          {"soru": {"type": "string", "description": "prosedür sorusu"},
            "gerekce": _GEREKCE}),
     _tool("yeniden_incele",
           "Belirtilen anın çevresini (±15 sn) daha yoğun karelerle ve derin "
@@ -162,6 +170,17 @@ async def _dispatch(name: str, args: dict[str, Any], manager: ConnectionManager)
             out.append("\n".join(lines))
         return _observation("\n\n".join(out))
 
+    if name == "prosedur_sorgula":
+        hits = await _procedure_service().query(str(args["soru"]))
+        if not hits:
+            return "Onaylı prosedürlerde eşleşme bulunamadı."
+        lines = [
+            f"[{hit.document_id} · {hit.section} · sürüm {hit.version} · "
+            f"sha256:{hit.content_hash}] {hit.action}"
+            for hit in hits
+        ]
+        return _observation("\n".join(lines))
+
     if name == "yeniden_incele":
         if ctx is None:
             return "HATA: çözümlenmiş kayıt yok."
@@ -225,6 +244,15 @@ async def _dispatch(name: str, args: dict[str, Any], manager: ConnectionManager)
     return f"HATA: bilinmeyen araç '{name}'"
 
 
+def _procedure_service() -> EvrenProcedureRag:
+    global _procedure_rag
+    if _procedure_rag is None:
+        root = settings.media_dir.parent / "data" / "procedures"
+        index = LocalProcedureIndex.load(root, root / "manifest.json")
+        _procedure_rag = EvrenProcedureRag(index, settings)
+    return _procedure_rag
+
+
 async def _reexamine(ctx, t: float) -> str:
     from ..pipeline.interpret import interpret_window
     from ..pipeline.runner import resolve_media
@@ -277,7 +305,7 @@ async def _evidence_clip(ctx, start: float, end: float) -> str:
 
 
 def _observation(text: str) -> str:
-    """Keep model-produced observations inside a non-instruction boundary."""
+
 
     return (
         "<untrusted_observation>\n"

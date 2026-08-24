@@ -44,7 +44,7 @@ def test_readiness_separates_local_components():
     assert response.status_code == expected_status
     assert body["components"]["storage"]["ready"] is True
     assert body["components"]["video_store"]["mode"] == "memory"
-    assert body["components"]["model"]["mode"] == "local_vlm"
+    assert body["components"]["model"]["mode"] == "evren"
 
 
 def test_ui_replay_events_validate_against_contract():
@@ -75,7 +75,7 @@ def test_websocket_chat_roundtrip(monkeypatch):
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as ws:
             ws.send_text(json.dumps({"kind": "sync", "from_seq": 0}))
-            ws.send_text("{}")  # bozuk operatör frame'i bağlantıyı düşürmemeli
+            ws.send_text("{}")
             ws.send_text(json.dumps({"kind": "chat", "text": "test sorusu"}))
             got_operator_echo = got_agent_reply = False
             for _ in range(60):
@@ -130,7 +130,7 @@ def test_broadcast_survives_a_stalled_client():
 
 
 def test_import_rejects_corrupt_package():
-    """Bozuk zip 500 değil 422 üretmeli — istemci hatası sunucu hatası değildir."""
+
     with TestClient(app) as client:
         r = client.post(
             "/api/runs/import",
@@ -142,12 +142,12 @@ def test_import_rejects_corrupt_package():
 
 
 def test_import_rejects_oversized_package(monkeypatch):
-    """Gövde sınırı aşılırsa 413 döner; paket diske hiç yazılmaz."""
+
     from dortgoz import main
 
     monkeypatch.setattr(main, "IMPORT_MAX_BYTES", 16)
 
-    def fail_stage(_: bytes):  # pragma: no cover - çağrılmamalı
+    def fail_stage(_: bytes):
         raise AssertionError("sınırı aşan gövde geçici dosyaya yazılmamalı")
 
     monkeypatch.setattr(main, "_stage_import_package", fail_stage)
@@ -162,7 +162,7 @@ def test_import_rejects_oversized_package(monkeypatch):
 
 
 def test_import_runs_off_the_event_loop(monkeypatch):
-    """İçe aktarma bloklayan işi thread'e taşımalı ve geçici dosyayı silmeli."""
+
     import asyncio
 
     from dortgoz.services import analysis_package
@@ -194,7 +194,7 @@ def test_import_runs_off_the_event_loop(monkeypatch):
 
 
 def test_lifespan_runs_startup_reconciliation(monkeypatch):
-    """Uzlaştırma `on_event` yerine lifespan'de de açılışta bir kez koşmalı."""
+
     from dortgoz import main
 
     calls: list[int] = []
@@ -208,7 +208,7 @@ def test_lifespan_runs_startup_reconciliation(monkeypatch):
 
 
 def test_lifespan_stops_live_cctv_on_shutdown(monkeypatch):
-    """Kapanışta etkin canlı kip durdurulmalı — ffmpeg çekicileri kalmasın."""
+
     from dortgoz import main
 
     stopped: list[int] = []
@@ -227,7 +227,7 @@ def test_lifespan_stops_live_cctv_on_shutdown(monkeypatch):
 
 
 def test_triage_decide_maps_repository_error_to_conflict(monkeypatch):
-    """Kalıcılık hatası 500 değil 409 olmalı; operatör kararı yeniden verebilir."""
+
     from dortgoz.repositories.errors import RepositoryConflictError
     from dortgoz.services import triage
 

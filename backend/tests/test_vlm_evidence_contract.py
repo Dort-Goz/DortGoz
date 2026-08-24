@@ -132,6 +132,21 @@ def test_normal_two_tier_branch_stays_evidence_free(three_frames):
     assert "evidence" not in json.dumps(normal_branch)
 
 
+@pytest.mark.asyncio
+async def test_evren_video_part_contains_mp4_and_timeline(monkeypatch):
+    async def fake_grab_clip(*_args, **_kwargs):
+        return b"mp4"
+
+    monkeypatch.setattr(interpret, "grab_clip", fake_grab_clip)
+    refs = interpret.build_video_references(10, 13)
+
+    parts = await interpret._video_parts(Path("unused.mp4"), 10, 13, refs)
+
+    assert parts[0]["type"] == "video_url"
+    assert parts[0]["video_url"]["url"].startswith("data:video/mp4;base64,")
+    assert "f_002: klip 2.000 sn, video 12.000 sn" in parts[1]["text"]
+
+
 def test_uncertain_can_carry_evidence_without_confirmation(three_frames):
     report = _to_report(
         0,
@@ -145,8 +160,11 @@ def test_uncertain_can_carry_evidence_without_confirmation(three_frames):
 
 
 @pytest.mark.asyncio
-async def test_thinking_escalation_uses_same_evidence_schema(monkeypatch):
+async def test_native_video_uses_same_evidence_schema(monkeypatch):
     captured = {}
+
+    async def fake_video_parts(*_args, **_kwargs):
+        return [{"type": "video_url", "video_url": {"url": "data:video/mp4;base64,eA=="}}]
 
     async def fake_grab_frame(_video, _timestamp, _width=512):
         return b"jpeg"
@@ -159,8 +177,8 @@ async def test_thinking_escalation_uses_same_evidence_schema(monkeypatch):
                     message=SimpleNamespace(
                         content=_event_raw(
                             "physical_fight",
-                            frame_id="f_000",
-                            timestamp=12.5,
+                            frame_id="f_012",
+                            timestamp=12.0,
                         )
                     ),
                     finish_reason="stop",
@@ -169,6 +187,7 @@ async def test_thinking_escalation_uses_same_evidence_schema(monkeypatch):
             ]
         )
 
+    monkeypatch.setattr(interpret, "_video_parts", fake_video_parts)
     monkeypatch.setattr(interpret, "grab_frame", fake_grab_frame)
     monkeypatch.setattr(interpret, "create_chat", fake_create_chat)
     monkeypatch.setattr(interpret, "main_client", lambda: object())
@@ -183,10 +202,11 @@ async def test_thinking_escalation_uses_same_evidence_schema(monkeypatch):
         captured_frames=evidence_frames,
     )
 
-    assert report.events[0].evidence[0].frame_id == "f_000"
-    assert evidence_frames["f_000"][0].timestamp == 12.5
-    assert evidence_frames["f_000"][1] == b"jpeg"
-    assert captured["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
+    assert report.events[0].evidence[0].frame_id == "f_012"
+    assert evidence_frames["f_012"][0].timestamp == 12.0
+    assert evidence_frames["f_012"][1] == b"jpeg"
+    assert captured["model"] == "vlm"
+    assert captured["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
     schema = captured["response_format"]["json_schema"]["schema"]
     event_schema = schema["oneOf"][1]["properties"]["events"]["items"]
     assert event_schema["properties"]["evidence"]["minItems"] == 1
@@ -194,7 +214,7 @@ async def test_thinking_escalation_uses_same_evidence_schema(monkeypatch):
     assert "timestamp" not in evidence_item["properties"]
     assert "timestamp" not in evidence_item.get("required", [])
     content = captured["messages"][1]["content"]
-    assert content[0]["text"] == "FRAME_ID: f_000"
+    assert content[0]["type"] == "video_url"
 
 
 def test_legacy_window_event_remains_valid():

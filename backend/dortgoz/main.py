@@ -493,19 +493,18 @@ async def live_feed_list() -> list[dict]:
 async def interpret_config() -> dict:
     from .pipeline.interpret import SYSTEM_TR, TASK_TR
 
-    models = [settings.main_model]
+    models = [settings.video_model, settings.main_model, settings.second_opinion_model]
     if not settings.mock:
         try:
             from .agent.llm import main_client
 
             page = await asyncio.wait_for(main_client().models.list(), timeout=5)
-            ids = [m.id for m in page.data]
-            if ids:
-                models = ([settings.main_model] if settings.main_model not in ids else []) + ids
+            ids = {m.id for m in page.data}
+            models = [model for model in models if model in ids]
         except Exception:
             pass
     return {
-        "default_model": settings.main_model,
+        "default_model": settings.video_model,
         "models": models,
         "system_prompt": SYSTEM_TR,
         "task_prompt": TASK_TR,
