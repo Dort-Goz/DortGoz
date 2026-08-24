@@ -71,10 +71,13 @@ class Settings(BaseSettings):
     two_tier: bool = True
     carry_context: bool = True
     incident_review: bool = True
+    incident_review_strict: bool = False
     incident_grace_windows: int = 1
     escalate_p: float = 0.10
     escalate_target_p: float = 0.0
     escalate_shadow: bool = True
+    escalation_zoom_seconds: float = Field(default=0.0, ge=0.0, le=30.0)
+    escalate_low_severity: bool = False
     shadow_sample_rate: float = 0.0
     category_rules_enabled: bool = False
     exemplar_suppress: bool = False

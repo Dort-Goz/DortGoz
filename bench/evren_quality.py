@@ -14,7 +14,12 @@ from dortgoz import session
 from dortgoz.config import settings
 from dortgoz.events import AgentStep, IncidentUpdate, RunStatus, WindowReport
 from dortgoz.pipeline import ingest, runner, windowing
-from dortgoz.pipeline.interpret import SYSTEM_TR, TASK_TR
+from dortgoz.pipeline.interpret import (
+    REVIEW_SYSTEM_STRICT_TR,
+    REVIEW_SYSTEM_TR,
+    SYSTEM_TR,
+    TASK_TR,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -141,9 +146,12 @@ def configure(args: argparse.Namespace, workspace: Path) -> dict[str, Any]:
     settings.media_dir.mkdir(parents=True, exist_ok=True)
     settings.second_opinion_model = arm["second"]
     settings.incident_review = arm["incident_review"]
+    settings.incident_review_strict = args.strict_review
     settings.adjudicate_confusable = arm["adjudicate"]
     settings.escalate_p = arm["escalate"] if args.escalate is None else args.escalate
     settings.escalate_target_p = 0.0
+    settings.escalation_zoom_seconds = args.zoom_seconds
+    settings.escalate_low_severity = args.escalate_low
     settings.dual_read = False
     settings.final_sweep = False
     settings.category_rules_enabled = False
@@ -177,10 +185,16 @@ def config_record(args: argparse.Namespace, dataset: str, arm: dict[str, Any]) -
             sha256(candidate_manifest) if candidate_manifest.is_file() else None
         ),
         "detector_enabled": settings.detector_enabled,
+        "incident_review_strict": settings.incident_review_strict,
         "escalate_p": settings.escalate_p,
+        "escalation_zoom_seconds": settings.escalation_zoom_seconds,
+        "escalate_low_severity": settings.escalate_low_severity,
         "second_opinion_motion": settings.second_opinion_motion,
         "system_prompt_sha256": hashlib.sha256(SYSTEM_TR.encode()).hexdigest(),
         "task_prompt_sha256": hashlib.sha256(TASK_TR.encode()).hexdigest(),
+        "review_prompt_sha256": hashlib.sha256(
+            (REVIEW_SYSTEM_STRICT_TR if settings.incident_review_strict else REVIEW_SYSTEM_TR).encode()
+        ).hexdigest(),
         "code_revision": revision,
     }
 
@@ -393,6 +407,9 @@ def main() -> None:
     parser.add_argument("--continue-threshold", type=float, default=0.48)
     parser.add_argument("--second-motion", type=float, default=0.30)
     parser.add_argument("--escalate", type=float)
+    parser.add_argument("--zoom-seconds", type=float, default=0.0)
+    parser.add_argument("--escalate-low", action="store_true")
+    parser.add_argument("--strict-review", action="store_true")
     parser.add_argument("--no-screening", action="store_true")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()

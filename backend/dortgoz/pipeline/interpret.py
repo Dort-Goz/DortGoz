@@ -129,6 +129,14 @@ REVIEW_SYSTEM_TR = (
     "Risk alanı yalnız model ipucudur; final risk değildir."
 )
 
+REVIEW_SYSTEM_STRICT_TR = REVIEW_SYSTEM_TR + (
+    " Ön analiz yalnız doğrulanacak bir taslaktır. Videoda müdahale gerektiren "
+    "somut olay yoksa event_type normal ve risk dusuk seç. Yürüme, bekleme, "
+    "telefon kullanma, ürüne uzanma, ürünü elde tutma ve olağan alışveriş olay "
+    "değildir. possible_theft için ürünü gizleme, ödeme yapmadan çıkma veya "
+    "izinsiz alma eylemi videoda görünmelidir. Şüphe tek başına olay değildir."
+)
+
 
 class IncidentReviewResult(BaseModel):
 
@@ -241,7 +249,11 @@ async def review_incident(
     try:
         resp = await create_chat(client,
             model=model or settings.second_opinion_model,
-            messages=[{"role": "system", "content": REVIEW_SYSTEM_TR},
+            messages=[{
+                "role": "system",
+                "content": REVIEW_SYSTEM_STRICT_TR
+                if settings.incident_review_strict else REVIEW_SYSTEM_TR,
+            },
                       {"role": "user", "content": content}],
             max_tokens=settings.interpret_max_tokens,
             temperature=0,

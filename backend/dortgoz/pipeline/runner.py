@@ -75,6 +75,13 @@ def peak_embedding(start: float, end: float,
     return getattr(peak, "embedding", None) if peak else None
 
 
+def peak_screen_time(start: float, end: float, screen_samples: list) -> float:
+    candidates = [sample for sample in screen_samples if start <= sample.timestamp < end]
+    if not candidates:
+        return (start + end) / 2
+    return max(candidates, key=lambda sample: sample.anomaly_score).timestamp
+
+
 def _sample_this_window() -> bool:
     rate = settings.shadow_sample_rate
     return rate > 0 and random.random() < rate
@@ -670,8 +677,17 @@ async def run_video(
 
                 escalated = ""
                 esc_gate = escalation_policy.resolve()
-                esc_hit = (esc_gate.value and not report.events
-                           and call.get("durum_p", 0.0) >= esc_gate.value)
+                serious_primary = any(
+                    RISK_ORDER.index(event.severity_hint) >= RISK_ORDER.index("orta")
+                    for event in report.events
+                )
+                escalation_empty = not report.events or (
+                    settings.escalate_low_severity and not serious_primary
+                )
+                esc_hit = (
+                    esc_gate.value and escalation_empty
+                    and call.get("durum_p", 0.0) >= esc_gate.value
+                )
                 if esc_hit and not esc_gate.acts:
                     await rec.emit(AgentStep(
                         node="interpret", status="end",
@@ -683,11 +699,17 @@ async def run_video(
                     escalation_timing: dict[str, float | int] = {}
                     try:
                         escalation_frames = {}
-                        esc_step = (end - start) / 12
-                        esc_keyframes = [start + esc_step * (i + 0.5)
+                        esc_start, esc_end = start, end
+                        if settings.escalation_zoom_seconds > 0:
+                            center = peak_screen_time(start, end, screen_samples)
+                            half = settings.escalation_zoom_seconds / 2
+                            esc_start = max(start, center - half)
+                            esc_end = min(end, center + half)
+                        esc_step = (esc_end - esc_start) / 12
+                        esc_keyframes = [esc_start + esc_step * (i + 0.5)
                                          for i in range(12)]
                         esc = await interpret_window(
-                            path, (start, end), esc_keyframes,
+                            path, (esc_start, esc_end), esc_keyframes,
                             meta=percep.meta_text() if percep else "",
                             model=settings.second_opinion_model, system_prompt=system_prompt,
                             task_prompt=task_prompt, context=hint,
@@ -696,7 +718,10 @@ async def run_video(
                             captured_frames=escalation_frames,
                         )
                         if esc.events:
-                            report = esc
+                            report = esc.model_copy(update={
+                                "window_start": start,
+                                "window_end": end,
+                            })
                             captured_frames = escalation_frames
                             escalated = (f"sınırda pencereden tırmandırmayla "
                                          f"kurtarıldı (P(dikkat)="

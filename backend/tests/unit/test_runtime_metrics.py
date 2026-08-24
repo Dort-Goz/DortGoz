@@ -130,6 +130,17 @@ def _validation(
     )
 
 
+def test_peak_screen_time_uses_highest_anomaly_score() -> None:
+    samples = [
+        SimpleNamespace(timestamp=2.0, anomaly_score=0.2),
+        SimpleNamespace(timestamp=8.0, anomaly_score=0.9),
+        SimpleNamespace(timestamp=20.0, anomaly_score=1.0),
+    ]
+
+    assert runner.peak_screen_time(0.0, 10.0, samples) == 8.0
+    assert runner.peak_screen_time(30.0, 40.0, samples) == 35.0
+
+
 def _metrics_rows(runs_dir: Path, run_id: str) -> list[dict]:
     rows = [
         json.loads(line)
