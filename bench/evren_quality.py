@@ -113,6 +113,16 @@ def clips_for(args: argparse.Namespace) -> tuple[list[Path], str]:
         clips = sorted((ROOT / "media").glob("*_x264.mp4"))
         return clips[: args.limit], "repo-pilot"
     root = ucf_root(args.ucf)
+    if args.clips:
+        names = [
+            line.strip() for line in args.clips.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        index = {path.name: path for path in (root / "Videos").rglob("*.mp4")}
+        missing = [name for name in names if name not in index]
+        if missing:
+            raise SystemExit(f"{len(missing)} klip yok; ilk: {missing[0]}")
+        return [index[name] for name in names[: args.limit]], f"clips:{sha256(args.clips)}"
     videos = root / "Videos"
     split = root / "Anomaly_Detection_splits" / f"Anomaly_{args.split.capitalize()}.txt"
     lines = [line.strip() for line in split.read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -132,7 +142,7 @@ def configure(args: argparse.Namespace, workspace: Path) -> dict[str, Any]:
     settings.second_opinion_model = arm["second"]
     settings.incident_review = arm["incident_review"]
     settings.adjudicate_confusable = arm["adjudicate"]
-    settings.escalate_p = arm["escalate"]
+    settings.escalate_p = arm["escalate"] if args.escalate is None else args.escalate
     settings.escalate_target_p = 0.0
     settings.dual_read = False
     settings.final_sweep = False
@@ -143,6 +153,7 @@ def configure(args: argparse.Namespace, workspace: Path) -> dict[str, Any]:
     settings.candidate_start_threshold = args.start_threshold
     settings.candidate_continue_threshold = args.continue_threshold
     settings.candidate_adaptive_threshold = False
+    settings.second_opinion_motion = args.second_motion
     return arm
 
 
@@ -166,6 +177,7 @@ def config_record(args: argparse.Namespace, dataset: str, arm: dict[str, Any]) -
             sha256(candidate_manifest) if candidate_manifest.is_file() else None
         ),
         "detector_enabled": settings.detector_enabled,
+        "escalate_p": settings.escalate_p,
         "second_opinion_motion": settings.second_opinion_motion,
         "system_prompt_sha256": hashlib.sha256(SYSTEM_TR.encode()).hexdigest(),
         "task_prompt_sha256": hashlib.sha256(TASK_TR.encode()).hexdigest(),
@@ -243,15 +255,25 @@ async def measure(path: Path, repeat: int, args: argparse.Namespace, sem: asynci
         }
 
 
+def actionable(row: dict) -> list[dict]:
+    return [
+        incident for incident in row.get("incidents", [])
+        if incident.get("anomaly_type") not in {None, "normal"}
+        and incident.get("risk") != "dusuk"
+    ]
+
+
 def summarize(rows: list[dict]) -> dict[str, Any]:
     clips = [row for row in rows if row.get("type") == "clip"]
     anomaly = [row for row in clips if row["anomaly"]]
     normal = [row for row in clips if not row["anomaly"]]
-    detected = [row for row in anomaly if row["incidents"]]
-    false_alarm = [row for row in normal if row["incidents"]]
+    detected = [row for row in anomaly if actionable(row)]
+    false_alarm = [row for row in normal if actionable(row)]
     category = [
         row for row in detected
-        if EXPECTED.get(row["class"]) in {item["anomaly_type"] for item in row["incidents"]}
+        if EXPECTED.get(row["class"]) in {
+            item["anomaly_type"] for item in actionable(row)
+        }
     ]
     metrics: dict[str, float] = {}
     model_calls: dict[str, int] = {}
@@ -271,6 +293,10 @@ def summarize(rows: list[dict]) -> dict[str, Any]:
         "detected": len(detected),
         "false_alarm": len(false_alarm),
         "category_correct": len(category),
+        "review_normalized": sum(
+            any(item.get("anomaly_type") == "normal" for item in row.get("incidents", []))
+            for row in clips
+        ),
         "terminal_failures": sum(row["terminal"] != "done" for row in clips),
         "records_with_errors": sum(bool(row["errors"]) for row in clips),
         "evidence_technical_valid_rate": (
@@ -282,8 +308,8 @@ def summarize(rows: list[dict]) -> dict[str, Any]:
         "wall_seconds": round(sum(row["wall_seconds"] for row in clips), 3),
         "model_calls": dict(sorted(model_calls.items())),
         "metrics": metrics,
-        "missed": sorted(row["clip"] for row in anomaly if not row["incidents"]),
-        "false_alarm_clips": sorted(row["clip"] for row in normal if row["incidents"]),
+        "missed": sorted(row["clip"] for row in anomaly if not actionable(row)),
+        "false_alarm_clips": sorted(row["clip"] for row in normal if actionable(row)),
     }
 
 
@@ -359,11 +385,14 @@ def main() -> None:
     parser.add_argument("--pilot", action="store_true")
     parser.add_argument("--split", choices=("test", "train"), default="test")
     parser.add_argument("--ucf", type=Path)
+    parser.add_argument("--clips", type=Path)
     parser.add_argument("--limit", type=int, default=10_000)
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--parallel", type=int, default=2)
     parser.add_argument("--start-threshold", type=float, default=0.80)
     parser.add_argument("--continue-threshold", type=float, default=0.48)
+    parser.add_argument("--second-motion", type=float, default=0.30)
+    parser.add_argument("--escalate", type=float)
     parser.add_argument("--no-screening", action="store_true")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()

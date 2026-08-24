@@ -45,7 +45,13 @@ def test_summary_counts_recall_false_alarm_category_and_models() -> None:
         row(
             "Normal_Videos_878_x264.mp4",
             False,
-            [{"anomaly_type": "saldiri"}],
+            [{"anomaly_type": "saldiri", "risk": "orta"}],
+            {"primary:vlm": 1},
+        ),
+        row(
+            "Normal_Videos_010_x264.mp4",
+            False,
+            [{"anomaly_type": "normal", "risk": "orta"}],
             {"primary:vlm": 1},
         ),
     ])
@@ -53,9 +59,10 @@ def test_summary_counts_recall_false_alarm_category_and_models() -> None:
     assert summary["detected"] == 1
     assert summary["false_alarm"] == 1
     assert summary["category_correct"] == 1
+    assert summary["review_normalized"] == 1
     assert summary["evidence_technical_valid_rate"] == 1.0
     assert summary["evidence_automatic_valid_rate"] == 1.0
     assert summary["model_calls"] == {
         "incident_review:llm-large": 1,
-        "primary:vlm": 4,
+        "primary:vlm": 5,
     }
