@@ -23,6 +23,17 @@ TR = {
 }
 
 
+def _sigmoid(logits):
+    import numpy as np
+
+    out = np.empty_like(logits, dtype=np.float32)
+    positive = logits >= 0
+    out[positive] = 1.0 / (1.0 + np.exp(-logits[positive]))
+    tail = np.exp(logits[~positive])
+    out[~positive] = tail / (1.0 + tail)
+    return out
+
+
 @dataclass
 class Detection:
     label: str
@@ -111,7 +122,7 @@ class _Detector:
     def _decode_raw(self, logits, boxes, conf: float) -> list[Detection]:
         import numpy as np
 
-        probs = 1.0 / (1.0 + np.exp(-logits))
+        probs = _sigmoid(logits)
         best = probs.max(axis=1)
         labels = probs.argmax(axis=1)
         out: list[Detection] = []
@@ -128,7 +139,7 @@ class _Detector:
         x = (np.asarray(rgb, dtype=np.float32) / 255.0).transpose(2, 0, 1)[None]
         if self.contract == "raw":
             logits, boxes = self.session.run(None, {"pixel_values": x})
-            probs = 1.0 / (1.0 + np.exp(-logits[0]))
+            probs = _sigmoid(logits[0])
             best = probs.max(axis=1)
             labels = probs.argmax(axis=1)
             raw_boxes = boxes[0]
