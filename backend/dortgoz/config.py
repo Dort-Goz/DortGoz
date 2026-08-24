@@ -133,8 +133,8 @@ class Settings(BaseSettings):
 
     candidate_screening: bool = True
     candidate_model_manifest: str = "models/semantic/manifest.json"
-    candidate_start_threshold: float = 0.65
-    candidate_continue_threshold: float = 0.40
+    candidate_start_threshold: float = 0.80
+    candidate_continue_threshold: float = 0.48
     candidate_end_patience: int = 3
     candidate_adaptive_threshold: bool = False
     candidate_adaptive_saturation: float = 0.95

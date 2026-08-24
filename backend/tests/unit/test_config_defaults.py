@@ -16,6 +16,8 @@ def test_good_pipeline_is_the_default():
         "models/semantic/manifest.json"
     )
     assert settings.candidate_screening is True
+    assert settings.candidate_start_threshold == 0.80
+    assert settings.candidate_continue_threshold == 0.48
     assert settings.detector_enabled is True
 
 
