@@ -102,5 +102,5 @@ def test_health_separates_analysis_from_external_delivery(monkeypatch):
     monkeypatch.setattr(settings, "mock", False)
     with TestClient(main.app) as client:
         body = client.get("/health").json()
-    assert body["analysis_mode"] == "real_local_analysis"
+    assert body["analysis_mode"] == "evren_video_analysis"
     assert body["external_delivery"] is False

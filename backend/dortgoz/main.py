@@ -237,7 +237,7 @@ async def health() -> dict:
         "status": "ok",
         "mock": settings.mock,
         "profile": settings.runtime_profile,
-        "analysis_mode": "ui_fixture_replay" if settings.mock else "real_local_analysis",
+        "analysis_mode": "ui_fixture_replay" if settings.mock else "evren_video_analysis",
         "external_delivery": False,
     }
 
