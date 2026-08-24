@@ -43,7 +43,7 @@ def test_readiness_separates_local_components():
     ) else 503
     assert response.status_code == expected_status
     assert body["components"]["storage"]["ready"] is True
-    assert body["components"]["video_store"]["mode"] == "memory"
+    assert body["components"]["video_store"]["mode"] == body["components"]["event_store"]["mode"]
     assert body["components"]["model"]["mode"] == "evren"
 
 
