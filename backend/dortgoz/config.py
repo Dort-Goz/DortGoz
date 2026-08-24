@@ -102,6 +102,7 @@ class Settings(BaseSettings):
     onnx_providers: str = ""
     onnx_intra_threads: int = 4
     local_inference_limit: int = Field(default=2, ge=1, le=8)
+    migraphx_dir: str = ""
     adjudicate_confusable: str = "hirsizlik,kavga,saldiri,bilinmeyen,arac_kazasi"
     adjudicate_min_conf: float = 0.0
     adjudicate_frame_width: int = 512

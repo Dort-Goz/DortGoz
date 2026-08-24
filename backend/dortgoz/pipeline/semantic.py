@@ -113,7 +113,10 @@ class SemanticCandidateModel:
         session = ort.InferenceSession(str(self._onnx_file),
                                        sess_options=session_options(),
                                        providers=providers())
-        runtime = (session, anchors[:n_event], n_event)
+        from .migraphx_ep import load as load_gpu
+
+        runtime = (load_gpu("siglip", self._onnx_file) or session,
+                   anchors[:n_event], n_event)
         _RUNTIME_CACHE[key] = runtime
         return runtime
 

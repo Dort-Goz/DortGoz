@@ -52,6 +52,7 @@ class _Detector:
             raise FileNotFoundError(
                 f"D-FINE ONNX bulunamadı: {model} — DORTGOZ_DFINE_ONNX ayarla "
                 "(indirme: scripts/fetch_models.sh)")
+        self.gpu = None
         if session_factory is None:
             import onnxruntime as ort
 
@@ -62,6 +63,9 @@ class _Detector:
                 sess_options=session_options(),
                 providers=providers(),
             )
+            from .migraphx_ep import load as load_gpu
+
+            self.gpu = load_gpu("dfine", model)
         else:
             self.session = session_factory(str(model), providers=["CPUExecutionProvider"])
         input_names = [item.name for item in self.session.get_inputs()]
@@ -88,6 +92,36 @@ class _Detector:
             if isinstance(configured_interest, list) and configured_interest
             else INTEREST
         )
+
+    def detect_batch(self, frames: list, conf: float) -> list[list[Detection]]:
+        import numpy as np
+
+        if self.gpu is None or self.contract != "raw":
+            return [self.detect(frame, conf) for frame in frames]
+        stacked = np.ascontiguousarray(
+            np.stack([np.asarray(f, dtype=np.float32) / 255.0 for f in frames]
+            ).transpose(0, 3, 1, 2))
+        try:
+            logits, boxes = self.gpu.run(None, {"pixel_values": stacked})
+        except Exception:
+            self.gpu = None
+            return [self.detect(frame, conf) for frame in frames]
+        return [self._decode_raw(logits[i], boxes[i], conf) for i in range(len(frames))]
+
+    def _decode_raw(self, logits, boxes, conf: float) -> list[Detection]:
+        import numpy as np
+
+        probs = 1.0 / (1.0 + np.exp(-logits))
+        best = probs.max(axis=1)
+        labels = probs.argmax(axis=1)
+        out: list[Detection] = []
+        for i in np.nonzero(best >= conf)[0]:
+            label = self.id2label.get(int(labels[i]), str(int(labels[i])))
+            if label not in self.interest:
+                continue
+            cx, cy, w, h = (float(v) for v in boxes[i])
+            out.append(Detection(label, float(best[i]), cx, cy, w, h))
+        return out
 
     def detect(self, rgb: object, conf: float) -> list[Detection]:
         import numpy as np
@@ -280,8 +314,9 @@ async def scan_window(video: Path, start: float, end: float,
 
     def run_all() -> list[list[Detection]]:
         import numpy as np
-        return [det.detect(np.frombuffer(f, dtype=np.uint8).reshape(SIZE, SIZE, 3),
-                           low_conf) for f in frames]
+        return det.detect_batch(
+            [np.frombuffer(f, dtype=np.uint8).reshape(SIZE, SIZE, 3) for f in frames],
+            low_conf)
 
     per_frame = await asyncio.to_thread(run_all)
 
