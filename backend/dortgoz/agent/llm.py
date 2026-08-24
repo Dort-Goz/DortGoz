@@ -17,7 +17,8 @@ def main_client() -> AsyncOpenAI:
         key = 0
     if key not in _clients:
         _clients[key] = AsyncOpenAI(base_url=settings.llama_base_url,
-                                    api_key=settings.api_key)
+                                    api_key=settings.api_key,
+                                    timeout=1800.0)
     return _clients[key]
 
 
