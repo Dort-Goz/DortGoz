@@ -25,6 +25,7 @@ def test_learned_suppression_stays_off_by_default():
     assert settings.exemplar_shadow is True
     assert settings.escalate_shadow is True
     assert settings.shadow_sample_rate == 0.0
+    assert settings.category_rules_enabled is False
 
 
 def test_dfine_path_falls_back_when_the_configured_one_is_missing(tmp_path,

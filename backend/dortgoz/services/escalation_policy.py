@@ -25,7 +25,9 @@ def resolve() -> EscalationThreshold:
         return EscalationThreshold(static, "sabit", False,
                                    f"sabit eşik {static:.3f}")
 
-    cal = calibration.load(settings.runs_dir / "kalibrasyon.json")
+    cal = calibration.load(
+        settings.runs_dir / "kalibrasyon.json", model_id=settings.video_model
+    )
     if cal is None:
         return EscalationThreshold(
             static, "sabit", False,

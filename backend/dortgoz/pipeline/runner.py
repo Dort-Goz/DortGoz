@@ -110,6 +110,15 @@ def resolve_media(video: str) -> Path:
     return path
 
 
+def resolve_source(video: str, source_path: Path | None) -> Path:
+    if source_path is None:
+        return resolve_media(video)
+    path = source_path.resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"video bulunamadı: {path}")
+    return path
+
+
 def screening_covers(start: float, end: float,
                      spans: list[tuple[float, float]]) -> bool:
     return any(a < end and b > start for a, b in spans)
@@ -227,7 +236,9 @@ async def _adjudicate_if_confusable(
                     model=settings.main_model, stats=call, timing=qwen_timing)
         finally:
             if metrics is not None:
-                metrics.record_qwen_timing(qwen_timing)
+                metrics.record_qwen_timing(
+                    qwen_timing, model=settings.main_model, role="adjudicate"
+                )
         if sonuc is None:
             return
         verdict, conf = sonuc
@@ -307,7 +318,11 @@ async def review_if_closed(
                 )
         finally:
             if metrics is not None:
-                metrics.record_qwen_timing(qwen_timing)
+                metrics.record_qwen_timing(
+                    qwen_timing,
+                    model=settings.second_opinion_model,
+                    role="incident_review",
+                )
         event_type = CanonicalEventType(review["event_type"])
         review_report = WindowReport(
             window_start=start,
@@ -405,6 +420,7 @@ async def run_video(
     mode: str = "",
     live: bool = False,
     stop_probe: StopProbe = lambda: False,
+    source_path: Path | None = None,
 ) -> None:
     metrics = CanonicalRunMetrics(run_id)
     rec = RunRecorder(manager, run_id, metrics, feed=feed)
@@ -425,7 +441,7 @@ async def run_video(
     }, ensure_ascii=False, indent=1), encoding="utf-8")
     try:
         _raise_if_stop_requested(stop_probe)
-        path = resolve_media(video)
+        path = resolve_source(video, source_path)
 
         custom = " · özel istem" if (system_prompt or task_prompt) else ""
         await rec.emit(RunStatus(run_id=run_id, state="processing", video=video,
@@ -648,7 +664,9 @@ async def run_video(
                     ))
                     continue
                 finally:
-                    metrics.record_qwen_timing(qwen_timing)
+                    metrics.record_qwen_timing(
+                        qwen_timing, model=effective_model, role="primary"
+                    )
 
                 escalated = ""
                 esc_gate = escalation_policy.resolve()
@@ -696,12 +714,17 @@ async def run_video(
                                     f"korundu: {str(exc)[:120]}"),
                         ))
                     finally:
-                        metrics.record_qwen_timing(escalation_timing)
+                        metrics.record_qwen_timing(
+                            escalation_timing,
+                            model=settings.second_opinion_model,
+                            role="escalation",
+                        )
 
                 need_second = ((dual_or and not report.events)
                                or (confirm_and and report.events))
                 if need_second:
                     dual_timing: dict[str, float | int] = {}
+                    confirm_timing: dict[str, float | int] = {}
                     try:
                         kf12 = windowing.select_keyframes(profile, start, end, 12)
                         dual_frames = {}
@@ -732,7 +755,7 @@ async def run_video(
                                 meta=percep.meta_text() if percep else "",
                                 model=settings.main_model, system_prompt=system_prompt,
                                 task_prompt=task_prompt, context=hint,
-                                timing=dual_timing,
+                                timing=confirm_timing,
                             )
                             await rec.emit(AgentStep(
                                 node="interpret", status="end",
@@ -759,7 +782,16 @@ async def run_video(
                                     f"korundu: {str(exc)[:120]}"),
                         ))
                     finally:
-                        metrics.record_qwen_timing(dual_timing)
+                        metrics.record_qwen_timing(
+                            dual_timing,
+                            model=settings.second_opinion_model,
+                            role="dual_read",
+                        )
+                        metrics.record_qwen_timing(
+                            confirm_timing,
+                            model=settings.main_model,
+                            role="dual_confirm",
+                        )
 
                 ikinci_gorus = ""
                 if (settings.second_opinion_model and not report.events
@@ -796,7 +828,11 @@ async def run_video(
                                     f"korundu: {str(exc)[:120]}"),
                         ))
                     finally:
-                        metrics.record_qwen_timing(so_timing)
+                        metrics.record_qwen_timing(
+                            so_timing,
+                            model=settings.second_opinion_model,
+                            role="second_opinion",
+                        )
 
                 validation = postprocess_finalized_report(
                     report=report,
@@ -915,12 +951,14 @@ async def run_video(
             _raise_if_stop_requested(stop_probe)
             sweep_end = max(1.0, duration - 0.4)
             sweep_kf = [sweep_end / 16 * (i + 0.5) for i in range(16)]
+            sweep_timing: dict[str, float | int] = {}
             try:
                 sweep_frames: dict = {}
                 sweep_rep = await interpret_window(
                     path, (0.0, sweep_end), sweep_kf,
                     model=model, system_prompt=system_prompt,
                     task_prompt=task_prompt, captured_frames=sweep_frames,
+                    timing=sweep_timing,
                 )
                 await rec.emit(AgentStep(
                     node="interpret", status="end",
@@ -953,6 +991,10 @@ async def run_video(
             except Exception as exc:
                 await rec.emit(AgentStep(node="interpret", status="end",
                                          detail=f"son tarama başarısız: {str(exc)[:100]}"))
+            finally:
+                metrics.record_qwen_timing(
+                    sweep_timing, model=effective_model, role="final_sweep"
+                )
 
         for update in ledger.finalize():
             _raise_if_stop_requested(stop_probe)

@@ -19,7 +19,8 @@ def _write_cal(tmp_path, a: float, b: float) -> None:
     cal = calibration.Calibration(
         a=a, b=b, n_pos=15, n_neg=5,
         brier_before=0.2, brier_after=0.1,
-        logloss_before=0.7, logloss_after=0.3, fitted_at=0.0)
+        logloss_before=0.7, logloss_after=0.3, fitted_at=0.0,
+        model_id=escalation_policy.settings.video_model)
     calibration.save(cal, tmp_path / "kalibrasyon.json")
 
 

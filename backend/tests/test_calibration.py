@@ -60,10 +60,12 @@ def test_ledger_reader_takes_the_latest_verdict_per_key(tmp_path):
 
 def test_round_trip_through_disk(tmp_path):
     pairs = [(0.9, 1)] * 5 + [(0.1, 0)] * 5
-    cal = calibration.calibrate(pairs, now=123.0)
+    cal = calibration.calibrate(pairs, now=123.0, model_id="vlm")
     path = tmp_path / "kalibrasyon.json"
 
     calibration.save(cal, path)
 
     assert calibration.load(path) == cal
+    assert calibration.load(path, model_id="vlm") == cal
+    assert calibration.load(path, model_id="llm-fast") is None
     assert calibration.load(tmp_path / "yok.json") is None

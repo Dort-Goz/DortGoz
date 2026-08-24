@@ -209,6 +209,8 @@ async def test_run_metrics_count_real_skip_rescue_and_two_qwen_calls(
     assert metrics["keyframes_selected_total"] == 2
     assert metrics["qwen_calls"] == 2
     assert metrics["qwen_total_ms"] == 15.0
+    assert metrics["model_calls"] == {"primary:vlm": 2}
+    assert metrics["model_total_ms"] == {"primary:vlm": 15.0}
     assert metrics["second_pass_calls"] == 0
     assert metrics["evidence_validation_count"] == 2
     assert metrics["evidence_valid_count"] == 1
@@ -285,6 +287,14 @@ async def test_second_pass_and_qwen_are_counted_without_duplicate_inference(
     metrics = _metrics_rows(settings.runs_dir, "metrics-second-pass")[0]
     assert metrics["qwen_calls"] == 2
     assert metrics["qwen_total_ms"] == 10.0
+    assert metrics["model_calls"] == {
+        "incident_review:llm-large": 1,
+        "primary:vlm": 1,
+    }
+    assert metrics["model_total_ms"] == {
+        "incident_review:llm-large": 6.0,
+        "primary:vlm": 4.0,
+    }
     assert metrics["second_pass_calls"] == 1
     assert metrics["second_pass_total_ms"] >= 0
     assert metrics["evidence_validation_count"] == 2
@@ -311,6 +321,46 @@ def test_all_evidence_statuses_have_separate_counters() -> None:
     assert metrics.evidence_invalid_count == 1
     assert metrics.evidence_human_review_count == 1
     assert metrics.evidence_undetermined_count == 1
+
+
+@pytest.mark.asyncio
+async def test_source_path_runs_without_media_root_resolution(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _configure_runner(monkeypatch, tmp_path, incident_review=False)
+    external = tmp_path / "external.mp4"
+    external.write_bytes(b"fixture")
+    monkeypatch.setattr(settings, "candidate_screening", False)
+    monkeypatch.setattr(settings, "detector_enabled", False)
+    monkeypatch.setattr(settings, "second_opinion_model", "")
+    monkeypatch.setattr(
+        runner,
+        "resolve_media",
+        lambda _video: (_ for _ in ()).throw(AssertionError("resolve_media called")),
+    )
+
+    async def fake_probe(path):
+        assert path == external.resolve()
+        return 10.0
+
+    async def fake_motion(_path, _fps):
+        return [MotionSample(t=0, changed=1, fg=0, mad=0)]
+
+    async def fake_interpret(_path, window, _keyframes, **kwargs):
+        kwargs["timing"].update({"calls": 1, "total_ms": 1.0})
+        return WindowReport(window_start=window[0], window_end=window[1], summary="Sakin.")
+
+    monkeypatch.setattr(runner.ingest, "probe_duration", fake_probe)
+    monkeypatch.setattr(runner.ingest, "motion_profile", fake_motion)
+    monkeypatch.setattr(runner, "interpret_window", fake_interpret)
+
+    await runner.run_video(
+        FakeManager(), "external.mp4", "metrics-source-path", source_path=external
+    )
+
+    metrics = _metrics_rows(settings.runs_dir, "metrics-source-path")[0]
+    assert metrics["terminal_status"] == "completed"
+    assert metrics["model_calls"] == {"primary:vlm": 1}
 
 
 @pytest.mark.asyncio

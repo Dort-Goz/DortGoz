@@ -7,10 +7,10 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "backend"))
-
+from dortgoz.config import settings
 from dortgoz.services import calibration
+
+ROOT = Path(__file__).resolve().parents[1]
 
 BUCKETS = [(0.0, 0.01), (0.01, 0.1), (0.1, 0.5), (0.5, 0.9), (0.9, 1.01)]
 
@@ -49,7 +49,7 @@ def main() -> None:
         raise SystemExit(2)
 
     try:
-        cal = calibration.calibrate(pairs, now=time.time())
+        cal = calibration.calibrate(pairs, now=time.time(), model_id=settings.video_model)
     except calibration.NotEnoughLabels as exc:
         print(f"kalibrasyon YAPILMADI: {exc}", file=sys.stderr)
         print("daha çok etiket gerekiyor — özellikle az olan sınıftan.",

@@ -20,6 +20,7 @@ class Calibration:
     logloss_before: float
     logloss_after: float
     fitted_at: float
+    model_id: str = ""
 
     def apply(self, durum_p: float) -> float:
         return _sigmoid(self.a * _logit(durum_p) + self.b)
@@ -118,7 +119,9 @@ def _logloss(pairs: list[tuple[float, int]]) -> float:
     return total / len(pairs)
 
 
-def calibrate(pairs: list[tuple[float, int]], now: float) -> Calibration:
+def calibrate(
+    pairs: list[tuple[float, int]], now: float, model_id: str = ""
+) -> Calibration:
     a, b = fit_platt(pairs)
     after = [(_sigmoid(a * _logit(p) + b), y) for p, y in pairs]
     return Calibration(
@@ -128,6 +131,7 @@ def calibrate(pairs: list[tuple[float, int]], now: float) -> Calibration:
         brier_before=_brier(pairs), brier_after=_brier(after),
         logloss_before=_logloss(pairs), logloss_after=_logloss(after),
         fitted_at=now,
+        model_id=model_id,
     )
 
 
@@ -153,8 +157,11 @@ def save(cal: Calibration, path: Path) -> None:
                     encoding="utf-8")
 
 
-def load(path: Path) -> Calibration | None:
+def load(path: Path, model_id: str = "") -> Calibration | None:
     try:
-        return Calibration(**json.loads(path.read_text(encoding="utf-8")))
+        calibration = Calibration(**json.loads(path.read_text(encoding="utf-8")))
     except (OSError, ValueError, TypeError):
         return None
+    if model_id and calibration.model_id != model_id:
+        return None
+    return calibration

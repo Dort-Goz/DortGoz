@@ -27,6 +27,8 @@ class CanonicalRunMetrics:
     keyframes_selected_total: int = 0
     qwen_calls: int = 0
     qwen_total_ms: float = 0.0
+    model_calls: dict[str, int] = field(default_factory=dict)
+    model_total_ms: dict[str, float] = field(default_factory=dict)
     second_pass_calls: int = 0
     second_pass_total_ms: float = 0.0
     evidence_validation_count: int = 0
@@ -69,10 +71,22 @@ class CanonicalRunMetrics:
         finally:
             self.second_pass_total_ms += _elapsed_ms(self.clock(), started)
 
-    def record_qwen_timing(self, timing: dict[str, float | int]) -> None:
+    def record_qwen_timing(
+        self,
+        timing: dict[str, float | int],
+        *,
+        model: str = "",
+        role: str = "",
+    ) -> None:
 
-        self.qwen_calls += int(timing.get("calls", 0))
-        self.qwen_total_ms += float(timing.get("total_ms", 0.0))
+        calls = int(timing.get("calls", 0))
+        elapsed = float(timing.get("total_ms", 0.0))
+        self.qwen_calls += calls
+        self.qwen_total_ms += elapsed
+        if calls and model:
+            key = f"{role}:{model}" if role else model
+            self.model_calls[key] = self.model_calls.get(key, 0) + calls
+            self.model_total_ms[key] = self.model_total_ms.get(key, 0.0) + elapsed
 
     def record_validation(self, validation: RuntimeWindowValidation | None) -> None:
         if validation is None:
@@ -121,6 +135,10 @@ class CanonicalRunMetrics:
             "keyframes_selected_total": self.keyframes_selected_total,
             "qwen_calls": self.qwen_calls,
             "qwen_total_ms": _rounded(self.qwen_total_ms),
+            "model_calls": dict(sorted(self.model_calls.items())),
+            "model_total_ms": {
+                key: _rounded(value) for key, value in sorted(self.model_total_ms.items())
+            },
             "second_pass_calls": self.second_pass_calls,
             "second_pass_total_ms": _rounded(self.second_pass_total_ms),
             "evidence_validation_count": self.evidence_validation_count,
