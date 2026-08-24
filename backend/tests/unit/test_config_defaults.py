@@ -12,6 +12,7 @@ def test_good_pipeline_is_the_default():
     assert settings.second_opinion_model == "llm-large"
     assert settings.agent_model == "llm-fast"
     assert settings.onnx_device == "cpu"
+    assert settings.local_inference_limit == 2
     assert Path(settings.candidate_model_manifest).as_posix().endswith(
         "models/semantic/manifest.json"
     )

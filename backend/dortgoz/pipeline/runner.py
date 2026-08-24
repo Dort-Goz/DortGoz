@@ -43,6 +43,16 @@ EVIDENCE_DIR = "_evidence"
 EVIDENCE_PAD = 4.0
 LOGGER = logging.getLogger(__name__)
 StopProbe = Callable[[], bool]
+_local_semaphores: dict[int, asyncio.Semaphore] = {}
+
+
+def _local_inference() -> asyncio.Semaphore:
+    key = id(asyncio.get_running_loop())
+    semaphore = _local_semaphores.get(key)
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(settings.local_inference_limit)
+        _local_semaphores[key] = semaphore
+    return semaphore
 
 
 class PipelineStopRequested(RuntimeError):
@@ -458,7 +468,8 @@ async def run_video(
         duration = await ingest.probe_duration(path)
         _raise_if_stop_requested(stop_probe)
         ctx.duration = duration
-        profile = await ingest.motion_profile(path, settings.base_fps)
+        async with _local_inference():
+            profile = await ingest.motion_profile(path, settings.base_fps)
         _raise_if_stop_requested(stop_probe)
         gate = (ingest.adaptive_gate(profile, minimum=settings.motion_gate)
                 if settings.motion_gate_adaptive else settings.motion_gate)
@@ -500,9 +511,10 @@ async def run_video(
                         detail=f"aday model yüklenemedi, baseline'a dönüldü: {str(exc)[:80]}"))
             if hasattr(scorer, "score_video"):
                 try:
-                    with metrics.siglip_call():
-                        screen_samples = await asyncio.to_thread(
-                            scorer.score_video, profile, path)
+                    async with _local_inference():
+                        with metrics.siglip_call():
+                            screen_samples = await asyncio.to_thread(
+                                scorer.score_video, profile, path)
                 except Exception as exc:
                     await rec.emit(AgentStep(
                         node="perceive", status="error",
@@ -549,9 +561,10 @@ async def run_video(
 
         async def _scan_window(widx: int):
             ws_, we_ = wins[widx]
-            with metrics.dfine_call():
-                return await perception.scan_window(
-                    path, ws_, we_, settings.detector_samples)
+            async with _local_inference():
+                with metrics.dfine_call():
+                    return await perception.scan_window(
+                        path, ws_, we_, settings.detector_samples)
 
         for idx, (start, end) in enumerate(wins):
             _raise_if_stop_requested(stop_probe)

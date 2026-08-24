@@ -130,6 +130,26 @@ def _validation(
     )
 
 
+@pytest.mark.asyncio
+async def test_local_inference_limit_caps_parallel_cpu_stages(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "local_inference_limit", 1)
+    runner._local_semaphores.clear()
+    active = 0
+    peak = 0
+
+    async def work() -> None:
+        nonlocal active, peak
+        async with runner._local_inference():
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0)
+            active -= 1
+
+    await asyncio.gather(*(work() for _ in range(4)))
+
+    assert peak == 1
+
+
 def test_peak_screen_time_uses_highest_anomaly_score() -> None:
     samples = [
         SimpleNamespace(timestamp=2.0, anomaly_score=0.2),
