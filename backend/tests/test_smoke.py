@@ -143,14 +143,19 @@ def test_import_rejects_corrupt_package():
 
 def test_import_rejects_oversized_package(monkeypatch):
 
+    import tempfile
+
     from dortgoz import main
 
     monkeypatch.setattr(main, "IMPORT_MAX_BYTES", 16)
+    before = set(Path(tempfile.gettempdir()).glob("*.zip"))
 
-    def fail_stage(_: bytes):
-        raise AssertionError("sınırı aşan gövde geçici dosyaya yazılmamalı")
+    def fail_import(_):
+        raise AssertionError("sınırı aşan gövde içe aktarılmamalı")
 
-    monkeypatch.setattr(main, "_stage_import_package", fail_stage)
+    monkeypatch.setattr(
+        "dortgoz.services.analysis_package.import_analysis", fail_import
+    )
     with TestClient(app) as client:
         r = client.post(
             "/api/runs/import",
@@ -159,6 +164,7 @@ def test_import_rejects_oversized_package(monkeypatch):
         )
 
     assert r.status_code == 413
+    assert set(Path(tempfile.gettempdir()).glob("*.zip")) == before
 
 
 def test_import_runs_off_the_event_loop(monkeypatch):

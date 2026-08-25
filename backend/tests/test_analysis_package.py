@@ -94,6 +94,29 @@ def test_import_rejects_wrong_format(run_fixture, tmp_path):
         ap.import_analysis(bad)
 
 
+def test_import_rejects_oversized_member(run_fixture, tmp_path, monkeypatch):
+    monkeypatch.setattr(ap, "MAX_JSONL_BYTES", 1024)
+    bomb = tmp_path / "bomb.zip"
+    with zipfile.ZipFile(bomb, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("manifest.json", json.dumps(
+            {"format": "dortgoz-analiz", "surum": 1, "run_id": "bomba", "sha256": {}}))
+        zf.writestr("analiz.jsonl", b"0" * (64 * 1024))
+    assert bomb.stat().st_size < 4096
+    with pytest.raises(ValueError, match="çok büyük"):
+        ap.import_analysis(bomb)
+
+
+def test_import_rejects_too_many_members(run_fixture, tmp_path):
+    many = tmp_path / "many.zip"
+    with zipfile.ZipFile(many, "w") as zf:
+        zf.writestr("manifest.json", json.dumps({"format": "dortgoz-analiz"}))
+        zf.writestr("analiz.jsonl", "")
+        for index in range(ap.MAX_MEMBERS):
+            zf.writestr(f"dolgu/{index}.txt", "x")
+    with pytest.raises(ValueError, match="üye"):
+        ap.import_analysis(many)
+
+
 def test_import_rejects_checksum_mismatch(run_fixture, tmp_path):
     pkg = ap.export_analysis(run_fixture)
     tampered = tmp_path / "tampered.zip"

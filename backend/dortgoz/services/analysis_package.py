@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import zipfile
 from pathlib import Path
 
@@ -15,6 +14,35 @@ from ..utils import file_sha256, format_clock
 from .run_identity import require_safe_run_id, safe_run_file
 
 FORMAT_VERSION = 1
+MAX_MEMBERS = 64
+MAX_MANIFEST_BYTES = 1024 * 1024
+MAX_JSONL_BYTES = 256 * 1024 * 1024
+MAX_META_BYTES = 8 * 1024 * 1024
+
+
+def _read_capped(zf: zipfile.ZipFile, name: str, limit: int) -> bytes:
+    with zf.open(name) as handle:
+        data = handle.read(limit + 1)
+    if len(data) > limit:
+        raise ValueError(f"paket üyesi çok büyük: {name}")
+    return data
+
+
+def _copy_capped(zf: zipfile.ZipFile, name: str, dst: Path, limit: int) -> None:
+    written = 0
+    try:
+        with zf.open(name) as src, dst.open("wb") as out:
+            while True:
+                chunk = src.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > limit:
+                    raise ValueError(f"paket üyesi çok büyük: {name}")
+                out.write(chunk)
+    except BaseException:
+        dst.unlink(missing_ok=True)
+        raise
 
 
 def _parse_stream(jsonl: Path) -> tuple[list[WindowReport], dict[str, IncidentUpdate], float]:
@@ -147,9 +175,11 @@ def _rebuild_context(run_id: str, video_rel: str,
 def import_analysis(package: Path, feed: str = "") -> session.RunContext:
     with zipfile.ZipFile(package) as zf:
         names = set(zf.namelist())
+        if len(names) > MAX_MEMBERS:
+            raise ValueError(f"paket çok fazla üye içeriyor: {len(names)} > {MAX_MEMBERS}")
         if "manifest.json" not in names or "analiz.jsonl" not in names:
             raise ValueError("geçersiz paket: manifest.json/analiz.jsonl eksik")
-        manifest = json.loads(zf.read("manifest.json"))
+        manifest = json.loads(_read_capped(zf, "manifest.json", MAX_MANIFEST_BYTES))
         if manifest.get("format") != "dortgoz-analiz":
             raise ValueError("geçersiz paket biçimi")
         if manifest.get("surum", 0) > FORMAT_VERSION:
@@ -162,14 +192,14 @@ def import_analysis(package: Path, feed: str = "") -> session.RunContext:
         new_id = require_safe_run_id(f"ithal-{source_run_id}"[:48])
         jsonl_dst = safe_run_file(settings.runs_dir, new_id, ".jsonl")
         jsonl_dst.parent.mkdir(parents=True, exist_ok=True)
-        jsonl_dst.write_bytes(zf.read("analiz.jsonl"))
+        jsonl_dst.write_bytes(_read_capped(zf, "analiz.jsonl", MAX_JSONL_BYTES))
         if manifest["sha256"].get("analiz.jsonl") and \
                 file_sha256(jsonl_dst) != manifest["sha256"]["analiz.jsonl"]:
             jsonl_dst.unlink()
             raise ValueError("analiz.jsonl sağlama toplamı tutmuyor")
         if "meta.json" in names:
             safe_run_file(settings.runs_dir, new_id, ".meta.json").write_bytes(
-                zf.read("meta.json")
+                _read_capped(zf, "meta.json", MAX_META_BYTES)
             )
 
         video_rel = ""
@@ -179,8 +209,7 @@ def import_analysis(package: Path, feed: str = "") -> session.RunContext:
             video_rel = f"ithal_{Path(member).name}"
             dst = settings.media_dir / video_rel
             dst.parent.mkdir(parents=True, exist_ok=True)
-            with zf.open(member) as src, dst.open("wb") as out:
-                shutil.copyfileobj(src, out)
+            _copy_capped(zf, member, dst, settings.video_max_bytes)
 
     reports, incidents, duration = _parse_stream(jsonl_dst)
     return _rebuild_context(new_id, video_rel, reports, incidents, duration, feed=feed)

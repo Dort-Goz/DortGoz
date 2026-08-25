@@ -286,10 +286,22 @@ async def export_run(run_id: str) -> FileResponse:
 IMPORT_MAX_BYTES = settings.video_max_bytes + 256 * 1024 * 1024
 
 
-def _stage_import_package(data: bytes) -> Path:
+async def _stage_import_package(request: Request) -> Path:
+    total = 0
     with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
-        tmp.write(data)
-        return Path(tmp.name)
+        staged = Path(tmp.name)
+        try:
+            async for chunk in request.stream():
+                total += len(chunk)
+                if total > IMPORT_MAX_BYTES:
+                    raise HTTPException(status_code=413, detail="paket gövdesi çok büyük")
+                await asyncio.to_thread(tmp.write, chunk)
+            if total == 0:
+                raise HTTPException(status_code=400, detail="boş paket gövdesi")
+        except BaseException:
+            staged.unlink(missing_ok=True)
+            raise
+    return staged
 
 
 @app.post("/api/runs/import")
@@ -297,14 +309,7 @@ async def import_run(request: Request) -> dict:
 
     from .services.analysis_package import import_analysis
 
-    data = bytearray()
-    async for chunk in request.stream():
-        data.extend(chunk)
-        if len(data) > IMPORT_MAX_BYTES:
-            raise HTTPException(status_code=413, detail="paket gövdesi çok büyük")
-    if not data:
-        raise HTTPException(status_code=400, detail="boş paket gövdesi")
-    tmp_path = await asyncio.to_thread(_stage_import_package, bytes(data))
+    tmp_path = await _stage_import_package(request)
     try:
         ctx = await asyncio.to_thread(import_analysis, tmp_path)
     except (ValueError, zipfile.BadZipFile, KeyError) as exc:
