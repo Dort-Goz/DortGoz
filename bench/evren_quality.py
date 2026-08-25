@@ -169,6 +169,13 @@ def config_record(args: argparse.Namespace, dataset: str, arm: dict[str, Any]) -
     revision = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True
     ).stdout.strip()
+    dirty = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=no"],
+        cwd=ROOT, capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    if dirty:
+        digest = hashlib.sha256(dirty.encode()).hexdigest()[:12]
+        revision = f"{revision}-dirty-{digest}"
     candidate_manifest = Path(settings.candidate_model_manifest)
     return {
         "type": "config",
