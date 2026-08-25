@@ -45,8 +45,7 @@ function PromptBox({ label, value, fallback, disabled, onChange, warn }: {
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
         spellCheck={false}
-        rows={6}
-        className="field-area resize-y font-mono"
+        className="field-area h-[120px] resize-y font-mono leading-5"
       />
       {warn && <div className="text-[11px] text-amber-400">{warn}</div>}
     </div>

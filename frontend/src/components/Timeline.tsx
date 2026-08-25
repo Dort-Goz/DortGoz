@@ -96,20 +96,24 @@ function QuietGroup({ reports }: { reports: WindowReport[] }) {
 }
 
 const IncidentCard = memo(function IncidentCard(
-  { inc, highlightId, onSelect }: {
+  { inc, highlightId, decided, onSelect }: {
     inc: IncidentUpdate;
     highlightId?: string;
+    decided: boolean;
     onSelect: (inc: IncidentUpdate) => void;
   },
 ) {
   const signals = signalLine(inc.signals);
+  const pendingReview = inc.needs_review && !decided;
   return (
     <button
       onClick={() => onSelect(inc)}
       title="Videoyu olayın başına sar"
-      className={`flash-once w-full rounded-sm border-l-2 bg-zinc-950 p-2 text-left transition-colors risk-${inc.risk}
+      className={`flash-once w-full rounded-sm border-l-2 p-2 text-left transition-colors risk-${inc.risk}
                   hover:bg-zinc-800/60 ${
-        inc.incident_id === highlightId ? "ring-1 ring-zinc-500" : ""
+        inc.incident_id === highlightId
+          ? "bg-zinc-800/70 ring-1 ring-inset ring-zinc-500"
+          : "bg-zinc-950"
       }`}
     >
       <div className="flex gap-2">
@@ -123,9 +127,17 @@ const IncidentCard = memo(function IncidentCard(
             <span className="chip bg-zinc-800 font-semibold uppercase tracking-wide text-zinc-300">
               {TYPE_TR[inc.anomaly_type] ?? inc.anomaly_type}
             </span>
-            {inc.needs_review && (
+            {pendingReview && (
               <span className="chip border border-amber-900 bg-amber-950/60 font-semibold uppercase tracking-wide text-amber-300">
                 ⚑ inceleme
+              </span>
+            )}
+            {decided && (
+              <span
+                className="chip border border-emerald-900 bg-emerald-950/50 font-semibold uppercase tracking-wide text-emerald-300"
+                title="Operatör bu olayı olay inceleme merkezinde karara bağladı"
+              >
+                ✔ karara bağlandı
               </span>
             )}
             <span className={`ml-auto text-[10px] font-bold uppercase risk-${inc.risk}`}>
@@ -143,7 +155,7 @@ const IncidentCard = memo(function IncidentCard(
           </div>
         </div>
       </div>
-      {inc.needs_review && inc.review_reason && (
+      {pendingReview && inc.review_reason && (
         <p className="mt-1 text-[11px] text-amber-400/80">⚑ {inc.review_reason}</p>
       )}
       <p className={`mt-1 whitespace-pre-line text-xs text-zinc-400 ${
@@ -159,12 +171,13 @@ const IncidentCard = memo(function IncidentCard(
 });
 
 function Timeline({
-  incidents, reports, highlightId, reportsPulse = 0, onSelect,
+  incidents, reports, highlightId, reportsPulse = 0, decided, onSelect,
 }: {
   incidents: IncidentUpdate[];
   reports: WindowReport[];
   highlightId?: string;
   reportsPulse?: number;
+  decided?: ReadonlySet<string>;
   onSelect: (inc: IncidentUpdate) => void;
 }) {
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -199,7 +212,9 @@ function Timeline({
 
         {incidents.map((inc) => (
           <IncidentCard key={inc.incident_id} inc={inc}
-                        highlightId={highlightId} onSelect={handleSelect} />
+                        highlightId={highlightId}
+                        decided={decided?.has(inc.incident_id) ?? false}
+                        onSelect={handleSelect} />
         ))}
 
         {reports.length > 0 && (

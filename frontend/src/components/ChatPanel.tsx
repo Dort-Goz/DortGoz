@@ -79,7 +79,7 @@ function ChatPanel({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && submit()}
-          placeholder="Ajana sor: '00:15'te ne oldu?'"
+          placeholder="Ajana sor: 00:15’te ne oldu?"
           className="field h-7 min-w-0 flex-1"
         />
         <button onClick={submit} className="btn btn-accent">

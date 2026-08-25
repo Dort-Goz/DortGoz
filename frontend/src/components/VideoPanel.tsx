@@ -153,7 +153,7 @@ export default function VideoPanel({
           <div className="flex flex-col items-center gap-2 px-4 text-center">
             <span className="text-3xl text-zinc-800">◉</span>
             <span className="text-xs text-zinc-600">
-              Koşu başlatın — üst çubuktan bir kaynak seçip “Başlat”a basın.
+              Koşu başlatın — üst çubuktaki “Başlat” düğmesine basın.
             </span>
           </div>
         )}

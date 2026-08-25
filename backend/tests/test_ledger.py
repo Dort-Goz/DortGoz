@@ -151,3 +151,34 @@ def test_review_pass_never_clears_sticky_flag():
                                 "zirve": "Kavga", "zirve_t": 6.0, "baslangic": "b",
                                 "sonuc": "s", "belirsizlikler": ["kim başlattı belirsiz"]})
     assert up.needs_review is True and "sınırda" in up.review_reason
+
+
+def test_event_window_never_runs_past_video_duration():
+    led = Ledger(duration=9.4)
+    evidence = EventEvidenceRef(frame_id="f_009", timestamp=9.0, claim="Kişi yere düşüyor.")
+    opened = led.ingest(WindowReport(
+        window_start=0, window_end=30, anomaly_type="kavga", summary="Kavga var.",
+        events=[WindowEvent(t=9.0, desc="Düşme.", severity_hint="orta", evidence=[evidence])],
+    ))[0]
+
+    assert opened.olay_bitis == 9.4
+
+    reviewed = led.apply_review(opened.incident_id, {
+        "anomaly_type": "kavga", "zirve": "Kavga zirvesi", "zirve_t": 9.0,
+        "baslangic": "b", "sonuc": "s", "belirsizlikler": [],
+        "baslangic_t": 8.0, "bitis_t": 12.0,
+    })
+    assert reviewed.olay_bitis <= 9.4
+
+
+def test_title_truncation_cuts_on_a_word_boundary():
+    led = Ledger()
+    long_title = (
+        "Kasaya gelen kişi masanın arkasındaki çalışanla etkileşime girerek "
+        "bir nesne alışverişi yapıyor"
+    )
+    opened = led.ingest(report(0, (5, long_title, "orta")))[0]
+
+    assert opened.title.endswith("…")
+    assert not opened.title.rstrip("…").endswith(" ")
+    assert long_title.startswith(opened.title.rstrip("… "))

@@ -479,6 +479,7 @@ async def run_video(
         duration = await ingest.probe_duration(path)
         _raise_if_stop_requested(stop_probe)
         ctx.duration = duration
+        ctx.ledger.duration = duration
         async with _local_inference():
             profile = await ingest.motion_profile(path, settings.base_fps)
         _raise_if_stop_requested(stop_probe)

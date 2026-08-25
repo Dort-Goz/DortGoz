@@ -38,7 +38,12 @@ function FeedStrip({ feeds, active, onSelect }: {
           }`}>
             Σ ×{total >= 10 ? total.toFixed(0) : total.toFixed(1)}
           </div>
-          <div className="truncate text-[10px] text-zinc-500">
+          <div
+            className="truncate text-[10px] text-zinc-500"
+            title={busyFeeds.length > 0
+              ? `Toplam işleme hızı — ${busyFeeds.length} akışın hepsi gerçek zamanlı kalması için Σ ≥ ${busyFeeds.length} olmalı`
+              : undefined}
+          >
             {busyFeeds.length > 0
               ? `${busyFeeds.length} akış işleniyor · gerçek zaman için Σ ≥ ${busyFeeds.length}`
               : `${names.length} akış tamamlandı`}
@@ -80,7 +85,8 @@ function FeedStrip({ feeds, active, onSelect }: {
                   {busy ? `%${pct}` : f.runStatus?.state ?? "—"}
                 </span>
               </div>
-              <div className="truncate text-[10px] text-zinc-500">
+              <div className="truncate text-[10px] text-zinc-500"
+                   title={f.video ?? undefined}>
                 {f.video ?? "—"} · {f.incidents.length} olay
               </div>
               <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-zinc-800">

@@ -219,6 +219,12 @@ async def ensure_analysis_ready() -> None:
             "competition-real analiz kapısı kapalı: " + "; ".join(report.blocking_reasons())
         )
 
+async def register_analysis_source(run_id: str, video: str) -> None:
+    from .pipeline.runner import resolve_media
+
+    await runtime_projection.register_runtime_source(run_id, video, resolve_media(video))
+
+
 analysis_jobs = CanonicalAnalysisJobService(
     manager,
     runs_dir=settings.runs_dir,
@@ -226,6 +232,7 @@ analysis_jobs = CanonicalAnalysisJobService(
     enabled=lambda: not settings.mock,
     finalize_run=api_runtime.incident_media.finalize_analysis,
     pre_start=ensure_analysis_ready,
+    prepare_run=register_analysis_source,
     execution_coordinator=execution_coordinator,
 )
 app.state.analysis_jobs = analysis_jobs

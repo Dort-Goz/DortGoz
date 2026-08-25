@@ -194,7 +194,7 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
   item: TriageItem;
   categories: string[];
   feedLabel: string;
-  onDecide: (decision: TriageDecision) => Promise<boolean>;
+  onDecide: (decision: TriageDecision) => Promise<string>;
   onSeek?: (feed: string, timestamp: number, video: string) => void;
 }) {
   const [verdict, setVerdict] = useState<TriageVerdict | "">("");
@@ -208,7 +208,7 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
   const [intervention, setIntervention] = useState<"" | "yes" | "no">("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState("");
 
   const validTimes = start >= 0 && start <= peak && peak <= end;
   const canSubmit = intervention !== ""
@@ -216,13 +216,20 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
       ? validTimes
       : Boolean(falseAlarmReason)
         && (falseAlarmReason !== "other" || Boolean(note.trim())));
+  const blockReason = intervention === ""
+    ? "Kaydetmek için “Müdahale gerekli miydi?” seçilmelidir."
+    : verdict === "anomali"
+      ? "Başlangıç ≤ zirve ≤ bitiş olmalı."
+      : falseAlarmReason === ""
+        ? "Kaydetmek için yanlış alarm nedeni seçilmelidir."
+        : "Açıklama için operatör notu zorunludur.";
 
   const submit = async () => {
     if (!verdict || !canSubmit) return;
     setBusy(true);
-    setFailed(false);
+    setFailed("");
     try {
-      const saved = await onDecide({
+      const problem = await onDecide({
         key: item.key,
         verdict,
         ...(verdict === "anomali" ? {
@@ -237,10 +244,10 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
         intervention_required: intervention === "yes",
         note: note.trim(),
       });
-      if (saved) setVerdict("");
-      else setFailed(true);
+      if (problem) setFailed(problem);
+      else setVerdict("");
     } catch {
-      setFailed(true);
+      setFailed("Karar sunucuya iletilemedi. Bağlantıyı denetleyin.");
     } finally {
       setBusy(false);
     }
@@ -342,7 +349,7 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
           preload="metadata"
           poster={item.media_thumbnail_url ?? undefined}
           src={item.clip_url ?? item.evidence ?? undefined}
-          className="max-h-40 w-full rounded-sm bg-black object-contain"
+          className="mx-auto max-h-56 w-full max-w-lg rounded-sm bg-black object-contain"
         >
           Tarayıcınız olay klibini oynatamıyor.
         </video>
@@ -468,7 +475,7 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
           </label>
           {failed && (
             <div className="rounded-sm border border-red-900 bg-red-950/40 px-2 py-1 text-xs text-red-200">
-              Karar kaydedilemedi. Bağlantıyı denetleyin ve yeniden deneyin.
+              Karar kaydedilemedi — {failed}
             </div>
           )}
           <button
@@ -479,7 +486,9 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
             {busy ? "Kaydediliyor…" : "Kararı kalıcı kaydet"}
           </button>
           <p className="text-[10px] text-zinc-500">
-            Bu karar geri bildirimdir. Eğitim izni ayrıca verilir.
+            {canSubmit
+              ? "Bu karar geri bildirimdir. Eğitim izni ayrıca verilir."
+              : blockReason}
           </p>
         </div>
       )}
@@ -542,11 +551,8 @@ export default function TriagePanel({
     return () => { alive = false; clearInterval(id); };
   }, []);
 
-  const decide = async (decision: TriageDecision): Promise<boolean> => {
-    if (!reviewer.trim()) {
-      setError("İnceleyen adı boş olamaz.");
-      return false;
-    }
+  const decide = async (decision: TriageDecision): Promise<string> => {
+    if (!reviewer.trim()) return "İnceleyen adı boş olamaz.";
     let response: Response;
     try {
       response = await fetch("/api/triage/decide", {
@@ -555,20 +561,18 @@ export default function TriagePanel({
         body: JSON.stringify({ ...decision, reviewer: reviewer.trim() }),
       });
     } catch {
-      setError("Karar sunucuya iletilemedi. Bağlantıyı denetleyip yeniden deneyin.");
-      return false;
+      return "sunucuya ulaşılamadı. Bağlantıyı denetleyip yeniden deneyin.";
     }
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      setError(body.detail || body.error?.message || "Karar kalıcı kayda yazılamadı.");
-      return false;
+      return body.error?.message || body.detail || "kalıcı kayda yazılamadı.";
     }
     setError("");
     try {
       const r = await fetch("/api/triage");
       setSnap(await r.json());
     } catch {  }
-    return true;
+    return "";
   };
 
   const ruleAction = async (

@@ -119,7 +119,8 @@ describe("operatör konsolu dayanıklılığı", () => {
 
     expect(triageSource.match(/setBusy\(false\)/g)).toHaveLength(1);
     expect(triageSource).toMatch(/\}\s*finally\s*\{\s*setBusy\(false\);\s*\}/);
-    expect(triageSource).toContain("Karar kaydedilemedi.");
+    expect(triageSource).toContain("Karar kaydedilemedi — {failed}");
     expect(triageSource).toContain("Karar sunucuya iletilemedi.");
+    expect(triageSource).toContain("body.error?.message");
   });
 });

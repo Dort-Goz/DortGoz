@@ -14,6 +14,30 @@ from .protocols import ToolExecutionError
 
 ClipWriter = Callable[[Path, Path, float, float, float], Awaitable[None]]
 
+_BROWSER_ENCODERS = ("libx264", "libopenh264")
+_video_encoder: str | None = None
+
+
+async def browser_video_encoder() -> str:
+    global _video_encoder
+    if _video_encoder is not None:
+        return _video_encoder
+    available = b""
+    try:
+        process = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-v", "quiet", "-encoders",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        available, _ = await asyncio.wait_for(process.communicate(), timeout=20)
+    except (FileNotFoundError, TimeoutError, OSError):
+        available = b""
+    text = available.decode("utf-8", "replace")
+    _video_encoder = next(
+        (name for name in _BROWSER_ENCODERS if f" {name} " in text), "mpeg4"
+    )
+    return _video_encoder
+
 
 class LocalContextClipTool:
     def __init__(
@@ -86,6 +110,7 @@ async def write_context_clip(
     source: Path, target: Path, start: float, end: float, timeout_seconds: float
 ) -> None:
     temporary = target.with_name(f".{target.stem}.tmp{target.suffix}")
+    encoder = await browser_video_encoder()
     try:
         process = await asyncio.create_subprocess_exec(
             "ffmpeg",
@@ -101,9 +126,9 @@ async def write_context_clip(
             "0:v:0",
             "-an",
             "-c:v",
-            "mpeg4",
-            "-preset",
-            "veryfast",
+            encoder,
+            "-pix_fmt",
+            "yuv420p",
             "-movflags",
             "+faststart",
             "-y",

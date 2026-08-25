@@ -37,8 +37,12 @@ class Incident:
     review_reason: str = ""
     olay_baslangic: float | None = None
     olay_bitis: float | None = None
+    duration: float = 0.0
     evidence_ts: list[float] = field(default_factory=list)
     evidence_refs: list[EventEvidenceRef] = field(default_factory=list)
+
+    def clamp_end(self, end: float) -> float:
+        return min(end, self.duration) if self.duration > 0 else end
 
     def not_evidence(self, events: list) -> None:
         known = {
@@ -58,7 +62,9 @@ class Incident:
         self.evidence_refs.sort(key=lambda ref: ref.timestamp)
         if self.evidence_ts:
             self.olay_baslangic = max(0.0, min(self.evidence_ts) - 1.0)
-            self.olay_bitis = max(self.evidence_ts) + 1.0
+            self.olay_bitis = max(
+                self.olay_baslangic, self.clamp_end(max(self.evidence_ts) + 1.0)
+            )
 
 
 @dataclass
@@ -72,9 +78,10 @@ class Entity:
 
 class Ledger:
 
-    def __init__(self, grace_windows: int = 1) -> None:
+    def __init__(self, grace_windows: int = 1, duration: float = 0.0) -> None:
         self.incidents: dict[str, Incident] = {}
         self.entities: dict[int, Entity] = {}
+        self.duration = duration
         self._open_id: str | None = None
         self._grace = grace_windows
         self._quiet = 0
@@ -122,7 +129,9 @@ class Ledger:
                 isinstance(review.get("baslangic_t"), int | float) and \
                 isinstance(review.get("bitis_t"), int | float):
             inc.olay_baslangic = float(review["baslangic_t"])
-            inc.olay_bitis = float(review["bitis_t"])
+            inc.olay_bitis = max(
+                inc.olay_baslangic, inc.clamp_end(float(review["bitis_t"]))
+            )
         unc = [str(u).strip() for u in review.get("belirsizlikler", []) if str(u).strip()]
         inc.needs_review = was_review_required or bool(unc) or inc.anomaly_type == "bilinmeyen"
         if previous_review_reason:
@@ -219,6 +228,7 @@ class Ledger:
             notes=[e.desc for e in events],
             thumbnail=thumbnail,
             evidence=evidence,
+            duration=self.duration,
         )
         inc.not_evidence(events)
         self.incidents[inc.incident_id] = inc
@@ -244,7 +254,12 @@ class Ledger:
         self._open_id = None
         self._quiet = 0
         inc.phase = "sonuclandi"
-        detail = f"{len(inc.notes)} gözlem · {inc.first_seen:.0f}-{inc.last_seen:.0f} sn"
+        span = (
+            f"{inc.first_seen:.0f}. sn"
+            if round(inc.first_seen) == round(inc.last_seen)
+            else f"{inc.first_seen:.0f}-{inc.last_seen:.0f} sn"
+        )
+        detail = f"{len(inc.notes)} gözlem · {span}"
         return [_update(inc, inc.last_seen, detail)]
 
 
@@ -288,14 +303,15 @@ def _title_text(text: str) -> str:
     head = _CLOCK_LEAD.sub("", head).strip()
     if head:
         head = head[0].upper() + head[1:]
-    return head if len(head) <= 70 else head[:67] + "…"
+    return head if len(head) <= 70 else _short(head, 70)
 
 
 def _short(text: str, limit: int = 160) -> str:
     if len(text) <= limit:
         return text
-    cut = text.rfind(" ", 0, limit)
-    return text[:cut if cut > limit // 2 else limit].rstrip() + "…"
+    cut = text.rfind(" ", 0, limit - 1)
+    kept = text[:cut] if cut > limit // 2 else text[:limit - 1]
+    return kept.rstrip(" ,;:·-") + "…"
 
 
 def _trim(text: str, limit: int = 1200) -> str:

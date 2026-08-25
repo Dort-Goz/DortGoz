@@ -763,6 +763,7 @@ class TriageStore:
                 )
             ],
             "confirmed": confirmed,
+            "resolved_keys": [item.key for item in self._resolved],
             "dismissed_count": self.dismissed_count,
             "auto_dismissed": self.auto_dismissed,
             "queue_overflow_count": self.queue_overflow_count,

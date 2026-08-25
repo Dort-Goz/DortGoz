@@ -23,6 +23,7 @@ EnabledPredicate = Callable[[], bool]
 IdFactory = Callable[[], str]
 FinalizeRunCallable = Callable[[str], Awaitable[object]]
 PreStartCallable = Callable[[], Awaitable[None]]
+PrepareRunCallable = Callable[[str, str], Awaitable[object]]
 
 
 def iter_run_lines(path: Path, *, stats: dict | None = None) -> Iterator[dict]:
@@ -178,6 +179,7 @@ class CanonicalAnalysisJobService:
         id_factory: IdFactory = lambda: uuid4().hex,
         finalize_run: FinalizeRunCallable | None = None,
         pre_start: PreStartCallable | None = None,
+        prepare_run: PrepareRunCallable | None = None,
         execution_coordinator: ExecutionCoordinator | None = None,
     ) -> None:
         if max_active < 1:
@@ -191,6 +193,7 @@ class CanonicalAnalysisJobService:
         self._id_factory = id_factory
         self._finalize_run = finalize_run
         self._pre_start = pre_start
+        self._prepare_run = prepare_run
         self._execution_coordinator = execution_coordinator
         self._lock = asyncio.Lock()
         self._records: dict[str, _JobRecord] = {}
@@ -354,6 +357,15 @@ class CanonicalAnalysisJobService:
         mode: str = "",
     ) -> None:
         record.status = AnalysisJobStatus.RUNNING
+        if self._prepare_run is not None:
+            try:
+                await self._prepare_run(record.analysis_id, record.video)
+            except Exception:
+                LOGGER.warning(
+                    "koşu kaynağı canonical deftere kaydedilemedi: %s",
+                    record.video,
+                    exc_info=True,
+                )
         try:
             await self._run_video(
                 self.manager,

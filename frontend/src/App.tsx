@@ -91,6 +91,7 @@ export default function App() {
   const [showLearningOrchestrator, setShowLearningOrchestrator] = useState(false);
   const [fixtureMode, setFixtureMode] = useState(false);
   const [triagePending, setTriagePending] = useState(0);
+  const [resolvedKeys, setResolvedKeys] = useState<string[]>([]);
   const [connection, setConnection] = useState<ConnectionState>("connecting");
 
   useEffect(() => {
@@ -153,7 +154,10 @@ export default function App() {
         const r = await fetch("/api/triage");
         if (!r.ok) return;
         const body = await r.json();
-        if (alive) setTriagePending((body.pending ?? []).length);
+        if (alive) {
+          setTriagePending((body.pending ?? []).length);
+          setResolvedKeys(body.resolved_keys ?? []);
+        }
       } catch {}
     };
     poll();
@@ -272,10 +276,20 @@ export default function App() {
   }, []);
 
   const runState = run?.state ?? "idle";
-  const progressPct = Math.round((run?.progress ?? 0) * 100);
+  const rawPct = Math.round((run?.progress ?? 0) * 100);
+  const progressPct = runState === "processing" ? Math.min(rawPct, 99) : rawPct;
+  const decided = useMemo(
+    () => new Set(
+      resolvedKeys
+        .filter((key) => key.slice(0, key.lastIndexOf(":")) === state.active)
+        .map((key) => key.slice(key.lastIndexOf(":") + 1)),
+    ),
+    [resolvedKeys, state.active],
+  );
   const reviewCount = useMemo(
-    () => feed.incidents.filter((i) => i.needs_review).length,
-    [feed.incidents],
+    () => feed.incidents.filter(
+      (i) => i.needs_review && !decided.has(i.incident_id)).length,
+    [feed.incidents, decided],
   );
   const worstRisk = useMemo(() => feed.incidents.reduce<string | null>(
     (w, i) =>
@@ -299,7 +313,7 @@ export default function App() {
     <div className="flex h-screen flex-col overflow-hidden">
       {fixtureMode && (
         <div className="flex h-8 shrink-0 items-center justify-center border-b border-amber-900/60 bg-amber-950/40 px-3 text-[11px] font-bold tracking-wide text-amber-200">
-          ARAYÜZ TEST AKIŞI · VİDEOYU SEÇİP “BAŞLAT”A BASIN · VİDEO ANALİZ EDİLMEZ
+          ARAYÜZ TEST AKIŞI · “BAŞLAT” KAYITLI BİR ÖRNEK AKIŞI OYNATIR · VİDEO ANALİZ EDİLMEZ
         </div>
       )}
 
@@ -597,6 +611,7 @@ export default function App() {
             reports={feed.reports}
             highlightId={feed.highlight?.incident_id}
             reportsPulse={feed.reportsPulse}
+            decided={decided}
             onSelect={selectIncident}
           />
         </div>

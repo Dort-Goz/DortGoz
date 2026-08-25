@@ -80,7 +80,8 @@ describe("aksiyon günlüğü", () => {
     expect(source).toContain("Bildirimi hazırla");
     expect(source).not.toContain('request.run_id.startsWith("fixture-")');
     expect(source).not.toContain("{req.actuator}()");
-    expect(appSource).toContain("ARAYÜZ TEST AKIŞI · VİDEOYU SEÇİP “BAŞLAT”A BASIN");
+    expect(appSource).toContain(
+      "ARAYÜZ TEST AKIŞI · “BAŞLAT” KAYITLI BİR ÖRNEK AKIŞI OYNATIR");
     expect(appSource).not.toContain("readOnly={fixtureMode}");
   });
 });
