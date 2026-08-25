@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { ActuatorRequest, ActuatorResult } from "../types/events";
 
 const FALLBACK_LABELS: Record<string, string> = {
@@ -26,7 +27,7 @@ function resultLabel(result: ActuatorResult): { text: string; cls: string } {
     : { text: "REDDEDİLDİ", cls: "text-zinc-400" };
 }
 
-export default function ActionLog({
+function ActionLog({
   requests, results, onRespond, readOnly = false,
 }: {
   requests: ActuatorRequest[];
@@ -152,3 +153,5 @@ export default function ActionLog({
     </div>
   );
 }
+
+export default memo(ActionLog);

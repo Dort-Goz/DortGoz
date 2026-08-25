@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import type { FeedState } from "../state";
 import { RISK_TR } from "../lib/labels";
 
@@ -9,17 +10,19 @@ function worstRisk(f: FeedState): string | null {
     null);
 }
 
-export default function FeedStrip({ feeds, active, onSelect }: {
+function FeedStrip({ feeds, active, onSelect }: {
   feeds: Record<string, FeedState>;
   active: string;
   onSelect: (feed: string) => void;
 }) {
   const names = Object.keys(feeds).filter((k) => k !== "");
+  const summary = useMemo(() => {
+    const busyFeeds = names.filter((n) => feeds[n].runStatus?.state === "processing");
+    const total = names.reduce((s, n) => s + (feeds[n].runStatus?.speed ?? 0), 0);
+    return { busyFeeds, total, enough: busyFeeds.length === 0 || total >= busyFeeds.length };
+  }, [names, feeds]);
   if (names.length < 2) return null;
-
-  const busyFeeds = names.filter((n) => feeds[n].runStatus?.state === "processing");
-  const total = names.reduce((s, n) => s + (feeds[n].runStatus?.speed ?? 0), 0);
-  const enough = busyFeeds.length === 0 || total >= busyFeeds.length;
+  const { busyFeeds, total, enough } = summary;
 
   return (
     <div className="shrink-0 border-b border-zinc-800 bg-zinc-950 p-1.5">
@@ -91,3 +94,5 @@ export default function FeedStrip({ feeds, active, onSelect }: {
     </div>
   );
 }
+
+export default memo(FeedStrip);

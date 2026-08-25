@@ -16,6 +16,7 @@ export interface StoredIncident extends IncidentUpdate {
 
 export interface FeedState {
   incidents: StoredIncident[];
+  incidentMap: Map<string, StoredIncident>;
   reports: WindowReport[];
   trace: TraceEntry[];
   runStatus: RunStatus | null;
@@ -28,6 +29,7 @@ export interface FeedState {
 
 export const emptyFeed: FeedState = {
   incidents: [],
+  incidentMap: new Map(),
   reports: [],
   trace: [],
   runStatus: null,
@@ -131,15 +133,30 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
       }));
     case "incident_update":
       return withFeed(state, feed, (f) => {
-        const prev = f.incidents.find((i) => i.incident_id === p.incident_id);
+        const prev = f.incidentMap.get(p.incident_id);
         const merged: StoredIncident = p.boxes.length > 0
           ? { ...p, boxT: p.t }
           : { ...p, boxes: prev?.boxes ?? [], boxT: prev?.boxT ?? prev?.t };
-        const others = f.incidents.filter((i) => i.incident_id !== p.incident_id);
+        const map = new Map(f.incidentMap);
+        map.set(p.incident_id, merged);
+        let incidents: StoredIncident[];
+        if (prev) {
+          incidents = f.incidents.map((i) => i.incident_id === p.incident_id ? merged : i);
+        } else {
+          let idx = f.incidents.findIndex((i) => i.t > merged.t);
+          if (idx === -1) idx = f.incidents.length;
+          incidents = [...f.incidents.slice(0, idx), merged, ...f.incidents.slice(idx)];
+        }
+        if (incidents.length > CAPS.incidents) {
+          const drop = incidents.length - CAPS.incidents;
+          for (const gone of incidents.slice(0, drop)) map.delete(gone.incident_id);
+          incidents = incidents.slice(drop);
+        }
         return {
           ...f,
+          incidentMap: map,
           highlight: f.highlight?.incident_id === p.incident_id ? merged : f.highlight,
-          incidents: cap([...others, merged].sort((a, b) => a.t - b.t), CAPS.incidents),
+          incidents,
         };
       });
     case "agent_step":

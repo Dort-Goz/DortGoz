@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import type { IncidentUpdate } from "../types/events";
 import TriagePanel from "./TriagePanel";
 
@@ -23,7 +23,7 @@ function lagBadge(f: LiveFeed): { text: string; cls: string } {
   return { text: `−${Math.round(s / 60)}dk geride`, cls: "bg-red-800 text-red-100" };
 }
 
-export default function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
+function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
   incidents: Record<string, IncidentUpdate[]>;
   onSelectFeed: (feed: string) => void;
   onOpenTraining: (eventId: string) => void;
@@ -218,3 +218,5 @@ export default function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
     </div>
   );
 }
+
+export default memo(LiveGrid);

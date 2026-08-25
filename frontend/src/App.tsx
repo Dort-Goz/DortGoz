@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { ActuatorRequest, ActuatorResult, Event, Payload } from "./types/events";
+import type { ActuatorRequest, ActuatorResult, Event, IncidentUpdate, Payload } from "./types/events";
 import { DortgozSocket, type ConnectionState } from "./lib/ws";
 import VideoPanel from "./components/VideoPanel";
 import Timeline from "./components/Timeline";
@@ -198,8 +198,21 @@ export default function App() {
 
   const feed = state.feeds[state.active] ?? emptyFeed;
   const run = feed.runStatus;
+  const selectFeed = useCallback(
+    (name: string) => dispatch({ kind: "select_feed", feed: name }),
+    [],
+  );
+  const selectIncident = useCallback(
+    (incident: IncidentUpdate) => dispatch({ kind: "select_incident", incident }),
+    [],
+  );
   const busy = Object.values(state.feeds).some((f) => f.runStatus?.state === "processing");
   const workspace = liveView ? "live" : reviewView ? "review" : "analysis";
+  const liveIncidents = useMemo(
+    () => Object.fromEntries(
+      Object.entries(state.feeds).map(([f, s]) => [f, s.incidents])),
+    [state.feeds],
+  );
 
   const overrides = useCallback(() => ({
     model: interpretCfg && model !== interpretCfg.default_model ? model : "",
@@ -260,14 +273,17 @@ export default function App() {
 
   const runState = run?.state ?? "idle";
   const progressPct = Math.round((run?.progress ?? 0) * 100);
-  const reviewCount = feed.incidents.filter((i) => i.needs_review).length;
-  const worstRisk = feed.incidents.reduce<string | null>(
+  const reviewCount = useMemo(
+    () => feed.incidents.filter((i) => i.needs_review).length,
+    [feed.incidents],
+  );
+  const worstRisk = useMemo(() => feed.incidents.reduce<string | null>(
     (w, i) =>
       w === null || RISK_ORDER.indexOf(i.risk) > RISK_ORDER.indexOf(w as typeof RISK_ORDER[number])
         ? i.risk
         : w,
     null,
-  );
+  ), [feed.incidents]);
   const verdictReady = runState === "done" && Boolean(run?.detail);
   const verdictTone = VERDICT_TONE[worstRisk ?? "none"] ?? "text-red-300";
   const experimentDirty = Boolean(interpretCfg && (
@@ -550,16 +566,14 @@ export default function App() {
       )}
 
       {workspace === "analysis" && (
-        <FeedStrip feeds={state.feeds} active={state.active}
-                   onSelect={(f) => dispatch({ kind: "select_feed", feed: f })} />
+        <FeedStrip feeds={state.feeds} active={state.active} onSelect={selectFeed} />
       )}
 
       {workspace === "live" && (
         <div className="flex min-h-0 flex-1 flex-col p-1.5">
           <LiveGrid
-            incidents={Object.fromEntries(
-              Object.entries(state.feeds).map(([f, s]) => [f, s.incidents]))}
-            onSelectFeed={(f) => dispatch({ kind: "select_feed", feed: f })}
+            incidents={liveIncidents}
+            onSelectFeed={selectFeed}
             onOpenTraining={setTrainingEventId}
           />
         </div>
@@ -583,7 +597,7 @@ export default function App() {
             reports={feed.reports}
             highlightId={feed.highlight?.incident_id}
             reportsPulse={feed.reportsPulse}
-            onSelect={(incident) => dispatch({ kind: "select_incident", incident })}
+            onSelect={selectIncident}
           />
         </div>
         <div className="col-span-2 min-h-0">

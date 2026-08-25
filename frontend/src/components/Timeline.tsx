@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { IncidentUpdate, WindowReport, WindowSignals } from "../types/events";
 import { PHASE_TR, RISK_TR, TYPE_TR, clock } from "../lib/labels";
 
@@ -95,7 +95,70 @@ function QuietGroup({ reports }: { reports: WindowReport[] }) {
   );
 }
 
-export default function Timeline({
+const IncidentCard = memo(function IncidentCard(
+  { inc, highlightId, onSelect }: {
+    inc: IncidentUpdate;
+    highlightId?: string;
+    onSelect: (inc: IncidentUpdate) => void;
+  },
+) {
+  const signals = signalLine(inc.signals);
+  return (
+    <button
+      onClick={() => onSelect(inc)}
+      title="Videoyu olayın başına sar"
+      className={`flash-once w-full rounded-sm border-l-2 bg-zinc-950 p-2 text-left transition-colors risk-${inc.risk}
+                  hover:bg-zinc-800/60 ${
+        inc.incident_id === highlightId ? "ring-1 ring-zinc-500" : ""
+      }`}
+    >
+      <div className="flex gap-2">
+        {inc.thumbnail && (
+          <img src={inc.thumbnail} alt=""
+               className="h-12 w-12 shrink-0 rounded-sm bg-black object-cover" />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <span className="font-mono text-xs text-zinc-500">{clock(inc.t)}</span>
+            <span className="chip bg-zinc-800 font-semibold uppercase tracking-wide text-zinc-300">
+              {TYPE_TR[inc.anomaly_type] ?? inc.anomaly_type}
+            </span>
+            {inc.needs_review && (
+              <span className="chip border border-amber-900 bg-amber-950/60 font-semibold uppercase tracking-wide text-amber-300">
+                ⚑ inceleme
+              </span>
+            )}
+            <span className={`ml-auto text-[10px] font-bold uppercase risk-${inc.risk}`}>
+              {RISK_TR[inc.risk] ?? inc.risk}
+            </span>
+          </div>
+          <div className="mt-0.5 text-sm font-medium text-zinc-200">{inc.title}</div>
+          <div className="flex items-baseline gap-2 text-[10px] text-zinc-500">
+            <span>{PHASE_TR[inc.phase] ?? inc.phase}</span>
+            {inc.olay_baslangic != null && inc.olay_bitis != null && (
+              <span className="font-mono">
+                {clock(inc.olay_baslangic)}–{clock(inc.olay_bitis)}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+      {inc.needs_review && inc.review_reason && (
+        <p className="mt-1 text-[11px] text-amber-400/80">⚑ {inc.review_reason}</p>
+      )}
+      <p className={`mt-1 whitespace-pre-line text-xs text-zinc-400 ${
+        inc.incident_id === highlightId ? "" : "line-clamp-3"
+      }`}>{inc.detail}</p>
+      {inc.incident_id === highlightId && signals && (
+        <p className="mt-1 border-t border-zinc-800 pt-1 font-mono text-[10px] text-zinc-500">
+          {signals}
+        </p>
+      )}
+    </button>
+  );
+});
+
+function Timeline({
   incidents, reports, highlightId, reportsPulse = 0, onSelect,
 }: {
   incidents: IncidentUpdate[];
@@ -106,6 +169,7 @@ export default function Timeline({
 }) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const reportsRef = useRef<HTMLDivElement>(null);
+  const handleSelect = useCallback((inc: IncidentUpdate) => onSelect(inc), [onSelect]);
 
   useEffect(() => {
     if (reportsPulse === 0) return;
@@ -133,63 +197,10 @@ export default function Timeline({
           <p className="p-2 text-xs text-zinc-600">Henüz olay yok — akış bekleniyor.</p>
         )}
 
-        {incidents.map((inc) => {
-          const signals = signalLine(inc.signals);
-          return (
-          <button
-            key={`${inc.incident_id}:${inc.phase}:${inc.t}`}
-            onClick={() => onSelect(inc)}
-            title="Videoyu olayın başına sar"
-            className={`flash-once w-full rounded-sm border-l-2 bg-zinc-950 p-2 text-left transition-colors risk-${inc.risk}
-                        hover:bg-zinc-800/60 ${
-              inc.incident_id === highlightId ? "ring-1 ring-zinc-500" : ""
-            }`}
-          >
-            <div className="flex gap-2">
-              {inc.thumbnail && (
-                <img src={inc.thumbnail} alt=""
-                     className="h-12 w-12 shrink-0 rounded-sm bg-black object-cover" />
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                  <span className="font-mono text-xs text-zinc-500">{clock(inc.t)}</span>
-                  <span className="chip bg-zinc-800 font-semibold uppercase tracking-wide text-zinc-300">
-                    {TYPE_TR[inc.anomaly_type] ?? inc.anomaly_type}
-                  </span>
-                  {inc.needs_review && (
-                    <span className="chip border border-amber-900 bg-amber-950/60 font-semibold uppercase tracking-wide text-amber-300">
-                      ⚑ inceleme
-                    </span>
-                  )}
-                  <span className={`ml-auto text-[10px] font-bold uppercase risk-${inc.risk}`}>
-                    {RISK_TR[inc.risk] ?? inc.risk}
-                  </span>
-                </div>
-                <div className="mt-0.5 text-sm font-medium text-zinc-200">{inc.title}</div>
-                <div className="flex items-baseline gap-2 text-[10px] text-zinc-500">
-                  <span>{PHASE_TR[inc.phase] ?? inc.phase}</span>
-                  {inc.olay_baslangic != null && inc.olay_bitis != null && (
-                    <span className="font-mono">
-                      {clock(inc.olay_baslangic)}–{clock(inc.olay_bitis)}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-            {inc.needs_review && inc.review_reason && (
-              <p className="mt-1 text-[11px] text-amber-400/80">⚑ {inc.review_reason}</p>
-            )}
-            <p className={`mt-1 whitespace-pre-line text-xs text-zinc-400 ${
-              inc.incident_id === highlightId ? "" : "line-clamp-3"
-            }`}>{inc.detail}</p>
-            {inc.incident_id === highlightId && signals && (
-              <p className="mt-1 border-t border-zinc-800 pt-1 font-mono text-[10px] text-zinc-500">
-                {signals}
-              </p>
-            )}
-          </button>
-          );
-        })}
+        {incidents.map((inc) => (
+          <IncidentCard key={inc.incident_id} inc={inc}
+                        highlightId={highlightId} onSelect={handleSelect} />
+        ))}
 
         {reports.length > 0 && (
           <div ref={reportsRef} className="border-t border-zinc-800 pt-2">
@@ -207,3 +218,5 @@ export default function Timeline({
     </div>
   );
 }
+
+export default memo(Timeline);

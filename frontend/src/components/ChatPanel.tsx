@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { memo, useState, type ReactNode } from "react";
 import type { ChatMessage } from "../types/events";
 import { useStickyScroll } from "../lib/useStickyScroll";
 
@@ -16,7 +16,7 @@ function inlineNodes(text: string, keyBase: string): ReactNode[] {
   });
 }
 
-function ChatText({ text }: { text: string }) {
+const ChatText = memo(function ChatText({ text }: { text: string }) {
   return (
     <>
       {text.split("\n").map((line, i) => {
@@ -34,9 +34,9 @@ function ChatText({ text }: { text: string }) {
       })}
     </>
   );
-}
+});
 
-export default function ChatPanel({
+function ChatPanel({
   messages, onSend,
 }: { messages: ChatMessage[]; onSend: (text: string) => void }) {
   const [draft, setDraft] = useState("");
@@ -89,3 +89,5 @@ export default function ChatPanel({
     </div>
   );
 }
+
+export default memo(ChatPanel);

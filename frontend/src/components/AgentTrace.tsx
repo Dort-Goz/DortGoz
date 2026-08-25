@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useMemo, useState } from "react";
 import type { TraceEntry } from "../state";
 import { NODE_TR, humanizeEnums, stripPerf } from "../lib/labels";
 import { useStickyScroll } from "../lib/useStickyScroll";
@@ -52,7 +52,9 @@ function build(entries: TraceEntry[]): Row[] {
   return rows;
 }
 
-function QuietRow({ rows }: { rows: { seq: number; detail: string }[] }) {
+const QuietRow = memo(function QuietRow(
+  { rows }: { rows: { seq: number; detail: string }[] },
+) {
   const [open, setOpen] = useState(false);
   return (
     <div>
@@ -68,12 +70,12 @@ function QuietRow({ rows }: { rows: { seq: number; detail: string }[] }) {
       )}
     </div>
   );
-}
+});
 
-export default function AgentTrace({ entries }: { entries: TraceEntry[] }) {
+function AgentTrace({ entries }: { entries: TraceEntry[] }) {
   const [verbose, setVerbose] = useState(false);
   const { ref, onScroll } = useStickyScroll<HTMLDivElement>(entries.length);
-  const rows = build(entries);
+  const rows = useMemo(() => build(entries), [entries]);
 
   return (
     <div className="panel h-full">
@@ -157,3 +159,5 @@ export default function AgentTrace({ entries }: { entries: TraceEntry[] }) {
     </div>
   );
 }
+
+export default memo(AgentTrace);
