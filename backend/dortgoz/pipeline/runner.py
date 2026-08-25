@@ -446,6 +446,7 @@ async def run_video(
     ledger = ctx.ledger
     effective_model = model or settings.video_model
     dual_or, confirm_and, sweep_on = _mode_flags(mode)
+    ingest.set_clip_owner(run_id)
     if mode == "genis" and not system_prompt:
         system_prompt = interpret.SYSTEM_TR_GENIS
     (settings.runs_dir / f"{run_id}.meta.json").write_text(json.dumps({

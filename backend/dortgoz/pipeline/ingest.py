@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -150,11 +151,24 @@ def prefetch_frames(video: Path, ts: list[float], width: int = 512) -> None:
     for t in ts:
         _frame_task(video, t, width)
 
-_clip_tasks: dict[tuple[str, float, float, int], asyncio.Task] = {}
+_clip_tasks: dict[tuple[str, float, float, int, str], asyncio.Task] = {}
 _CLIP_TASKS_MAX = 4
 
+_clip_owner_var: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "dortgoz_clip_owner", default=""
+)
+
+
+def set_clip_owner(owner: str) -> None:
+    _clip_owner_var.set(owner)
+
+
+def _clip_owner() -> str:
+    return _clip_owner_var.get()
+
+
 def clip_task(video: Path, start: float, end: float, width: int) -> asyncio.Task:
-    key = (str(video), round(start, 3), round(end, 3), width)
+    key = (str(video), round(start, 3), round(end, 3), width, _clip_owner())
     task = _clip_tasks.pop(key, None)
     loop = asyncio.get_running_loop()
     stale = task is not None and (
@@ -180,9 +194,14 @@ async def shared_clip(video: Path, start: float, end: float, width: int) -> byte
 
 async def drain_clip_tasks() -> None:
     loop = asyncio.get_running_loop()
-    tasks = [task for task in _clip_tasks.values()
-             if task.get_loop() is loop and not task.done()]
-    _clip_tasks.clear()
+    owner = _clip_owner()
+    matched = {
+        key: task for key, task in _clip_tasks.items()
+        if task.get_loop() is loop and key[-1] == owner
+    }
+    for key in matched:
+        _clip_tasks.pop(key, None)
+    tasks = [task for task in matched.values() if not task.done()]
     for task in tasks:
         task.cancel()
     if tasks:
