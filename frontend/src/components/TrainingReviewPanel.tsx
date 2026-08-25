@@ -114,6 +114,9 @@ function messageOf(error: unknown): string {
   if (error instanceof ApiError && error.code === "TRAINING_MANIFEST_NOT_FOUND") {
     return "Eğitim manifesti bulunamadı. runs/datasets içindeki dosya adını kontrol edin.";
   }
+  if (error instanceof ApiError && error.code === "TRAINING_DATASET_REJECTED") {
+    return "Bu veri seti eğitime kapalı. Lisans doğrulanmadan kare hazırlanamaz.";
+  }
   return error instanceof Error ? error.message : "İşlem tamamlanamadı.";
 }
 
