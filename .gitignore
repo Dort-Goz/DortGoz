@@ -34,3 +34,5 @@ local/
 
 secrets/
 config/live_feeds.json
+
+data/uca/*.json
