@@ -69,8 +69,9 @@ Kendi videolarınızı da `media/` altına kopyalayabilir veya konsoldaki
 
 ### Adım 3 — yerel algı modellerini indirin
 
-Model ağırlıkları depoya girmez. İki yerel bileşen vardır ve ikisi de CPU'da
-çalışır.
+Model ağırlıkları depoya girmez. İki yerel bileşen vardır. İkisi de CPU'da
+çalışır; isteğe bağlı GPU yolu için [`docs/OLCEKLEME.md`](docs/OLCEKLEME.md)
+§4.2'ye bakın.
 
 ```bash
 ./scripts/fetch_models.sh              # D-FINE dedektörü (41 MB)

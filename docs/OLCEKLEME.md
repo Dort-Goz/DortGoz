@@ -41,17 +41,24 @@ listenizi kapasitenize göre kısaltın.
 
 ### 1.3. Zaman nereye gidiyor
 
-Üretim koşusunda toplam model süresi 15.016 saniyedir.
+290 klip, 10,30 saat video, toplam 18.686 saniye çalışma süresi. **Bu döküm yerel
+algı CPU'da koşarken ölçüldü** (GPU taşıması için §4.2'ye bakın).
 
 | Bileşen | Süre | Pay |
 |---|---:|---:|
-| Uzak model çağrıları (EVREN) | 15.016 sn | %81 |
-| SigLIP-2 screening (yerel, CPU) | 2.614 sn | %14 |
-| D-FINE dedektör (yerel, CPU) | 884 sn | %5 |
+| Uzak model çağrıları (EVREN) | 15.016 sn | %80,4 |
+| SigLIP-2 screening (yerel) | 2.614 sn | %14,0 |
+| D-FINE dedektör (yerel) | 883 sn | %4,7 |
+| Klip kodlama | 483 sn | %2,6 |
+| Hareket profili | 87 sn | %0,5 |
 
-**Darboğaz uzak modeldir.** Yerel algı toplamın yalnız beşte biridir. Bu, ölçekleme
-yatırımının nereye gideceğini belirler: yerel CPU eklemek toplam süreyi en fazla
-%19 iyileştirebilir.
+Uzak çağrıların içinde `primary:vlm` tek başına 11.822 saniyedir. Bu, **toplamın
+%63,3'üdür.**
+
+**Darboğaz uzak modeldir.** Yerel iş toplamın yalnız %21,8'idir. Bu, yerel
+optimizasyonun tavanıdır. GPU taşıması yerel ayağı 8,8× ve 3,3× hızlandırdı,
+ancak toplam süredeki kazanç bu tavanla sınırlıdır. **Gerçek hız işi
+`primary:vlm` tarafındadır.**
 
 Rol bazında ortalama çağrı süresi:
 
@@ -146,17 +153,46 @@ dönülürse geçerlidir.
 - Aşımda çökme olmaz, prompt işleme %79 düşer.
 - Pratik bütçe ~15.400 MiB'dir.
 
-### 4.2. Algı katmanı GPU hızlandırması
+### 4.2. Algı katmanı GPU'ya taşındı (2026-08-25)
 
-ONNX yürütme sağlayıcısı `DORTGOZ_ONNX_PROVIDERS` ile seçilir. Varsayılan CPU'dur.
+Yerel algı katmanı MIGraphX 2.15 (ROCm 7.2.3, gfx1201, MIT lisans) ile GPU'ya
+taşındı. ONNX Runtime'da ROCm sağlayıcı wheel'i yoktur; çözüm `libmigraphx_c.so`
+üzerine bir ctypes sarıcıdır (`pipeline/migraphx_ep.py`). EVREN çağrıları
+değişmedi.
 
-**⚠ Yalıtılmış çekirdek hızından boru hattı kazancı çıkarmayın.** Yalıtılmış
-ölçüm SigLIP için 13,65×, D-FINE için 6,77× gösterdi. Ancak boru hattı sayacı
-ffmpeg çözümleme ve ön işlemeyi de içerir ve asıl maliyet oradadır. Uçtan uca
-gerçek kazanç **%7-10**'dur.
+| Aşama | CPU | GPU | Kazanç | Sayısal denklik |
+|---|---:|---:|---:|---|
+| SigLIP fp16, batch 16 | 1.936 ms | **9,7 ms** | **202×** | kosinüs 0,999988 |
+| D-FINE fp32, batch 4 | 172 ms/kare | **12,3 ms/kare** | **14×** | 0,40 eşiğinde tespitler birebir |
 
-GPU sağlayıcısı açıkken backend yaklaşık 2,3 GB VRAM tutar. Kalite değişmez:
-aynı kliplerde tarama tepe puanları CPU ile GPU arasında en fazla 6e-04 ayrılır.
+**Boru hattı içinde ölçülen gerçek kazanç** (31 klip × 3 tekrar):
+
+| Bileşen | CPU | GPU | Kazanç |
+|---|---:|---:|---:|
+| SigLIP | 142,0 sn | **16,1 sn** | **8,8×** |
+| D-FINE | 69,3 sn | **21,2 sn** | **3,3×** |
+
+**⚠ Yalıtılmış çekirdek hızından boru hattı kazancı çıkarmayın.** 202× mikro
+ölçüm boru hattında 8,8× olur, çünkü sayacın içinde ffmpeg kare çıkarma da vardır.
+**Bu taşımadan sonra yerel algının tabanı ffmpeg'dir, model değildir.**
+
+**D-FINE fp16 reddedildi.** Aynı karede 0,40 eşiğinde 11 yerine 12 tespit üretti.
+
+**Kalite bandı.** CPU üç tekrar 22/22/22 yakalama. GPU üç tekrar 21/22/22. Her iki
+kolda 0/5 yanlış alarm ve aynı sabit kaçırma çekirdeği. Fark, belgelenmiş EVREN
+örnekleme varyansı (±3 klip) içindedir. Bantlar örtüşür; özdeşlik iddia edilmez.
+
+**Kurulum.** Derleme tek seferliktir (D-FINE ~5,6 dk, SigLIP ~1,5 dk) ve `.mxr`
+olarak diske yazılır. `scripts/build_migraphx.sh` yeniden üretir. Artifact'lar
+`~/.cache/dortgoz/migraphx/` altındadır (94-416 MB, repo dışı).
+
+**Bütünlük.** Manifest kaynak ONNX'in SHA-256 değerini tutar. Kaynak değişirse GPU
+yolu kapanır ve sistem CPU'ya döner. `DORTGOZ_MIGRAPHX_DIR` boşsa GPU yolu
+kapalıdır, böylece GPU'suz makineler etkilenmez.
+
+**NVIDIA tarafı (ayrı yol).** Dizüstünde `DORTGOZ_ONNX_PROVIDERS=CUDAExecutionProvider`
+kullanılabilir. Bu yolun uçtan uca kazancı yalnız %7-10'dur ve MIGraphX yolunun
+yerini tutmaz. GPU sağlayıcısı açıkken backend yaklaşık 2,3 GB VRAM tutar.
 
 ### 4.3. İstemci tarafı
 
