@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [switch]$Mock,
-    [switch]$Real
+    [switch]$Real,
+    [switch]$Remote
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,6 +20,7 @@ if ($Mock -and $Real) {
 }
 
 $UseMock = -not $Real.IsPresent
+$BindHost = if ($Remote.IsPresent) { "0.0.0.0" } else { "127.0.0.1" }
 
 function Resolve-Executable {
     param(
@@ -125,8 +127,8 @@ if (-not (Test-Path -LiteralPath (Join-Path $FrontendDir "node_modules"))) {
     }
 }
 
-$backendJob = Start-Job -Name "dortgoz-backend" -ArgumentList $BackendDir, $uvPath, $UseMock, $env:DORTGOZ_DEPLOYMENT_PROFILE, $env:DORTGOZ_EVENT_STORE_PATH -ScriptBlock {
-    param($WorkingDirectory, $UvExecutable, $UseMock, $DeploymentProfile, $EventStorePath)
+$backendJob = Start-Job -Name "dortgoz-backend" -ArgumentList $BackendDir, $uvPath, $UseMock, $env:DORTGOZ_DEPLOYMENT_PROFILE, $env:DORTGOZ_EVENT_STORE_PATH, $BindHost -ScriptBlock {
+    param($WorkingDirectory, $UvExecutable, $UseMock, $DeploymentProfile, $EventStorePath, $BindHost)
 
     $ErrorActionPreference = "Continue"
     Set-Location $WorkingDirectory
@@ -137,20 +139,26 @@ $backendJob = Start-Job -Name "dortgoz-backend" -ArgumentList $BackendDir, $uvPa
         $env:DORTGOZ_DEPLOYMENT_PROFILE = $DeploymentProfile
         $env:DORTGOZ_EVENT_STORE_PATH = $EventStorePath
     }
-    & $UvExecutable run uvicorn dortgoz.main:app --host 0.0.0.0 --port 8000
+    & $UvExecutable run uvicorn dortgoz.main:app --host $BindHost --port 8000
 }
 
-$frontendJob = Start-Job -Name "dortgoz-frontend" -ArgumentList $FrontendDir, $bunPath -ScriptBlock {
-    param($WorkingDirectory, $BunExecutable)
+$frontendJob = Start-Job -Name "dortgoz-frontend" -ArgumentList $FrontendDir, $bunPath, $BindHost -ScriptBlock {
+    param($WorkingDirectory, $BunExecutable, $BindHost)
 
     $ErrorActionPreference = "Continue"
     Set-Location $WorkingDirectory
-    & $BunExecutable run dev -- --host 0.0.0.0
+    & $BunExecutable run dev -- --host $BindHost
 }
 
 $jobs = @($backendJob, $frontendJob)
 
 Write-Host "Dörtgöz geliştirme sunucuları başlatıldı ($(if ($UseMock) { 'mock' } else { 'gerçek' }) mod)." -ForegroundColor Green
+if ($Remote.IsPresent) {
+    Write-Host "UYARI: -Remote açık. Backend ve arayüz tüm ağ arabirimlerine ($BindHost) bağlandı." -ForegroundColor Yellow
+    Write-Host "Kimlik doğrulama yoktur. Yalnız güvenilen özel ağ/LAN üzerinde kullanın." -ForegroundColor Yellow
+} else {
+    Write-Host "Bağlantı: yalnız $BindHost (uzak erişim için -Remote)." -ForegroundColor DarkGray
+}
 if (-not $UseMock) {
     Write-Host "Profil: competition-real | SQLite: $env:DORTGOZ_EVENT_STORE_PATH"
 }
