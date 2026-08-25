@@ -18,15 +18,6 @@
   ],
   "external_prerequisites": [
     {
-      "component": "primary-local-vlm",
-      "required_for": "real local_vlm analysis only",
-      "status": "not_bundled",
-      "manifest_env": "DORTGOZ_VLM_MANIFEST_PATH",
-      "manifest_schema": "models/vlm/manifest.template.json",
-      "required_license": ["Apache-2.0", "MIT"],
-      "verification": "The application validates the local artifact SHA-256 before each real-profile run."
-    },
-    {
       "component": "ffmpeg-and-ffprobe",
       "required_for": "real video ingest only",
       "status": "not_bundled",
