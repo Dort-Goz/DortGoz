@@ -260,12 +260,22 @@ class DeploymentReadinessService:
         try:
             index = LocalProcedureIndex.load(root, manifest)
             approved = sum(document.approved_for_demo for document in index.manifest.documents)
+            usable = len(index.usable_documents())
             if required and approved == 0:
                 raise ValueError("onaylı yerel prosedür belgesi yok")
+            if required and usable == 0:
+                raise ValueError(
+                    f"onaylı {approved} prosedür belgesinin hiçbiri bugün geçerli değil "
+                    "(valid_from/valid_until penceresi doldu)"
+                )
         except Exception as exc:
             return self._component(required, False, str(exc))
-        result = self._component(required, approved > 0, "yerel prosedür manifest doğrulandı")
-        result.update({"manifest_path": str(manifest), "approved_documents": approved})
+        result = self._component(required, usable > 0, "yerel prosedür manifest doğrulandı")
+        result.update({
+            "manifest_path": str(manifest),
+            "approved_documents": approved,
+            "usable_documents": usable,
+        })
         return result
 
     @staticmethod

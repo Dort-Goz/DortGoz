@@ -56,12 +56,16 @@ class LocalProcedureIndex:
             index._verify(document)
         return index
 
-    def find(self, event_type: VerifiedEventType, risk_level: RiskLevel, *, on_date: date | None = None) -> list[tuple[ProcedureDocument, ProcedureSection, ProcedureSource]]:
+    def usable_documents(self, *, on_date: date | None = None) -> list[ProcedureDocument]:
         today = on_date or date.today()
+        return [
+            document for document in self.manifest.documents
+            if document.approved_for_demo and self._is_current(document, today)
+        ]
+
+    def find(self, event_type: VerifiedEventType, risk_level: RiskLevel, *, on_date: date | None = None) -> list[tuple[ProcedureDocument, ProcedureSection, ProcedureSource]]:
         matches = []
-        for document in self.manifest.documents:
-            if not document.approved_for_demo or not self._is_current(document, today):
-                continue
+        for document in self.usable_documents(on_date=on_date):
             if event_type not in document.event_types or risk_level not in document.risk_levels:
                 continue
             source_base = dict(document_id=document.document_id, version=document.version, valid_from=document.valid_from, content_hash=document.content_hash)

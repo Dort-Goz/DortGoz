@@ -7,7 +7,7 @@
       "version": "1.0.0",
       "content_hash": "acf71e4f5249730cc297abc01c815cbcbd7c56991771c04622ac96f0db892904",
       "valid_from": "2026-08-23",
-      "valid_until": "2026-08-26",
+      "valid_until": "2026-10-31",
       "approved_for_demo": true,
       "event_types": [
         "unknown_anomaly",

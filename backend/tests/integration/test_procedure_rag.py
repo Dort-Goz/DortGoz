@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -43,6 +44,23 @@ def test_repo_demo_procedure_manifest_is_hash_valid() -> None:
     root = Path(__file__).resolve().parents[3] / "data" / "procedures"
     index = LocalProcedureIndex.load(root, root / "manifest.json")
     assert any(document.approved_for_demo for document in index.manifest.documents)
+    assert index.usable_documents(), "onaylı belge var ama bugün geçerli değil"
+    assert index.usable_documents(on_date=date(2026, 10, 4)), (
+        "prosedür belgesi TEKNOFEST ödül töreni bitmeden geçersizleşiyor"
+    )
+
+
+def test_expired_document_is_not_usable(tmp_path: Path) -> None:
+    index = _index(tmp_path)
+    manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
+    manifest["documents"][0]["valid_until"] = "2026-01-02"
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    expired = LocalProcedureIndex.load(tmp_path, tmp_path / "manifest.json")
+
+    assert expired.manifest.documents[0].approved_for_demo
+    assert not expired.usable_documents(on_date=date(2026, 8, 25))
+    assert not expired.find(VerifiedEventType.FIRE_SMOKE, RiskLevel.CRITICAL, on_date=date(2026, 8, 25))
+    assert index.usable_documents(on_date=date(2026, 8, 25))
 
 
 def test_hash_mismatch_rejects_local_document(tmp_path: Path) -> None:
