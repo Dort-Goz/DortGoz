@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from collections import Counter
 from collections.abc import AsyncIterator
@@ -65,7 +66,7 @@ def metadata(video_id: str) -> VideoMetadata:
         stored_filename=f"{video_id}.mp4",
         media_path=f"{video_id}.mp4",
         file_size_bytes=1024,
-        file_hash_sha256="b" * 64,
+        file_hash_sha256=hashlib.sha256(video_id.encode()).hexdigest(),
         container="mov",
         codec="h264",
         width=640,
