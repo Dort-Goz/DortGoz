@@ -29,24 +29,130 @@ video / canlı akış
 herhangi bir OpenAI-uyumlu yerel uçta çalışır. Ayrıntı ve diyagram:
 [`docs/MIMARI.md`](docs/MIMARI.md).
 
-## Hızlı başlangıç
+## Kurulum ve ilk çalıştırma
 
-GPU/model gerektirmeyen arayüz test akışı:
+### Ön koşullar
+
+| Araç | Niçin gerekir |
+|---|---|
+| Git | depoyu klonlamak için |
+| [`uv`](https://docs.astral.sh/uv/) | backend Python 3.12 ortamını lock dosyasına göre kurar |
+| [Bun](https://bun.sh/) | konsolu derler ve çalıştırır |
+| `ffmpeg` + `ffprobe` | **yalnız gerçek video analizi için** |
+
+Arayüz test akışı GPU, model ağırlığı ve ffmpeg istemez.
+
+### Adım 1 — arayüz test akışı (kurulum doğru mu?)
 
 ```bash
-./scripts/dev.sh          # Linux/macOS
+git clone https://github.com/Dort-Goz/DortGoz.git
+cd DortGoz
+./scripts/dev.sh                       # Windows: .\scripts\dev.ps1
 ```
 
-```powershell
-.\scripts\dev.ps1         # Windows
+Konsol `http://localhost:5173` adresinde açılır. “Başlat” düğmesi kayıtlı bir
+örnek olay akışını oynatır. **Bu kip video analizi yapmaz**; yalnız arayüz olay
+sözleşmesini gösterir. Burası çalışıyorsa kurulum sağlandır.
+
+Durdurmak için terminalde `Ctrl+C` kullanın.
+
+### Adım 2 — örnek video indirin
+
+Depoda video klibi yoktur. Gerçek analiz için `media/` klasörü dolu olmalıdır.
+
+```bash
+python scripts/fetch_ucf_samples.py    # sabit örnek liste, herkese açık kaynak
 ```
 
-Bu kip yalnız arayüz olay sözleşmesini oynatır ve video analizi yapmaz. Gerçek
-analiz için `.env.example` dosyasını `.env` yapın, uç noktayı ayarlayın ve
-`./scripts/dev.sh real` (veya `.\scripts\dev.ps1 -Real`) kullanın. Arayüz
-`http://localhost:5173`, API `http://localhost:8000`, liveness `/health`,
-readiness `/ready` yolundadır. Adım adım temiz kurulum:
-[`docs/SETUP.md`](docs/SETUP.md).
+Kendi videolarınızı da `media/` altına kopyalayabilir veya konsoldaki
+“Video yükle” düğmesini kullanabilirsiniz.
+
+### Adım 3 — yerel algı modellerini indirin
+
+Model ağırlıkları depoya girmez. İki yerel bileşen vardır ve ikisi de CPU'da
+çalışır.
+
+```bash
+./scripts/fetch_models.sh              # D-FINE dedektörü (41 MB)
+```
+
+Betik dosyayı `~/.cache/dortgoz/dfine/` altına koyar. Backend bu yolu kendisi
+bulur; ek ayar gerekmez.
+
+SigLIP-2 screening artifact'i (~355 MB) tek seferlik bir aktarım ister ve
+`torch` + `transformers` gerektirir. Bu paketler backend bağımlılıklarında
+yoktur; aktarımı ayrı bir sanal ortamda yapın:
+
+```bash
+python -m venv /tmp/siglip && /tmp/siglip/bin/pip install torch transformers onnxruntime numpy
+/tmp/siglip/bin/python scripts/export_siglip.py
+```
+
+**Bu adım atlanabilir.** `development` profilinde screening artifact'i yoksa sistem
+hareket temelli bir temel modele düşer, izleme paneline `anlamsal screening
+düştü` satırını yazar ve koşmaya devam eder. Yalnız kalite düşer.
+
+### Adım 4 — çıkarım ucunu tanımlayın
+
+```bash
+cp .env.example .env
+```
+
+`.env` içinde en az şunları doldurun:
+
+```ini
+DORTGOZ_MOCK=0
+DORTGOZ_LLAMA_BASE_URL=https://<openai-uyumlu-ucunuz>/v1
+DORTGOZ_API_KEY=<anahtarınız>
+```
+
+Model takma adları (`DORTGOZ_VIDEO_MODEL`, `DORTGOZ_MAIN_MODEL`, …) ucunuzun
+`/v1/models` çıktısındaki adlarla eşleşmelidir. **Uyarı:** geçersiz bir ad hata
+vermez, sessizce varsayılana yönlenir.
+
+Uç herhangi bir OpenAI-uyumlu servis olabilir: yarışmanın sağladığı EVREN, yerel
+bir llama.cpp veya vLLM örneği. Bulut servisi kullanılmaz.
+
+### Adım 5 — gerçek analizi başlatın
+
+```bash
+cd backend && uv run python ../scripts/preflight.py --root .. --mode real --check-tools && cd ..
+./scripts/dev.sh real                  # Windows: .\scripts\dev.ps1 -Real
+```
+
+Preflight geçmeden uygulama gerçek profili açmaz. Bu bilinçli bir güvenlik
+kapısıdır.
+
+Konsolda üst çubuktan bir kaynak seçin ve “Başlat”ı tıklayın. API
+`http://localhost:8000`, liveness `/health`, readiness `/ready` yolundadır.
+
+### İki dağıtım profili
+
+| Profil | Ne yapar | Ne zaman kullanılır |
+|---|---|---|
+| `development` (varsayılan) | Eksik yerel bileşen varsa uyarıp düşer, koşmaya devam eder | Geliştirme, deneme, **yeni klon** |
+| `competition-real` | D-FINE dağıtımını, SigLIP artifact'ini, prosedür manifestini ve uç kimliğini **zorunlu** sayar; eksikse analiz hiç başlamaz | Değerlendirme koşusu |
+
+Profil `.env` içinde `DORTGOZ_DEPLOYMENT_PROFILE` ile seçilir. Hangi bileşenin
+hazır olmadığını `GET /ready` çıktısı bileşen bileşen söyler.
+
+⚠ `competition-real`, D-FINE için yalnız ONNX dosyasını değil, model kaydından
+üretilmiş **hash doğrulamalı bir aktif dağıtım manifesti** ister
+(`models/dfine/local/active_manifest.json`). Bu manifest `fetch_models.sh` ile
+gelmez; dağıtım hattı (`scripts/dfine_feedback_training.py`) tarafından bir kez
+üretilir. **Yeni bir klonda `development` profilini kullanın.**
+
+Adım adım temiz kurulum ve uzaktan erişim: [`docs/SETUP.md`](docs/SETUP.md).
+
+### Sık karşılaşılan durumlar
+
+| Belirti | Sebep ve çözüm |
+|---|---|
+| Kaynak listesi boş | `media/` boş. Adım 2'yi çalıştırın |
+| `competition-real analiz kapısı kapalı` | Zorunlu bir yerel bileşen eksik. `GET /ready` hangisi olduğunu söyler |
+| İzlemede `dedektör kapatıldı` | D-FINE ONNX bulunamadı. Adım 3'ü çalıştırın veya `DORTGOZ_DFINE_ONNX` yolunu düzeltin |
+| İzlemede `anlamsal screening düştü` | SigLIP artifact'i yok. Sistem temel modele düştü, koşu geçerlidir |
+| Konsol tamamen boş | Vite proxy `127.0.0.1` kullanmalıdır; `localhost` bazı Node sürümlerinde IPv6'ya çözülür |
 
 ## Doğrulama
 
@@ -79,12 +185,67 @@ kaynaklardan indirilir:
   SHA-256 doğrulama: `python scripts/fetch_uca.py`. Atıf:
   [`data/uca/CITATION.bib`](data/uca/CITATION.bib).
 
+## Şartname dışı eklenen yetenekler
+
+Şartnamenin istediği çekirdek — video girdisi, olay tespiti, Türkçe özet, JSON
+çıktı ve ajan araçları — dışında aşağıdaki yetenekler eklendi. Her biri ölçüm
+veya operatör ihtiyacı sonucunda doğdu.
+
+**Operatör iş akışı**
+
+- **Olay inceleme merkezi.** İnsan incelemesi isteyen olaylar öncelik puanıyla
+  sıralanır. Operatör doğru sınıfı, riski ve olay sınırlarını düzeltir. Karar
+  kalıcı deftere yazılır.
+- **Çok kamera duvarı.** Birden çok akış eşzamanlı çözümlenir; şerit her akışın
+  hızını, ilerlemesini ve en kötü riskini gösterir.
+- **Canlı kamera modu.** RTSP/HLS akışları segmentlenir ve aynı hattan geçer.
+- **Analiz paketi dışa/içe aktarımı.** Bir koşu akış, özet, video ve kanıt
+  kareleriyle tek `.zip` olur. Paket başka bir kuruluma aktarılır ve sohbet ajanı
+  paket üzerinde tam yetenekle çalışır.
+
+**Güvenlik ve doğrulanabilirlik**
+
+- **Kanıt doğrulayıcı.** Model her iddiasını bir kare kimliğine bağlar. Kimlik,
+  zaman ve SHA-256 doğrulanmazsa iddia düşer (fail-closed).
+- **İnsan kapılı dış aksiyon taslakları.** Ajan emniyet veya sağlık bildirimi
+  hazırlayabilir. Taslak yalnız operatör onayıyla üretilir ve **hiçbir zaman dış
+  kuruma gönderilmez**.
+- **Kaynaklı prosedür getirme.** Öneri metni belge kimliği, bölüm, sürüm ve
+  içerik hash'i ile birlikte gelir.
+- **Hazırlık denetimi.** `GET /ready` her zorunlu bileşeni tek tek raporlar.
+  Yarışma profilinde eksik bileşen analizi başlatmaz.
+
+**Kalite ve öğrenme**
+
+- **İki aşamalı yerel eleme.** SigLIP-2 semantik screening aday aralıklarını
+  seçer; D-FINE kişi tespiti eleme dışı kalan pencereleri geri açar.
+- **Olay-geneli ikinci geçiş.** Olay kapanınca tüm aralık tek çağrıda yeniden
+  okunur ve anlatı bütünlenir.
+- **Öğrenme merkezi.** İnsan onaylı geliştirme rotaları, öncelik kuyruğu ve
+  gölge kayma gözcüsü. Otomatik eğitim ve canlı modele otomatik terfi kapalıdır.
+- **Güven kalibrasyonu.** Platt ölçeklemesi saf Python ile yazıldı. Ölçüm: Brier
+  0,1372 → 0,0853.
+- **Deney paneli.** Model ve istem koşu başına değiştirilir; etkin yapılandırma
+  koşu kaydına yazılır, böylece hangi istemin hangi çıktıyı ürettiği izlenir.
+
 ## Dokümantasyon
 
-- [Mimari özet ve diyagram](docs/MIMARI.md)
+Şartname §6 “Teslim edilmesi gerekenler” karşılıkları:
+
+| İstenen | Nerede |
+|---|---|
+| Sistem mimarisi özeti ve diyagramı | [`docs/MIMARI.md`](docs/MIMARI.md) |
+| Kullanılan agentic framework ve LLM'ler | [`docs/MIMARI.md`](docs/MIMARI.md) §Model rolleri |
+| İmplemente edilen senaryolar ve mock fonksiyonlar | [`docs/MIMARI.md`](docs/MIMARI.md) §Ajan bileşenleri |
+| Adım adım kurulum ve çalıştırma | Bu dosyada §Kurulum, [`docs/SETUP.md`](docs/SETUP.md) |
+| Karşılaşılan zorluklar ve çözümler | [`docs/ZORLUKLAR.md`](docs/ZORLUKLAR.md) |
+| Eklenen ek özellikler | Bu dosyada §Şartname dışı eklenen yetenekler |
+| Ölçümleme sonuçları | [`docs/BENCHMARK_REPORT.md`](docs/BENCHMARK_REPORT.md) |
+| Ölçekleme noktasında gerekli ihtiyaçlar | [`docs/OLCEKLEME.md`](docs/OLCEKLEME.md) |
+
+Diğer belgeler:
+
 - [Mimari karar kaydı](DORTGOZ_ARCHITECTURE_BASELINE.md)
-- [GitHub'dan temiz kurulum](docs/SETUP.md)
-- [Benchmark raporu](docs/BENCHMARK_REPORT.md)
 - [Üçüncü taraf lisans bildirimleri](THIRD_PARTY_NOTICES.md)
 
 ## Lisans ve veri politikası
