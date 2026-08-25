@@ -214,6 +214,7 @@ kolda 0/5 yanlış alarm ve aynı sabit kaçırma çekirdeği. Fark, belgelenmi�
 **Kurulum.** Derleme tek seferliktir (D-FINE ~5,6 dk, SigLIP ~1,5 dk) ve `.mxr`
 olarak diske yazılır. `scripts/build_migraphx.sh` yeniden üretir. Artifact'lar
 `~/.cache/dortgoz/migraphx/` altındadır (94-416 MB, repo dışı).
+Adım adım açma yordamı ve ayar değişkenleri: [`SETUP.md`](SETUP.md) §3.4.
 
 **Bütünlük.** Manifest kaynak ONNX'in SHA-256 değerini tutar. Kaynak değişirse GPU
 yolu kapanır ve sistem CPU'ya döner. `DORTGOZ_MIGRAPHX_DIR` boşsa GPU yolu

@@ -93,6 +93,49 @@ python -m venv /tmp/siglip && /tmp/siglip/bin/pip install torch transformers onn
 hareket temelli bir temel modele düşer, izleme paneline `anlamsal screening
 düştü` satırını yazar ve koşmaya devam eder. Yalnız kalite düşer.
 
+#### İsteğe bağlı: yerel algıyı GPU'da çalıştırın
+
+SigLIP ve D-FINE varsayılan olarak CPU'da çalışır. GPU'nuz varsa açın — tam test
+bölmesinde yerel ayak **3.497 sn'den 389 sn'ye** indi.
+
+**NVIDIA (CUDA).** Önce GPU çalışma zamanını kurun:
+
+```bash
+cd backend && uv pip install onnxruntime-gpu nvidia-cudnn-cu12 nvidia-cublas-cu12 \
+  nvidia-cufft-cu12 nvidia-curand-cu12
+```
+
+Sonra `.env` içine yazın:
+
+```ini
+DORTGOZ_ONNX_DEVICE=auto     # varsa GPU, yoksa sessizce CPU
+# DORTGOZ_ONNX_DEVICE=gpu    # GPU iste; yoksa uyarı basıp CPU'ya döner
+```
+
+⚠ `uv sync --locked` bu kurulumu **geri alır** (kilit dosyasında CPU sürümü
+vardır). `./scripts/dev.sh real` sonrası tekrar kurun.
+
+**AMD (ROCm / MIGraphX).** ROCm ve `migraphx-driver` kurulu olmalıdır. Derleme tek
+seferliktir (D-FINE ~5,6 dk, SigLIP ~1,5 dk):
+
+```bash
+./scripts/build_migraphx.sh
+```
+
+Betik `~/.cache/dortgoz/migraphx/` altına `.mxr` dosyalarını ve bir manifest yazar,
+sonra `.env` satırını ekrana basar:
+
+```ini
+DORTGOZ_MIGRAPHX_DIR=~/.cache/dortgoz/migraphx
+```
+
+**Doğrulama.** Backend günlüğünde `MIGraphX siglip etkin` ve `MIGraphX dfine
+etkin` satırlarını arayın. `MIGraphX ... kullanılmıyor, CPU sürüyor` görürseniz
+GPU yolu kapalıdır; satır sebebi yazar.
+
+Seçenekler ve ölçümler: [`docs/SETUP.md`](docs/SETUP.md) §3.4 ve
+[`docs/OLCEKLEME.md`](docs/OLCEKLEME.md) §4.2.
+
 ### Adım 4 — çıkarım ucunu tanımlayın
 
 ```bash

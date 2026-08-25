@@ -89,7 +89,91 @@ bir klonda `development` profilini kullanın.**
 
 Hangi bileşenin hazır olmadığını `GET /ready` çıktısı bileşen bileşen söyler.
 
-### 3.4. Başlatma
+### 3.4. Yerel algı donanımı (isteğe bağlı GPU)
+
+SigLIP-2 ve D-FINE varsayılan olarak CPU'da çalışır. Bu her makinede çalışır ve
+hiçbir ayar istemez. GPU'nuz varsa açabilirsiniz.
+
+#### Ayar değişkenleri
+
+| Değişken | Varsayılan | Anlam |
+|---|---|---|
+| `DORTGOZ_ONNX_DEVICE` | `cpu` | `cpu`, `auto` veya `gpu`/`cuda`. `auto` GPU yoksa sessizce CPU'ya düşer; `gpu` aynı şekilde düşer ama uyarı basar |
+| `DORTGOZ_ONNX_PROVIDERS` | boş | Sağlayıcı listesini elle verir, `DORTGOZ_ONNX_DEVICE` değerini ezer. Örnek: `CUDAExecutionProvider` |
+| `DORTGOZ_MIGRAPHX_DIR` | boş | Derlenmiş MIGraphX artifact dizini. Boşsa AMD GPU yolu kapalıdır |
+| `DORTGOZ_ONNX_INTRA_THREADS` | `4` | CPU'da kalan iş için iş parçacığı sayısı |
+| `DORTGOZ_LOCAL_INFERENCE_LIMIT` | `2` | Eşzamanlı yerel çıkarım sayısı (1-8) |
+
+İki GPU yolu ayrıdır ve birbirini gerektirmez.
+
+#### NVIDIA (CUDA)
+
+ONNX Runtime'ın GPU sürümü ve CUDA kitaplıkları gerekir:
+
+```bash
+cd backend
+uv pip install onnxruntime-gpu nvidia-cudnn-cu12 nvidia-cublas-cu12 \
+  nvidia-cufft-cu12 nvidia-curand-cu12
+```
+
+`.env` içine ekleyin:
+
+```ini
+DORTGOZ_ONNX_DEVICE=auto
+```
+
+⚠ **`uv sync --locked` bu kurulumu geri alır.** Kilit dosyası CPU sürümünü
+tutar; `onnxruntime-gpu` yerel bir geçersiz kılmadır. `./scripts/dev.sh real`
+bağımlılıkları senkronladığı için sonrasında tekrar kurun. İki paket çakıştığı ve
+AMD makineleri bozduğu için `pyproject.toml`'a konmamıştır.
+
+Bu yolun uçtan uca kazancı %7-10'dur.
+
+#### AMD (ROCm / MIGraphX)
+
+ROCm ve `/opt/rocm/bin/migraphx-driver` kurulu olmalıdır. Modeller bir kez
+derlenir:
+
+```bash
+./scripts/build_migraphx.sh
+```
+
+Betik sabit şekilli ONNX kopyaları üretir, D-FINE'ı fp32 ve SigLIP'i fp16 olarak
+derler, `.mxr` dosyalarını ve bir manifest yazar. Derleme süresi D-FINE için
+~5,6 dakika, SigLIP için ~1,5 dakikadır. Çıktı varsayılan olarak
+`~/.cache/dortgoz/migraphx/` altına gider (94-416 MB, repo dışı).
+
+Betik biterken eklenecek satırı ekrana basar:
+
+```ini
+DORTGOZ_MIGRAPHX_DIR=~/.cache/dortgoz/migraphx
+```
+
+Batch boyutları derleme anında sabitlenir. Değiştirmek isterseniz betiği
+`DORTGOZ_DFINE_BATCH` (varsayılan 4) ve `DORTGOZ_SIGLIP_BATCH` (varsayılan 16)
+ile çalıştırın. Sürücü yolu `MIGRAPHX_DRIVER` ile değiştirilebilir.
+
+Bu yolun kazancı tam test bölmesinde ölçüldü: yerel ayak **3.497 sn → 389 sn**
+(SigLIP 27,4×, D-FINE 3,0×).
+
+#### Doğrulama
+
+Backend günlüğünde şu satırları arayın:
+
+- `MIGraphX siglip etkin: siglip.mxr batch=16` — GPU yolu açık.
+- `MIGraphX dfine kullanılmıyor, CPU sürüyor: ...` — GPU yolu kapalı; satır
+  sebebi yazar.
+- `onnx sağlayıcı yok, atlandı: CUDAExecutionProvider` — CUDA kurulumu eksik.
+
+⚠ **Bütünlük kapısı.** MIGraphX manifesti kaynak ONNX dosyasının SHA-256 değerini
+tutar. Kaynak model değişirse derlenmiş artifact reddedilir ve sistem CPU'ya
+döner. Model güncellendiğinde `build_migraphx.sh` yeniden çalıştırılmalıdır.
+
+GPU yolu her iki durumda da **kaliteyi değiştirmez**: SigLIP kosinüs eşliği
+0,999988, D-FINE 0,40 eşiğinde tespitler birebir aynıdır. D-FINE fp16 bilinçli
+olarak kullanılmaz çünkü aynı eşikte tespit sayısını değiştirir.
+
+### 3.5. Başlatma
 
 Aşağıdaki kontrol geçmeden gerçek modu açmayın:
 
