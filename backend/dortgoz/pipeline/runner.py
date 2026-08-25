@@ -204,6 +204,16 @@ class RunRecorder:
         self._fh.flush()
         self._metrics_written = True
 
+    def record_diagnostic(self, payload: dict) -> None:
+        envelope = {
+            "seq": 0,
+            "ts": time.time(),
+            "feed": self.feed,
+            "payload": payload,
+        }
+        self._fh.write(json.dumps(envelope, ensure_ascii=False, separators=(",", ":")) + "\n")
+        self._fh.flush()
+
     def close(self) -> None:
         self._fh.close()
 
@@ -554,6 +564,19 @@ async def run_video(
                 detail=f"aday screening ({scorer_id}): {len(cand_spans)} aralık, "
                        f"kapsama %{100 * cov / max(duration, 1e-9):.0f} — aday dışı "
                        f"pencereler dedektör kurtarması hariç atlanacak"))
+            from .candidate_intervals import sample_score
+            rec.record_diagnostic({
+                "type": "screening_scores",
+                "model": scorer_id,
+                "start_threshold": settings.candidate_start_threshold,
+                "continue_threshold": settings.candidate_continue_threshold,
+                "windows": [
+                    {"start": a, "end": b,
+                     "score": max((sample_score(s) for s in screen_samples
+                                   if a <= s.timestamp < b), default=None)}
+                    for a, b in wins
+                ],
+            })
 
         n_ctx = await context_size(effective_model)
         det_enabled = settings.detector_enabled
