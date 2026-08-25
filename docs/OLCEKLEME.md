@@ -10,18 +10,34 @@ ve tam tablolar [`BENCHMARK_REPORT.md`](BENCHMARK_REPORT.md) içindedir.
 
 ### 1.1. Kayıtlı video analizi
 
-UCF-Crime resmî test bölmesi, 290 klip, 10,30 saat video, 1.380 pencere:
+UCF-Crime resmî test bölmesi, 290 klip, 10,30 saat video, 1.380 pencere.
 
-| Ölçüt | Değer |
+⚠ Aşağıda **iki farklı yapılandırma** vardır. Benimsenen üretim yolu r3'tür:
+giriş genişliği 540 ve yerel algı GPU'da (§4.2).
+
+| Ölçüt | r1 (720, algı CPU'da) | **r3 (540, algı GPU'da) — benimsenen** |
+|---|---:|---:|
+| Toplam iş süresi | 18.699 sn | **13.246 sn** |
+| Uzak model (EVREN) | 15.016 sn | **12.452 sn** |
+| Yerel algı (SigLIP + D-FINE) | 3.497 sn (%18,7) | **389 sn (%2,9)** |
+| Tek akış eşdeğeri | 1,98× | **2,80× gerçek zaman** |
+| Yakalama | 121/140 | 119/140 |
+| Yanlış alarm | 22/150 | **18/150** |
+
+r1'den r3'e toplam iş süresi **%29 azaldı.** İki bağımsız kazanç birleşti:
+giriş genişliği 720→540 (uzak modelde %17,9) ve yerel algının GPU'ya taşınması
+(yerel ayakta 3.497→389 sn).
+
+**Dört eşzamanlı işte geçen gerçek süre.** r1 için ölçüldü: 84,7 dakika, yani
+toplam akış hızı 7,30× gerçek zaman. r3 için aynı eşzamanlılık verimi varsayılırsa
+**yaklaşık 60 dakika ve ~10,3×** beklenir. ⚠ Bu ikinci değer **türetilmiştir,
+ölçülmemiştir**: r3 dört eşzamanlı iş altında ayrıca zamanlanmadı.
+
+| Ölçüt (r1'de ölçüldü) | Değer |
 |---|---:|
-| Duvar süresi (dört eşzamanlı iş) | 84,7 dk |
-| Toplam akış hızı | **7,30× gerçek zaman** |
-| Tek akış eşdeğeri | 1,98× gerçek zaman |
 | Ortanca klip işleme | 36,4 sn |
 | p95 klip işleme | 185,1 sn |
 | Toplam model çağrısı | 1.818 |
-
-Bir sunucu, dört eşzamanlı iş ile **saatte yaklaşık 7,3 saat video** işler.
 
 ### 1.2. Canlı akış
 
@@ -41,24 +57,25 @@ listenizi kapasitenize göre kısaltın.
 
 ### 1.3. Zaman nereye gidiyor
 
-290 klip, 10,30 saat video, toplam 18.686 saniye çalışma süresi. **Bu döküm yerel
-algı CPU'da koşarken ölçüldü** (GPU taşıması için §4.2'ye bakın).
+Benimsenen yapılandırmada (r3: 540, yerel algı GPU'da) 290 klip için toplam iş
+süresi 13.246 saniyedir.
 
 | Bileşen | Süre | Pay |
 |---|---:|---:|
-| Uzak model çağrıları (EVREN) | 15.016 sn | %80,4 |
-| SigLIP-2 screening (yerel) | 2.614 sn | %14,0 |
-| D-FINE dedektör (yerel) | 883 sn | %4,7 |
-| Klip kodlama | 483 sn | %2,6 |
-| Hareket profili | 87 sn | %0,5 |
+| Uzak model çağrıları (EVREN) | 12.452 sn | **%94,0** |
+| D-FINE dedektör (yerel, GPU) | 294 sn | %2,2 |
+| SigLIP-2 screening (yerel, GPU) | 95 sn | %0,7 |
+| Diğerleri (klip kodlama, hareket profili, ısı) | ~405 sn | %3,1 |
 
-Uzak çağrıların içinde `primary:vlm` tek başına 11.822 saniyedir. Bu, **toplamın
-%63,3'üdür.**
+**Yerel algı artık ölçülebilir bir maliyet değildir.** GPU taşımasından önce
+yerel ayak toplamın %18,7'siydi; şimdi **%2,9**'dur.
 
-**Darboğaz uzak modeldir.** Yerel iş toplamın yalnız %21,8'idir. Bu, yerel
-optimizasyonun tavanıdır. GPU taşıması yerel ayağı 8,8× ve 3,3× hızlandırdı,
-ancak toplam süredeki kazanç bu tavanla sınırlıdır. **Gerçek hız işi
-`primary:vlm` tarafındadır.**
+**Sonuç: darboğaz artık tamamen uzak modeldir.** Yerel taraftan alınabilecek en
+büyük kazanç toplamın %3'üdür. Bundan sonraki her hız işi EVREN çağrılarını
+azaltmak veya kısaltmak zorundadır.
+
+CPU döneminde (r1) `primary:vlm` tek başına toplamın %63,3'üydü; GPU taşımasından
+sonra uzak çağrıların toplam payı %94'e çıktı.
 
 Rol bazında ortalama çağrı süresi:
 
@@ -171,6 +188,18 @@ değişmedi.
 |---|---:|---:|---:|
 | SigLIP | 142,0 sn | **16,1 sn** | **8,8×** |
 | D-FINE | 69,3 sn | **21,2 sn** | **3,3×** |
+
+Tam bölmede (290 klip) kazanç daha da büyüktür, çünkü batch-16 fp16 daha uzun
+korpusta daha iyi amorti olur:
+
+| Bileşen | r1 (CPU) | r3 (GPU) | Kazanç |
+|---|---:|---:|---:|
+| SigLIP | 2.613,5 sn | **95,2 sn** | **27,4×** |
+| D-FINE | 883,5 sn | **293,9 sn** | **3,0×** |
+| Yerel toplam | 3.497,0 sn | **389,1 sn** | **9,0×** |
+
+**Bu değerler benimsenen üretim yapılandırmasının içindedir.** §1'deki r3
+sütunu GPU yolunu zaten kullanır.
 
 **⚠ Yalıtılmış çekirdek hızından boru hattı kazancı çıkarmayın.** 202× mikro
 ölçüm boru hattında 8,8× olur, çünkü sayacın içinde ffmpeg kare çıkarma da vardır.
