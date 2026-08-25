@@ -68,3 +68,42 @@ jobs:
       - name: TypeScript ve üretim derlemesini çalıştır
         working-directory: frontend
         run: bun run build
+
+  release-gate:
+    name: Teslim kapısı
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kodu al
+        uses: actions/checkout@v6
+
+      - name: uv ve Python kur
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Bun kur
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Bağımlılık ağacını kur
+        run: |
+          cd backend && uv sync --locked
+          cd ../frontend && bun install --frozen-lockfile
+
+      - name: Sır tarayıcısını doğrula
+        run: python scripts/release_gate.py --selftest
+
+      - name: İzlenen dosya ve sır taraması
+        run: python scripts/release_gate.py
+
+      - name: SBOM üret ve lisans kapısını çalıştır
+        run: python scripts/sbom.py --out sbom.json --check
+
+      - name: SBOM'u artıfakt olarak yükle
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
