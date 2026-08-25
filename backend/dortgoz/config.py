@@ -148,7 +148,7 @@ class Settings(BaseSettings):
     vlm_timeout_seconds: float = 1800.0
     vlm_context_clip_timeout_seconds: float = 180.0
     video_input_max_seconds: float = Field(default=260.0, gt=0, le=260.0)
-    video_input_width: int = Field(default=720, ge=240, le=1280)
+    video_input_width: int = Field(default=540, ge=240, le=1280)
     vlm_context_before_seconds: float = 8.0
     vlm_context_after_seconds: float = 8.0
 
