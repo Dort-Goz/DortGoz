@@ -25,6 +25,8 @@ models/**/*.bin
 !backend/dortgoz/fixtures/ui_replay_events.jsonl
 !bench/results/**/*.jsonl
 
+bench/results/**/media/
+
 local/
 .env
 *.db
