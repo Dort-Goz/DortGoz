@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import os
 import re
 import subprocess
 import time
@@ -105,7 +106,7 @@ def family(path: Path) -> str:
 
 
 def ucf_root(value: Path | None) -> Path:
-    root = (value or Path("~/datasets/Dort_Goz/UCF_Crimes")).expanduser().resolve()
+    root = (value or Path(os.environ.get("DORTGOZ_UCF_DIR", "~/UCF_Crimes"))).expanduser().resolve()
     if (root / "Videos").is_dir():
         return root
     if root.name == "Videos" and root.is_dir():

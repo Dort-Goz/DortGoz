@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -u
-cd ~/DortGoz/backend
+cd "$(dirname "$0")/../backend"
 for R in _r2 _r3; do
   echo "=== [$(date +%H:%M:%S)] özel istem ${R} ==="
   DORTGOZ_MAIN_MODEL=qwen3.8-27b-vision-dg timeout 14400 uv run python \

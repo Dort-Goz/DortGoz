@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -u
-cd ~/DortGoz/backend
+cd "$(dirname "$0")/../backend"
 for R in "" _r2 _r3; do
   AD="${R:-_r1}"
   echo "=== [$(date +%H:%M:%S)] donmuş profil replika ${AD} ==="

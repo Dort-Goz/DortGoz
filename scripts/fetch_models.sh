@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEST="${1:-~/.cache/dortgoz/dfine}"
+DEST="${1:-$HOME/.cache/dortgoz/dfine}"
 BASE="https://huggingface.co/onnx-community/dfine_s_coco-ONNX/resolve/main"
 
 mkdir -p "$DEST"

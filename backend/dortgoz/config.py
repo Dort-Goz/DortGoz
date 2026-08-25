@@ -37,7 +37,7 @@ if _ENV_PATH.is_file():
 
 
 class Settings(BaseSettings):
-    llama_base_url: str = "https://inference.example.invalid/v1"
+    llama_base_url: str = "http://127.0.0.1:8080/v1"
     api_key: str = ""
 
     main_model: str = "llm-fast"
@@ -107,7 +107,7 @@ class Settings(BaseSettings):
     adjudicate_min_conf: float = 0.0
     adjudicate_frame_width: int = 512
     detector_enabled: bool = True
-    dfine_onnx: str = "~/.cache/dortgoz/dfine/model.onnx"
+    dfine_onnx: str = ""
     dfine_active_manifest: Path = (
         Path(__file__).resolve().parents[2]
         / "models"

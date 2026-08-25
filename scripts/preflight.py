@@ -27,7 +27,7 @@ CLOUD_TELEMETRY_VARS = ("LANGSMITH_TRACING", "LANGCHAIN_TRACING_V2")
 DISABLED_VALUES = {"", "0", "false", "no", "off"}
 TRACKED_RUNTIME_PREFIXES = ("runs/", "cache/", "models/candidate/local/")
 TRACKED_MODEL_SUFFIXES = (".gguf", ".safetensors", ".bin")
-PORTABILITY_MARKERS = ("C:\\Users\\kullanici", "~/datasets/Dort_Goz")
+PORTABILITY_MARKERS = ("C:\\Users\\", "/mnt/", "/home/")
 PORTABILITY_FILES = (
     ".env.example",
     "scripts/make_long_feed.py",
@@ -125,8 +125,12 @@ def _verify_real_config(root: Path, errors: list[str]) -> None:
     if not values.get("DORTGOZ_EVENT_STORE_PATH"):
         errors.append("competition-real profilinde DORTGOZ_EVENT_STORE_PATH zorunlu")
     base_url = values.get("DORTGOZ_LLAMA_BASE_URL", "")
-    if not base_url.startswith("https://") or "inference.example.invalid" not in base_url:
-        errors.append("DORTGOZ_LLAMA_BASE_URL EVREN HTTPS çıkarım ucunu göstermeli")
+    if (
+        not base_url.startswith("https://")
+        or "127.0.0.1" in base_url
+        or "localhost" in base_url
+    ):
+        errors.append("DORTGOZ_LLAMA_BASE_URL yerel olmayan HTTPS çıkarım ucunu göstermeli")
     if not values.get("DORTGOZ_API_KEY"):
         errors.append("DORTGOZ_API_KEY zorunlu")
     expected = {
