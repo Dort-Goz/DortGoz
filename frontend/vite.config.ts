@@ -10,12 +10,18 @@ const apiProxy = {
   "/ws": { target: apiProxyTarget.replace(/^http/, "ws"), ws: true },
 };
 
+const allowedHosts = (process.env.DORTGOZ_ALLOWED_HOSTS ?? "")
+  .split(",")
+  .map((entry) => entry.trim())
+  .filter(Boolean);
+
+const server = {
+  proxy: apiProxy,
+  ...(allowedHosts.length > 0 ? { allowedHosts } : {}),
+};
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  server: {
-    proxy: apiProxy,
-  },
-  preview: {
-    proxy: apiProxy,
-  },
+  server,
+  preview: server,
 });
