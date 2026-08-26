@@ -12,6 +12,10 @@ olay adaylarını zaman damgası, kanıt karesi, belirsizlik, risk gerekçesi ve
 insan incelemesiyle birlikte sunar. Dış kuruma gönderim veya fiziksel işlem
 kendi kendine yapılmaz.
 
+## Demo videosu
+
+[Dörtgöz TEKNOFEST 2026 proje demosunu YouTube'da izleyin.](https://youtu.be/xHLaRKJZjhI)
+
 ## Uçtan uca akış
 
 ```text
