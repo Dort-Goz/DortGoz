@@ -46,6 +46,7 @@ export interface AgentStep {
   node: string;
   status: "start" | "end" | "error";
   detail: string;
+  dialogue_id?: string;
 }
 
 export interface ToolCall {
@@ -54,6 +55,7 @@ export interface ToolCall {
   args: Record<string, unknown>;
   rationale: string;
   result?: string | null;
+  dialogue_id?: string;
 }
 
 export interface WindowSignals {
@@ -132,6 +134,7 @@ export interface ChatMessage {
   role: "operator" | "agent";
   text: string;
   streaming: boolean;
+  dialogue_id?: string;
 }
 
 export interface UICommand {
@@ -185,5 +188,7 @@ export interface OperatorMessage {
   model?: string;
   system_prompt?: string;
   task_prompt?: string;
+  dialogue_id?: string;
+  referenced_event_id?: string;
   mode?: "" | "dengeli" | "temkinli" | "genis";
 }

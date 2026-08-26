@@ -54,6 +54,8 @@ class ActuatorApprovalRegistry:
         actuator: str,
         reason: str,
         incident_id: str | None,
+        *,
+        feed: str = "",
     ) -> ActuatorRequest:
         with self._lock:
             self._make_room()
@@ -63,6 +65,7 @@ class ActuatorApprovalRegistry:
                 actuator=actuator,
                 reason=reason,
                 incident_id=incident_id,
+                feed=feed,
             )
             self._records[request_id] = ActuatorRecord(
                 request=request,
@@ -92,6 +95,8 @@ class ActuatorApprovalRegistry:
                 actuator=actuator,
                 approved=approved,
                 detail=detail,
+                incident_id=record.request.incident_id,
+                feed=record.request.feed,
             )
             record.result = result
             record.resolved_at = datetime.now(UTC)

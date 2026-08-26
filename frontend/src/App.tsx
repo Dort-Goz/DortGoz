@@ -13,10 +13,25 @@ import LearningOrchestratorPanel from "./components/LearningOrchestratorPanel";
 import UploadPanel from "./components/UploadPanel";
 import TrainingReviewPanel from "./components/TrainingReviewPanel";
 import TriagePanel from "./components/TriagePanel";
+import {
+  buildChatMessage,
+  eventBelongsToDialogue,
+  loadDialogueId,
+} from "./lib/agentSession";
 import { includeUploadedVideo, startCanonicalRun } from "./lib/canonicalRun";
 import { consoleReducer, emptyFeed, initialState } from "./state";
 
 const EXPERIMENT_KEY = "dortgoz.experiment";
+
+function browserDialogueId(): string {
+  const createId = () => globalThis.crypto?.randomUUID?.()
+    ?? `dialogue-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  try {
+    return loadDialogueId(sessionStorage, createId);
+  } catch {
+    return createId();
+  }
+}
 
 const CONNECTION_TR: Record<ConnectionState, string> = {
   connecting: "bağlanıyor",
@@ -71,6 +86,7 @@ function Clock() {
 
 export default function App() {
   const [state, dispatch] = useReducer(consoleReducer, initialState);
+  const [dialogueId] = useState(browserDialogueId);
   const socketRef = useRef<DortgozSocket | null>(null);
   const [videos, setVideos] = useState<string[]>([]);
   const [selected, setSelected] = useState("");
@@ -96,13 +112,17 @@ export default function App() {
 
   useEffect(() => {
     const socket = new DortgozSocket(
-      (e: Event) => dispatch({ kind: "event", event: e }),
+      (e: Event) => {
+        if (eventBelongsToDialogue(e, dialogueId)) {
+          dispatch({ kind: "event", event: e });
+        }
+      },
       () => dispatch({ kind: "sync_reset" }),
       { onState: setConnection },
     );
     socketRef.current = socket;
     return () => socket.close();
-  }, []);
+  }, [dialogueId]);
 
   useEffect(() => {
     fetch("/api/videos")
@@ -189,8 +209,15 @@ export default function App() {
     }));
   }, [model, systemPrompt, taskPrompt, interpretCfg]);
 
+  const feed = state.feeds[state.active] ?? emptyFeed;
+
   const send = useMemo(() => ({
-    chat: (text: string) => socketRef.current?.send({ kind: "chat", text }),
+    chat: (text: string) => socketRef.current?.send(buildChatMessage(
+      text,
+      dialogueId,
+      state.active,
+      feed.highlight?.incident_id ?? "",
+    )),
     actuator: (request_id: string, approved: boolean) =>
       socketRef.current?.send({
         kind: "actuator_response",
@@ -198,9 +225,8 @@ export default function App() {
         approved,
         operator: localStorage.getItem("dortgoz.reviewer") ?? "",
       }),
-  }), []);
+  }), [dialogueId, state.active, feed.highlight?.incident_id]);
 
-  const feed = state.feeds[state.active] ?? emptyFeed;
   const run = feed.runStatus;
   const selectFeed = useCallback(
     (name: string) => dispatch({ kind: "select_feed", feed: name }),
@@ -619,7 +645,14 @@ export default function App() {
           <AgentTrace entries={feed.trace} />
         </div>
         <div className="col-span-2 min-h-0">
-          <ChatPanel messages={state.chat} onSend={send.chat} />
+          <ChatPanel
+            messages={state.chat}
+            onSend={send.chat}
+            incident={feed.highlight}
+            contextLabel={`${state.active || "ana kamera"}${
+              feed.highlight ? ` · ${feed.highlight.incident_id}` : ""
+            }`}
+          />
         </div>
         <div className="col-span-2 min-h-0">
           <ActionLog
