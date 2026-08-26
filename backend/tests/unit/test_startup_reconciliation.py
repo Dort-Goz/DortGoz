@@ -190,11 +190,13 @@ def test_interrupted_job_is_terminal_and_counts_toward_daily_budget(tmp_path: Pa
     repository = SqliteEventRepository(database)
     coordinator = ExecutionCoordinator(database)
     now = datetime.now(UTC)
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    started_at = max(midnight, now - timedelta(hours=3))
     queued = repository.create_training_job(_queued_job("budget-job"))
     running = _running_job(
         repository,
         queued,
-        started_at=now - timedelta(hours=3),
+        started_at=started_at,
         boot_id="7" * 32,
     )
     _service(repository, coordinator, boot_id="8" * 32).reconcile(now=now)
@@ -233,7 +235,10 @@ def test_interrupted_job_is_terminal_and_counts_toward_daily_budget(tmp_path: Pa
         ),
     )
 
-    assert training._remaining_daily_gpu_minutes(next_job) == 9
+    elapsed = repository.get_training_job(running.job_id)
+    assert elapsed is not None
+    used_minutes = int((elapsed.elapsed_seconds + 59) // 60)
+    assert training._remaining_daily_gpu_minutes(next_job) == 10 - used_minutes
     with pytest.raises(DfineTrainingError) as raised:
         training.execute(
             interrupted.job_id,
