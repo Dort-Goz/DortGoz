@@ -72,15 +72,17 @@ class AgentStep(BaseModel):
     type: Literal["agent_step"] = "agent_step"
     node: str
     status: Literal["start", "end", "error"]
-    detail: str = ""
+    detail: str = Field(default="", max_length=500)
+    dialogue_id: str = Field(default="", max_length=128)
 
 
 class ToolCall(BaseModel):
     type: Literal["tool_call"] = "tool_call"
-    tool: str
+    tool: str = Field(max_length=128)
     args: dict[str, Any] = {}
-    rationale: str = ""
+    rationale: str = Field(default="", max_length=500)
     result: str | None = None
+    dialogue_id: str = Field(default="", max_length=128)
 
 
 class WindowSignals(BaseModel):
@@ -166,8 +168,9 @@ class ActuatorResult(BaseModel):
 class ChatMessage(BaseModel):
     type: Literal["chat_message"] = "chat_message"
     role: Literal["operator", "agent"]
-    text: str
+    text: str = Field(max_length=8000)
     streaming: bool = False
+    dialogue_id: str = Field(default="", max_length=128)
 
 
 class UICommand(BaseModel):
@@ -178,6 +181,7 @@ class UICommand(BaseModel):
 
 
 class RunStatus(BaseModel):
+
     type: Literal["run_status"] = "run_status"
     run_id: str
     state: Literal["idle", "processing", "done", "error"]
@@ -229,7 +233,7 @@ class Event(BaseModel):
 class OperatorMessage(BaseModel):
 
     kind: Literal["chat", "actuator_response", "start_run", "stop_run", "sync"]
-    text: str = ""
+    text: str = Field(default="", max_length=8000)
     request_id: str = ""
     approved: bool = False
     operator: str = ""
@@ -238,5 +242,7 @@ class OperatorMessage(BaseModel):
     model: str = ""
     system_prompt: str = ""
     task_prompt: str = ""
-    feed: str = ""
+    feed: str = Field(default="", max_length=128)
+    dialogue_id: str = Field(default="", max_length=128)
+    referenced_event_id: str = Field(default="", max_length=128)
     mode: Literal["", "dengeli", "temkinli", "genis"] = ""

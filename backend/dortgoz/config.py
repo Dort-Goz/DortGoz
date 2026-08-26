@@ -88,6 +88,7 @@ class Settings(BaseSettings):
     second_opinion_effort: str = ""
     agent_effort: str = ""
     agent_think_budget: int = 1200
+    agent_timeout_seconds: float = Field(default=120.0, gt=0, le=600)
     interpret_think_budget: int = 2500
     interpret_think_temp: float = 0.0
     dual_read: bool = False

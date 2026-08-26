@@ -588,7 +588,15 @@ async def handle_operator_message(msg: OperatorMessage, *, ws: WebSocket | None 
         if ws is not None:
             await manager.replay_since(ws, msg.from_seq)
     elif msg.kind == "chat":
-        await manager.broadcast(Event.wrap(ChatMessage(role="operator", text=msg.text)))
+        dialogue_id = msg.dialogue_id.strip() or "legacy"
+        await manager.broadcast(Event.wrap(
+            ChatMessage(
+                role="operator",
+                text=msg.text,
+                dialogue_id=dialogue_id,
+            ),
+            feed=msg.feed,
+        ))
         if settings.mock:
             await manager.broadcast(
                 Event.wrap(
@@ -596,13 +604,21 @@ async def handle_operator_message(msg: OperatorMessage, *, ws: WebSocket | None 
                         role="agent",
                         text=f"(mock) Sorunuz alındı: '{msg.text}'. Gerçek modda bu yanıt "
                         f"ajan grafiğinden gelir.",
-                    )
+                        dialogue_id=dialogue_id,
+                    ),
+                    feed=msg.feed,
                 )
             )
         else:
             from .agent.graph import run_chat
 
-            await run_chat(msg.text, manager)
+            await run_chat(
+                msg.text,
+                manager,
+                dialogue_id=dialogue_id,
+                feed=msg.feed if "feed" in msg.model_fields_set else None,
+                referenced_event_id=msg.referenced_event_id,
+            )
     elif msg.kind == "actuator_response":
         try:
             result = action_dispatcher.resolve(

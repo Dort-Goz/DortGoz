@@ -123,12 +123,16 @@ def start(run_id: str, video: str, feed: str = "", *,
     _contexts[feed] = ctx
     if reset_chat:
         from .agent.graph import reset_history
-        reset_history()
+        reset_history(feed=feed)
     return ctx
 
 
 def current() -> RunContext | None:
     return next(reversed(_contexts.values()), None)
+
+
+def get(feed: str) -> RunContext | None:
+    return _contexts.get(feed)
 
 
 def all_contexts() -> list[RunContext]:
