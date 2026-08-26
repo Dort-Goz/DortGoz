@@ -40,7 +40,10 @@ Bu çalışma, EVREN video yolunu eski yerel kare-model sonuçlarından ayrı ö
 - Screening eşikleri: başlangıç `0,80`, devam `0,48`.
 - Candidate manifest SHA-256: `a16aea548000ed1fe7f679b1eb703c3db7d8ee1959f919b9c739792ebe6f7b90`.
 - Çıkarım: EVREN, BF16, vLLM.
-- Tam bölme kodu: `c734887b40a6311a790fe8c9400e1655bf655ba9`.
+- Tam bölme kodu: `c734887b40a6311a790fe8c9400e1655bf655ba9` (r1-r3),
+  `e56b44ca2286c1611908ffb058c7c5ba80b3cfcd` (r4).
+- r4 tekrar üretimi: `bench/evren_quality.py --arm production --split test
+  --parallel 4 --ucf <UCF kökü> --out bench/results/evren_testsplit_production_r4_gpu.jsonl`
 - Sistem istemi SHA-256: `62474711ca079a3af4c33cc8dc655f74a409f1e019310e0714662de7c840b78c`.
 - Görev istemi SHA-256: `65694521936b2f73ad4618b2dc56ce7059919cf13f67462eec1470b2a4d81684`.
 
@@ -107,6 +110,50 @@ darboğazıdır.
 
 ## 6. Hız ve kapasite
 
+### 6.1. Benimsenen yapılandırma — r4, ölçüldü (2026-08-26)
+
+Bu koşu bugünkü üretim yolunu taşır: giriş genişliği 540, yerel algı MIGraphX
+ile GPU'da, `parallel 4`. Kod sürümü `e56b44ca`.
+
+| Ölçüt | Değer |
+|---|---:|
+| **Dört eşzamanlı işte gerçek duvar süresi** | **54,8 dk (3.285 sn)** |
+| **Toplam akış hızı** | **11,29× gerçek zaman** |
+| Toplam iş süresi (bileşen toplamı) | 12.099 sn |
+| Tek-akış eşdeğeri | 3,07× gerçek zaman |
+| Ortanca klip işleme | 24,0 sn |
+| p95 klip işleme | 130,5 sn |
+| En uzun klip | 870,7 sn |
+| Terminal hata | **0/290** |
+
+Zaman dökümü (toplam 12.077 sn):
+
+| Bileşen | Süre | Pay |
+|---|---:|---:|
+| EVREN model çağrıları | 11.385 sn | **%94,3** |
+| D-FINE dedektör (GPU) | 219 sn | %1,8 |
+| SigLIP-2 screening (GPU) | 85 sn | %0,7 |
+| Diğerleri (klip kodlama, hareket profili) | ~388 sn | %3,2 |
+
+`vlm` çağrısı başına ortalama **6,25 sn** (1.821 çağrı). Olay-geneli ikinci geçiş
+302 çağrı ve 1.683 saniyedir.
+
+Süzgeç hunisi:
+
+| Adım | Değer |
+|---|---:|
+| Görülen pencere | 1.380 |
+| VLM öncesi elenen | 50 |
+| D-FINE kurtarması | 549 |
+| Seçilen anahtar kare | 8.255 |
+| Açılan olay | 170 |
+| Olay güncellemesi | 733 |
+
+Kanıt doğrulama: teknik geçerlilik **%98,4**, otomatik geçerlilik **%88,0**
+(1.926 doğrulama, 31 geçersiz, 0 belirsiz).
+
+### 6.2. Önceki yapılandırma — r1 (genişlik 720, algı CPU'da)
+
 | Ölçüt | Yalnız `vlm` | Üretim kaskadı |
 |---|---:|---:|
 | Dört eşzamanlı işte duvar süresi | 70,5 dk | 84,7 dk |
@@ -115,6 +162,10 @@ darboğazıdır.
 | Ortanca klip işleme | 27,2 sn | 36,4 sn |
 | p95 klip işleme | 171,9 sn | 185,1 sn |
 | Toplam model çağrısı | 1.329 | 1.818 |
+
+r1'den r4'e duvar süresi **84,7 dk → 54,8 dk** (−%35), akış hızı **7,30× → 11,29×**
+oldu. İki bağımsız kazanç birleşti: giriş genişliği 720→540 ve yerel algının
+GPU'ya taşınması (yerel ayak 3.497 → 304 sn).
 
 Üretim kaskadında birincil `vlm` çağrısının ortalaması 8,90 saniyedir.
 
@@ -181,16 +232,21 @@ alarm ve daha yüksek kategori doğruluğu verir.
 
 ### 10.1. Üç tam tekrarın bandı (2026-08-25)
 
-| koşu | genişlik | yakalama | yanlış alarm | kategori |
-|---|---|---|---|---|
-| r1 | 720 | 121/140 | 22/150 | 74 |
-| r2 | 720 | 120/140 | 28/150 | 72 |
-| r3 | **540** | 119/140 | **18/150** | 74 |
+| koşu | genişlik | algı | yakalama | yanlış alarm | kategori |
+|---|---|---|---|---|---|
+| r1 | 720 | CPU | 121/140 | 22/150 | 74 |
+| r2 | 720 | GPU | 120/140 | 28/150 | 72 |
+| r3 | **540** | GPU | 119/140 | **18/150** | 74 |
+| r4 | **540** | GPU | **123/140** | 25/150 | **75** |
 
-**Rapora ve sunuma bu bantlar girer:** yakalama **%85,0-86,4**, eyleme konu
-yanlış alarm **%12,0-18,7**, kategori **72-74**. Tek koşu başlığı (ör. “121/140”)
-tek başına kullanılmaz. r3 diğer ikisinden farklı bir giriş genişliği kullanır;
-aralık bu yüzden hem tekrar oynaklığını hem genişlik etkisini içerir.
+**Rapora ve sunuma bu bantlar girer:** yakalama **%85,0-87,9**, eyleme konu
+yanlış alarm **%12,0-18,7**, kategori **72-75**. Tek koşu başlığı (ör. “121/140”)
+tek başına kullanılmaz. r3 ve r4 diğer ikisinden farklı bir giriş genişliği
+kullanır; aralık bu yüzden hem tekrar oynaklığını hem genişlik etkisini içerir.
+
+r3 ve r4 **aynı yapılandırmadır** ve yalnız tekrar oynaklığıyla ayrılır: yakalama
+119 vs 123, yanlış alarm 18 vs 25. Bu, §10.2'deki kararlılık uyarısının doğrudan
+kanıtıdır — **aynı kod ve aynı veriyle iki koşu bu kadar ayrılabilir.**
 
 ### 10.2. Yanlış alarm kimliği KARARSIZ
 
@@ -319,6 +375,8 @@ tutar; kaynak değişirse GPU yolu sessizce CPU'ya döner.
 
 - `bench/results/evren_testsplit_vlm.jsonl`
 - `bench/results/evren_testsplit_vlm.summary.json`
+- `bench/results/evren_testsplit_production_r4_gpu.jsonl`
+- `bench/results/evren_testsplit_production_r4_gpu.summary.json`
 - `bench/results/evren_testsplit_production.jsonl`
 - `bench/results/evren_testsplit_production.summary.json`
 - `bench/results/evren_pilot_vlm_r3.jsonl`

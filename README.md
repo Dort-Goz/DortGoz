@@ -208,12 +208,18 @@ cd .. && python scripts/verify_offline.py
 
 ## Ölçüm sonuçları
 
-UCF-Crime resmî test bölmesi (290 klip, 10,30 saat) üzerinde tam üretim
-koşusu: 140 anomali klibinin 121'i yakalandı, 150 normal klipte 22 eyleme konu
-yanlış alarm, dört eşzamanlı işte 7,30× gerçek zaman hızı. Bu sayılar
-geliştirme kıyasıdır; genelleme kanıtı olarak, geliştirmede hiç kullanılmamış
-80 kliplik kör holdout'ta %90,0 [%76,9–%96,0] yakalama ölçülmüştür. Tam rapor,
-sınırlar ve tekrar üretim komutları:
+UCF-Crime resmî test bölmesi (290 klip, 10,30 saat) üzerinde dört tam üretim
+koşusu yapıldı. **Tek bir koşunun başlığı tek başına kullanılmaz; bant verilir:**
+yakalama **%85,0-87,9** (119-123/140), eyleme konu yanlış alarm **%12,0-18,7**
+(18-28/150), kategori 72-75.
+
+Benimsenen yapılandırmada (giriş genişliği 540, yerel algı GPU'da) ölçülen hız:
+10,30 saatlik video dört eşzamanlı işte **54,8 dakikada** işlendi, yani
+**11,29× gerçek zaman**. 290 klibin hiçbirinde terminal hata olmadı.
+
+Bu sayılar geliştirme kıyasıdır; genelleme kanıtı olarak, geliştirmede hiç
+kullanılmamış 80 kliplik kör holdout'ta %90,0 [%76,9–%96,0] yakalama
+ölçülmüştür. Tam rapor, sınırlar ve tekrar üretim komutları:
 [`docs/BENCHMARK_REPORT.md`](docs/BENCHMARK_REPORT.md).
 
 ## Veri kümeleri
