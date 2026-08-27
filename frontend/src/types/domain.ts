@@ -175,6 +175,172 @@ export interface LearningCandidateSummary {
   blockers: string[];
 }
 
+export type PipelineStage =
+  | "review"
+  | "approval"
+  | "queue"
+  | "training"
+  | "measurement"
+  | "promotion";
+
+export interface PipelineStageSummary {
+  stage: PipelineStage;
+  count: number;
+  blocked_count: number;
+  action_label: string;
+  detail: string;
+}
+
+export interface PipelineEventItem {
+  event_id: string;
+  event_type: string;
+  video_id: string;
+  learning_score: number;
+  learning_band: "low" | "medium" | "high" | "priority";
+  recommended_uses: DevelopmentUse[];
+  ready_uses: DevelopmentUse[];
+  blockers: string[];
+}
+
+export interface LearningRouteItem {
+  event_id: string;
+  event_revision: number;
+  review_id: string;
+  approval_id: string;
+  use: DevelopmentUse;
+  learning_score: number;
+  learning_band: "low" | "medium" | "high" | "priority";
+  downstream: string;
+}
+
+export interface PipelineQueueGroup {
+  use: DevelopmentUse;
+  downstream: string;
+  safety_gate: string;
+  count: number;
+  items: LearningRouteItem[];
+}
+
+export type TrainingJobStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "budget_stopped"
+  | "interrupted";
+
+export type DfineArchitecture = "dfine_n" | "dfine_s";
+
+export interface TrainingJob {
+  job_id: string;
+  dataset_id: string;
+  dataset_fingerprint: string;
+  export_fingerprint: string;
+  export_ref: string;
+  selection_policy_version: string | null;
+  architecture: DfineArchitecture;
+  category_names: string[];
+  verified_frame_count: number;
+  train_frame_count: number;
+  validation_frame_count: number;
+  source_video_count: number;
+  box_count: number;
+  dfine_repository_revision: string;
+  seed: number;
+  epochs: number;
+  batch_size: number;
+  workers: number;
+  gpu_index: number;
+  max_gpu_minutes: number;
+  daily_gpu_minutes: number;
+  status: TrainingJobStatus;
+  requested_by: string;
+  output_ref: string;
+  checkpoint_ref: string | null;
+  checkpoint_sha256: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  elapsed_seconds: number;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+  revision: number;
+}
+
+export interface ModelEvaluation {
+  evaluation_id: string;
+  checkpoint_sha256: string;
+  map_50_95: number;
+  map_50: number;
+  critical_recall: number;
+  false_alarms_per_hour: number;
+  p95_latency_ms: number;
+  peak_memory_mb: number;
+  repetitions: number;
+  shadow_passed: boolean;
+  evaluator: string;
+  measured_at: string;
+}
+
+export interface ModelVersion {
+  model_version_id: string;
+  training_job_id: string;
+  architecture: DfineArchitecture;
+  checkpoint_ref: string;
+  checkpoint_sha256: string;
+  stage: "candidate" | "champion" | "retired" | "revoked";
+  evaluation: ModelEvaluation | null;
+  deployment: { onnx_ref: string; onnx_sha256: string } | null;
+  promotion_policy_version: string | null;
+  approved_by: string | null;
+  promotion_reason: string | null;
+  created_at: string;
+  promoted_at: string | null;
+  retired_at: string | null;
+}
+
+export interface PipelineModelItem {
+  version: ModelVersion;
+  gate_failures: string[];
+  gate_passed: boolean;
+  onnx_exported: boolean;
+  measured: boolean;
+  shadow_passed: boolean;
+}
+
+export interface PipelineReadiness {
+  can_plan: boolean;
+  can_run: boolean;
+  blockers: string[];
+  active_workload: string | null;
+  training_policy_version: string | null;
+  promotion_policy_version: string | null;
+}
+
+export interface LearningPipelineView {
+  pipeline_version: "dortgoz-learning-pipeline-v1";
+  stages: PipelineStageSummary[];
+  review_items: PipelineEventItem[];
+  approval_items: PipelineEventItem[];
+  queue: PipelineQueueGroup[];
+  jobs: TrainingJob[];
+  candidates: PipelineModelItem[];
+  champion: PipelineModelItem | null;
+  readiness: PipelineReadiness;
+  drift: DriftSnapshot;
+  mode: "human_gated";
+  automatic_training: false;
+  automatic_promotion: false;
+  generated_at: string;
+}
+
+export interface BatchApprovalResult {
+  approved_event_ids: string[];
+  failures: { event_id: string; reason: string }[];
+}
+
 export interface LearningOrchestratorOverview {
   orchestrator_version: "dortgoz-learning-orchestrator-v1";
   total_events: number;

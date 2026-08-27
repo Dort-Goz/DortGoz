@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sys
 import tempfile
 from pathlib import Path
 from typing import cast
@@ -13,13 +14,19 @@ from fastapi.responses import JSONResponse
 from ..config import settings
 from ..domain.event import VerifiedEvent
 from ..domain.evidence import EvidenceItem, VerifiedEventType
-from ..domain.feedback import DevelopmentApproval, DevelopmentUse
+from ..domain.feedback import (
+    DevelopmentApproval,
+    DevelopmentApprovalStatus,
+    DevelopmentUse,
+)
 from ..domain.learning import (
     DriftSnapshot,
     LearningOrchestratorOverview,
     LearningPlan,
     LearningRouteQueue,
 )
+from ..domain.model_lifecycle import ModelVersion, TrainingJob
+from ..domain.pipeline import LearningPipelineView, PipelineModelItem
 from ..domain.priority import InterventionPriority
 from ..domain.provenance import HumanReview, ProcedureSource, ReviewDecision
 from ..domain.video import VideoMetadata
@@ -34,22 +41,39 @@ from ..services.analysis_job import (
     AnalysisJobStartError,
     CanonicalAnalysisJobService,
 )
+from ..services.dfine_deployment import execute_dfine_onnx_export
+from ..services.dfine_training import DfineTrainingError, DfineTrainingService
 from ..services.event_service import EventMemoryService
+from ..services.execution_coordinator import (
+    ExecutionCoordinationError,
+    ExecutionCoordinator,
+)
 from ..services.incident_media import IncidentMediaError, IncidentMediaService
 from ..services.ingest_service import VideoIngestService
 from ..services.learning_orchestrator import LearningOrchestrator
+from ..services.learning_pipeline import (
+    LearningPipelineError,
+    LearningPipelineService,
+)
+from ..services.model_registry import ModelRegistryError, ModelRegistryService
 from ..services.training_sample import TrainingSampleError, TrainingSampleService
+from ..services.training_selection import load_training_selection_policy
 from .contracts import (
     AnalysisAccepted,
     AnalysisProgress,
     AnalyzeRequest,
+    BatchApprovalFailure,
+    BatchApprovalInput,
+    BatchApprovalResult,
     DevelopmentApprovalInput,
     HumanReviewInput,
     IncidentMediaView,
+    ModelPromotionInput,
     QueryRequest,
     QueryResponse,
     ReportResponse,
     SystemMetrics,
+    TrainingJobPlanInput,
     TrainingSamplePrepareInput,
     TrainingSampleReviewInput,
     TrainingSampleView,
@@ -92,7 +116,56 @@ class ApiRuntime:
             frame_width=settings.training_frame_width,
         )
         self.learning = LearningOrchestrator(self.repository)
+        self.coordinator = (
+            ExecutionCoordinator(settings.event_store_path)
+            if settings.event_store_path is not None
+            else None
+        )
+        self.pipeline = LearningPipelineService(
+            self.repository,
+            self.learning,
+            workspace_root=settings.dfine_workspace_root,
+            policy_path=settings.dfine_training_policy,
+            dfine_repository=settings.dfine_training_repository,
+            base_checkpoint=settings.dfine_base_checkpoint,
+            dataset_manifest_path=settings.dfine_dataset_manifest,
+            execution_coordinator=self.coordinator,
+        )
+        self.registry = ModelRegistryService(
+            self.repository,
+            workspace_root=settings.dfine_workspace_root,
+            registry_root=settings.dfine_workspace_root / "models" / "dfine" / "local",
+        )
         self.jobs: dict[str, asyncio.Task[None]] = {}
+        self.training_runs: dict[str, asyncio.Task[None]] = {}
+
+    def analysis_running(self) -> bool:
+        return any(not task.done() for task in self.jobs.values())
+
+    def training_service(self) -> DfineTrainingService:
+        policy, _ = self.pipeline.policies()
+        if policy is None:
+            raise LearningPipelineError(
+                "TRAINING_POLICY_UNREADABLE",
+                f"eğitim politikası okunamadı: {settings.dfine_training_policy}",
+            )
+        selection_path = (
+            settings.dfine_workspace_root / "defaults" / "dfine_sample_selection.json"
+        )
+        return DfineTrainingService(
+            self.repository,
+            workspace_root=settings.dfine_workspace_root,
+            frame_root=settings.media_dir / "_training_samples",
+            runs_root=settings.runs_dir,
+            policy=policy,
+            selection_policy=(
+                load_training_selection_policy(selection_path)
+                if selection_path.is_file()
+                else None
+            ),
+            active_analysis_probe=self.analysis_running,
+            execution_coordinator=self.coordinator,
+        )
 
 
 runtime = ApiRuntime()
@@ -354,6 +427,227 @@ async def learning_orchestrator_overview() -> LearningOrchestratorOverview:
 @router.get("/learning/routes/{use}", response_model=LearningRouteQueue)
 async def learning_route_queue(use: DevelopmentUse) -> LearningRouteQueue:
     return runtime.learning.route_queue(use)
+
+
+@router.get("/learning/pipeline", response_model=LearningPipelineView)
+async def learning_pipeline() -> LearningPipelineView:
+    """İnceleme → Onay → Kuyruk → Eğitim → Ölçüm → Terfi, tek okumada."""
+    return runtime.pipeline.view()
+
+
+@router.post("/learning/approvals/batch", response_model=BatchApprovalResult)
+async def batch_development_approval(body: BatchApprovalInput) -> BatchApprovalResult:
+    """Approve the same development uses across many reviewed events."""
+    approved: list[str] = []
+    failures: list[BatchApprovalFailure] = []
+    for event_id in body.event_ids:
+        try:
+            reviews = runtime.repository.list_reviews(event_id)
+        except RepositoryNotFoundError as exc:
+            failures.append(BatchApprovalFailure(event_id=event_id, reason=str(exc)))
+            continue
+        if not reviews:
+            failures.append(
+                BatchApprovalFailure(
+                    event_id=event_id, reason="olay için insan incelemesi yok"
+                )
+            )
+            continue
+        try:
+            runtime.events.record_development_decision(
+                event_id,
+                reviews[-1].review_id,
+                DevelopmentApprovalStatus.APPROVED,
+                approved_uses=list(body.approved_uses),
+                reviewer=body.reviewer,
+                note=body.note,
+            )
+        except (RepositoryNotFoundError, ValueError) as exc:
+            failures.append(BatchApprovalFailure(event_id=event_id, reason=str(exc)))
+            continue
+        approved.append(event_id)
+    return BatchApprovalResult(approved_event_ids=approved, failures=failures)
+
+
+@router.get("/learning/jobs/{job_id}", response_model=TrainingJob)
+async def get_training_job(job_id: str) -> TrainingJob:
+    job = runtime.repository.get_training_job(job_id)
+    if job is None:
+        raise RepositoryNotFoundError(f"training job bulunamadı: {job_id}")
+    return job
+
+
+@router.post("/learning/jobs", response_model=TrainingJob, status_code=201)
+async def plan_training_job(body: TrainingJobPlanInput) -> TrainingJob | JSONResponse:
+    """Paket oluştur: doğrulanmış kareleri COCO'ya aktarır ve işi kuyruğa alır."""
+    readiness = runtime.pipeline.readiness()
+    if not readiness.can_plan:
+        return error_response(
+            "TRAINING_NOT_CONFIGURED",
+            "; ".join(readiness.blockers),
+            status_code=409,
+        )
+    try:
+        service = runtime.training_service()
+        job = await asyncio.to_thread(
+            lambda: service.plan(
+                dataset_manifest_path=cast(Path, settings.dfine_dataset_manifest),
+                dfine_repository=cast(Path, settings.dfine_training_repository),
+                base_checkpoint=cast(Path, settings.dfine_base_checkpoint),
+                architecture=body.architecture,
+                requested_by=body.requested_by,
+                epochs=body.epochs,
+                batch_size=body.batch_size,
+                workers=body.workers,
+                gpu_index=body.gpu_index,
+                max_gpu_minutes=body.max_gpu_minutes,
+                seed=body.seed,
+            )
+        )
+    except LearningPipelineError as exc:
+        return error_response(exc.code, str(exc), status_code=exc.status_code)
+    except DfineTrainingError as exc:
+        return error_response(exc.code, str(exc), status_code=409)
+    except (OSError, ValueError) as exc:
+        return error_response("TRAINING_PLAN_FAILED", str(exc), status_code=409)
+    return job
+
+
+@router.post("/learning/jobs/{job_id}/run", response_model=TrainingJob, status_code=202)
+async def run_training_job(job_id: str) -> TrainingJob | JSONResponse:
+    """Start a queued job. A human calls this; nothing schedules it."""
+    job = runtime.repository.get_training_job(job_id)
+    if job is None:
+        raise RepositoryNotFoundError(f"training job bulunamadı: {job_id}")
+    readiness = runtime.pipeline.readiness()
+    if not readiness.can_run:
+        return error_response(
+            "TRAINING_NOT_RUNNABLE",
+            "; ".join(readiness.blockers) or "eğitim şu anda başlatılamaz",
+            status_code=409,
+        )
+    existing = runtime.training_runs.get(job_id)
+    if existing is not None and not existing.done():
+        return error_response(
+            "TRAINING_ALREADY_RUNNING", "bu iş zaten çalışıyor", status_code=409
+        )
+    try:
+        service = runtime.training_service()
+    except LearningPipelineError as exc:
+        return error_response(exc.code, str(exc), status_code=exc.status_code)
+
+    dfine_repository = cast(Path, settings.dfine_training_repository)
+    base_checkpoint = cast(Path, settings.dfine_base_checkpoint)
+    python_executable = settings.dfine_python or Path(sys.executable)
+
+    async def execute() -> None:
+        try:
+            await asyncio.to_thread(
+                service.execute,
+                job_id,
+                dfine_repository=dfine_repository,
+                base_checkpoint=base_checkpoint,
+                python_executable=python_executable,
+            )
+        except (DfineTrainingError, ExecutionCoordinationError, OSError) as exc:
+            LOGGER.warning("D-FINE eğitim işi başarısız: %s: %s", job_id, exc)
+
+    runtime.training_runs[job_id] = asyncio.create_task(execute())
+    return job
+
+
+@router.post(
+    "/learning/models/{model_version_id}/export-onnx",
+    response_model=ModelVersion,
+)
+async def export_candidate_onnx(model_version_id: str) -> ModelVersion | JSONResponse:
+    """Ölçümün ilk adımı: aday checkpoint'i doğrulanmış ONNX'e aktarır."""
+    candidate = runtime.repository.get_model_version(model_version_id)
+    if candidate is None:
+        raise RepositoryNotFoundError(f"model version bulunamadı: {model_version_id}")
+    job = runtime.repository.get_training_job(candidate.training_job_id)
+    if job is None:
+        raise RepositoryNotFoundError(
+            f"training job bulunamadı: {candidate.training_job_id}"
+        )
+    readiness = runtime.pipeline.readiness()
+    if readiness.active_workload is not None:
+        return error_response(
+            "EXCLUSIVE_WORKLOAD_ACTIVE",
+            f"münhasir iş çalışıyor: {readiness.active_workload}",
+            status_code=409,
+        )
+    if settings.dfine_training_repository is None:
+        return error_response(
+            "TRAINING_NOT_CONFIGURED",
+            "D-FINE eğitim deposu yapılandırılmadı "
+            "(DORTGOZ_DFINE_TRAINING_REPOSITORY)",
+            status_code=409,
+        )
+    try:
+        version, _outcome, _log = await asyncio.to_thread(
+            execute_dfine_onnx_export,
+            repository=runtime.repository,
+            candidate=candidate,
+            training_job=job,
+            workspace_root=settings.dfine_workspace_root,
+            dfine_repository=settings.dfine_training_repository,
+            python_executable=settings.dfine_python or Path(sys.executable),
+            runs_root=settings.runs_dir,
+            registry_root=(
+                settings.dfine_workspace_root / "models" / "dfine" / "local"
+            ),
+            active_analysis_probe=runtime.analysis_running,
+        )
+    except (ModelRegistryError, DfineTrainingError) as exc:
+        return error_response(exc.code, str(exc), status_code=409)
+    except (OSError, ValueError, RuntimeError) as exc:
+        return error_response("ONNX_EXPORT_FAILED", str(exc), status_code=409)
+    return version
+
+
+@router.get(
+    "/learning/models/{model_version_id}/gate",
+    response_model=PipelineModelItem,
+)
+async def model_promotion_gate(model_version_id: str) -> PipelineModelItem | JSONResponse:
+    try:
+        return runtime.pipeline.promotion_gate(model_version_id)
+    except LearningPipelineError as exc:
+        return error_response(exc.code, str(exc), status_code=exc.status_code)
+
+
+@router.post(
+    "/learning/models/{model_version_id}/promote",
+    response_model=ModelVersion,
+)
+async def promote_model(
+    model_version_id: str,
+    body: ModelPromotionInput,
+) -> ModelVersion | JSONResponse:
+    """Promote a candidate. The gate is enforced by ModelRegistryService."""
+    _, promotion_policy = runtime.pipeline.policies()
+    if promotion_policy is None:
+        return error_response(
+            "PROMOTION_POLICY_UNREADABLE",
+            f"terfi politikası okunamadı: {settings.dfine_training_policy}",
+            status_code=409,
+        )
+    try:
+        return await asyncio.to_thread(
+            lambda: runtime.registry.promote(
+                model_version_id,
+                policy=promotion_policy,
+                approved_by=body.approved_by,
+                reason=body.reason,
+            )
+        )
+    except ModelRegistryError as exc:
+        return error_response(
+            exc.code,
+            "; ".join([str(exc), *exc.reasons]),
+            status_code=409,
+        )
 
 
 @router.post(

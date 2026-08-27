@@ -118,48 +118,33 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(approvalWaitingCount(3, 2)).toBe(5);
   });
 
-  test("ana ekran dört KPI, sade boş durumlar ve insan kapısını gösterir", () => {
+  test("kanıt görüntüsünü ve sade öneri dilini öğrenme hattı taşır", () => {
     const source = readFileSync(
-      new URL("../src/components/LearningOrchestratorPanel.tsx", import.meta.url),
+      new URL("../src/components/LearningPipelinePanel.tsx", import.meta.url),
       "utf8",
     );
 
-    for (const label of ["Toplam olay", "İnceleme bekleyen", "Onay bekleyen", "Hazır işlemler"]) {
-      expect(source).toContain(label);
-    }
-    expect(source).toContain("İşlem bekleyen olaylar");
-    expect(source).toContain("Şu anda işlem bekleyen olay yok.");
     expect(source).toContain("getIncidentMedia");
     expect(source).toContain("media.thumbnail_url");
-    const queueSource = source
-      .split('<section aria-labelledby="pending-events-title">')[1]
-      .split('<section aria-labelledby="development-suggestions-title">')[0];
-    expect(queueSource).toContain("candidateActionTitle(candidate, eventLabel)");
-    expect(queueSource).toContain("Kanıt {shortClock(media.clip_start)}");
-    expect(queueSource).not.toContain("presentation.description");
-    expect(queueSource).not.toContain("candidateReviewReason");
-    expect(source).toContain("Şu anda işlem gerektiren bir geliştirme önerisi yok.");
-    expect(source).toContain("visibleDevelopmentSuggestions");
-    expect(source).toContain(
-      "Otomatik eğitim ve canlı sisteme otomatik geçiş kapalıdır. Tüm geliştirmeler insan onayıyla ilerler.",
-    );
-    expect(source).not.toContain("Hazır rota");
-    expect(source).not.toContain("Kayma gözcüsü");
-    expect(source).not.toContain("Öğrenme rotaları");
-    expect(source).not.toContain("SigLIP");
-    expect(source).not.toContain("D-FINE");
+    expect(source).toContain("Kanıt {shortClock(media.clip_start)}");
+    expect(source).toContain("presentationForUse(group.use).title");
+    expect(source).toContain("presentationForUse(group.use).action");
+    expect(source).toContain("İnceleme bekleyen olay yok.");
+    expect(source).toContain("Onay bekleyen olay yok.");
   });
 
-  test("teknik ayrıntılar kapalı bölümde kalır ve sistem gerçek konsoldan erişilir", () => {
+  test("teknik ayrıntılar kapalı bölümde kalır ve öğrenme kendi çalışma alanıdır", () => {
     const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
     const detail = readFileSync(
       new URL("../src/components/TrainingReviewPanel.tsx", import.meta.url),
       "utf8",
     );
 
-    expect(app).toContain("<LearningOrchestratorPanel");
+    expect(app).toContain("<LearningPipelinePanel");
     expect(app).toContain("!fixtureMode");
-    expect(app).toContain("◈ öğrenme merkezi");
+    expect(app).toContain('["learning", "Öğrenme"]');
+    expect(app).not.toContain("LearningOrchestratorPanel");
+    expect(app).not.toContain("◈ öğrenme merkezi");
     expect(detail).toContain("<details");
     expect(detail).toContain("Teknik detaylar");
     expect(detail).toContain("presentation.technicalComponent");

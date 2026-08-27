@@ -117,6 +117,13 @@ class Settings(BaseSettings):
         / "active_manifest.json"
     )
     dfine_workspace_root: Path = Path(__file__).resolve().parents[2]
+    dfine_training_policy: Path = (
+        Path(__file__).resolve().parents[2] / "defaults" / "dfine_feedback_training.json"
+    )
+    dfine_training_repository: Path | None = None
+    dfine_base_checkpoint: Path | None = None
+    dfine_dataset_manifest: Path | None = None
+    dfine_python: Path | None = None
     detector_conf: float = 0.40
     detector_rescue_conf: float = 0.25
     detector_samples: int = 4
@@ -186,6 +193,10 @@ class Settings(BaseSettings):
     @field_validator(
         "video_store_path",
         "event_store_path",
+        "dfine_training_repository",
+        "dfine_base_checkpoint",
+        "dfine_dataset_manifest",
+        "dfine_python",
         mode="before",
     )
     @classmethod
@@ -197,6 +208,7 @@ class Settings(BaseSettings):
         "candidate_manifest_path",
         "dfine_active_manifest",
         "dfine_workspace_root",
+        "dfine_training_policy",
         mode="after",
     )
     @classmethod
@@ -205,6 +217,23 @@ class Settings(BaseSettings):
         if value.is_absolute():
             return value.resolve()
         return (Path(__file__).resolve().parents[2] / value).resolve()
+
+    @field_validator(
+        "dfine_training_repository",
+        "dfine_base_checkpoint",
+        "dfine_dataset_manifest",
+        "dfine_python",
+        mode="after",
+    )
+    @classmethod
+    def resolve_optional_repository_path(cls, value: Path | None) -> Path | None:
+
+        if value is None:
+            return None
+        expanded = value.expanduser()
+        if expanded.is_absolute():
+            return expanded.resolve()
+        return (Path(__file__).resolve().parents[2] / expanded).resolve()
 
     @field_validator("candidate_model_manifest", mode="after")
     @classmethod

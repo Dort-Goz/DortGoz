@@ -12,6 +12,7 @@ from ..domain.feedback import (
 )
 from ..domain.media import IncidentMedia
 from ..domain.memory import AnalysisResult
+from ..domain.model_lifecycle import DfineArchitecture
 from ..domain.provenance import ProcedureSource, TraceRecord
 from ..domain.training import FrameReviewResult, TrainingSample, VerifiedBoundingBox
 from ..services.analysis_job import AnalysisJobStatus
@@ -214,6 +215,61 @@ class ReportResponse(AnalysisResult):
     pass
 
 
+class BatchApprovalInput(BaseModel):
+    """Approve one development use across many reviewed events at once."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_ids: list[str] = Field(min_length=1, max_length=200)
+    approved_uses: list[DevelopmentUse] = Field(min_length=1)
+    reviewer: str = Field(min_length=1, max_length=120)
+    note: str = Field(min_length=1, max_length=4000)
+
+    @model_validator(mode="after")
+    def entries_are_unique(self) -> BatchApprovalInput:
+        if len(set(self.event_ids)) != len(self.event_ids):
+            raise ValueError("event_ids tekrar eden değer içeremez")
+        if len(set(self.approved_uses)) != len(self.approved_uses):
+            raise ValueError("approved_uses tekrar eden değer içeremez")
+        return self
+
+
+class BatchApprovalFailure(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    event_id: str
+    reason: str
+
+
+class BatchApprovalResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    approved_event_ids: list[str]
+    failures: list[BatchApprovalFailure]
+
+
+class TrainingJobPlanInput(BaseModel):
+    """Paket oluştur: verified samples → COCO export → queued training job."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    architecture: DfineArchitecture
+    requested_by: str = Field(min_length=1, max_length=120)
+    epochs: int = Field(default=10, ge=1, le=500)
+    batch_size: int = Field(default=2, ge=1, le=128)
+    workers: int = Field(default=2, ge=0, le=64)
+    gpu_index: int = Field(default=0, ge=0, le=31)
+    max_gpu_minutes: int = Field(default=60, ge=1, le=1440)
+    seed: int = Field(default=0, ge=0, le=2**32 - 1)
+
+
+class ModelPromotionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    approved_by: str = Field(min_length=1, max_length=120)
+    reason: str = Field(min_length=1, max_length=4000)
+
+
 def event_to_json(event: VerifiedEvent) -> dict[str, Any]:
     return event.model_dump(mode="json")
 
@@ -222,14 +278,19 @@ __all__ = [
     "AnalysisAccepted",
     "AnalysisProgress",
     "AnalyzeRequest",
+    "BatchApprovalFailure",
+    "BatchApprovalInput",
+    "BatchApprovalResult",
     "DevelopmentApprovalInput",
     "EventListResponse",
     "HumanReviewInput",
     "IncidentMediaView",
+    "ModelPromotionInput",
     "QueryRequest",
     "QueryResponse",
     "ReportResponse",
     "SystemMetrics",
+    "TrainingJobPlanInput",
     "TrainingSamplePrepareInput",
     "TrainingSampleReviewInput",
     "TrainingSampleView",
