@@ -447,7 +447,7 @@ export default function TrainingReviewPanel({
               ) : (
                 <div className="mt-3 space-y-2">
                   <p className="font-medium text-zinc-200">Bu olay doğru mu?</p>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     <button
                       type="button"
                       disabled={busy || !reviewerName}
@@ -480,16 +480,15 @@ export default function TrainingReviewPanel({
                     >
                       Hayır, sorun yok
                     </button>
-                  </div>
-                  {!reviewOpen && (
                     <button
                       type="button"
+                      aria-expanded={reviewOpen}
                       onClick={() => setReviewOpen(true)}
-                      className="w-full py-1 text-center text-zinc-500 underline decoration-zinc-800 underline-offset-2 hover:text-zinc-300"
+                      className="btn h-9 border-amber-500 bg-amber-500 px-1 text-[11px] text-zinc-950 hover:border-amber-400 hover:bg-amber-400"
                     >
-                      Ayrıntılı karar gir
+                      Ayrıntılı karara git
                     </button>
-                  )}
+                  </div>
                 </div>
               )}
             </section>

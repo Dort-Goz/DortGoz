@@ -176,6 +176,9 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(detail).toContain("Bu olay doğru mu?");
     expect(detail).toContain("Evet, doğru");
     expect(detail).toContain("Hayır, sorun yok");
+    expect(detail).toContain("grid grid-cols-3 gap-2");
+    expect(detail).toContain("Ayrıntılı karara git");
+    expect(detail).toContain("border-amber-500 bg-amber-500");
     expect(detail).toContain("Sistem bu olaydan öğrensin mi?");
     expect(detail).toContain("Onay ver ve kapat");
     expect(detail).toContain("approved_uses: recommendedApprovalUses");
