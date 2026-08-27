@@ -23,6 +23,10 @@ PREVIEW_BUFFER_LIMIT = 4 * 1024 * 1024
 PREVIEW_IDLE_TIMEOUT = 15.0
 PREVIEW_QUEUE_LIMIT = 24
 STALL_SEGMENTS = 3
+# Boşta yoklama aralığı. Doğrudan uyarı gecikmesine biner: segment kapandıktan
+# sonra fark edilmesi ortalama bunun yarısı kadar gecikir. Yoklama tek bir glob
+# ve stat'tir, bu yüzden sıklastırmak ölçülebilir bir yük getirmez.
+POLL_IDLE_SECONDS = 0.5
 PrepareRun = Callable[[str, str, Path], Awaitable[VideoMetadata]]
 FinalizeRun = Callable[[str], Awaitable[object]]
 
@@ -247,7 +251,7 @@ class LiveFeedWorker:
         while self.running:
             worked = await self._step()
             if not worked:
-                await asyncio.sleep(2.0)
+                await asyncio.sleep(POLL_IDLE_SECONDS)
 
     async def _step(self) -> bool:
         drop, pending = plan_segments(self._closed_segments(),
