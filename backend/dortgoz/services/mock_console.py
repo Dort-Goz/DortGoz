@@ -194,6 +194,16 @@ _LIVE_SCENARIOS = [
 ]
 
 
+def mock_event_clip() -> str | None:
+    root = settings.media_dir
+    if not root.is_dir():
+        return None
+    for candidate in sorted(root.glob("*.mp4")):
+        if candidate.is_file() and candidate.stat().st_size > 0:
+            return f"/media/{candidate.name}"
+    return None
+
+
 class MockLiveService:
     def __init__(self, manager: ConnectionManager) -> None:
         self.manager = manager
@@ -201,6 +211,7 @@ class MockLiveService:
         self._statuses: list[FeedStatus] = []
         self._task: asyncio.Task[None] | None = None
         self._seq = 0
+        self._clip = mock_event_clip()
 
     async def start(self, mode: str = "", feeds: list[dict] | None = None) -> list[FeedStatus]:
         if self.active:
@@ -271,6 +282,7 @@ class MockLiveService:
                 RunStatus(run_id=run_id, state="processing", progress=0.2,
                           detail="Canlı segment işleniyor (mock)"),
                 feed=status.name,
+                live=True,
             )
         )
         await _nap(0.4)
@@ -299,6 +311,7 @@ class MockLiveService:
                     ),
                 ),
                 feed=status.name,
+                live=True,
             )
         )
         await _nap(0.5)
@@ -314,10 +327,12 @@ class MockLiveService:
                     detail=detail,
                     needs_review=needs_review,
                     review_reason=reason,
+                    evidence=self._clip,
                     olay_baslangic=max(0.0, t - 1),
                     olay_bitis=t + 6,
                 ),
                 feed=status.name,
+                live=True,
             )
         )
         await _nap(0.3)
@@ -326,6 +341,7 @@ class MockLiveService:
                 RunStatus(run_id=run_id, state="done", progress=1.0,
                           detail="Canlı segment tamamlandı (mock)"),
                 feed=status.name,
+                live=True,
             )
         )
         status.state = "bekliyor"

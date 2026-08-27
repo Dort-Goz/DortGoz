@@ -173,6 +173,7 @@ export interface Event {
   seq: number;
   ts: number;
   feed?: string;
+  live?: boolean;
   payload: Payload;
 }
 

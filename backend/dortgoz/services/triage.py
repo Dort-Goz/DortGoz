@@ -44,6 +44,7 @@ CATEGORIES = [
 ]
 MAX_PENDING = 200
 MAX_RESOLVED = 500
+SEGMENT_EDGE_SLACK = 2.0
 RULE_THRESHOLD = 3
 DEFAULT_RULE_HOURS = 24
 MAX_RULE_HOURS = 24 * 30
@@ -106,6 +107,7 @@ class TriageItem:
     model_category: str
     risk: str
     phase: str
+    live: bool = False
     event_id: str | None = None
     thumbnail: str | None = None
     evidence: str | None = None
@@ -129,6 +131,8 @@ class TriageItem:
     note: str = ""
     decided_wall: float | None = None
     tekrar: int = 1
+    carried_incident_ids: list[str] = field(default_factory=list)
+    carried_end: float | None = None
     review_ids: list[str] = field(default_factory=list)
     operator_risk: str = ""
     false_alarm_reason: str = ""
@@ -279,6 +283,10 @@ class TriageStore:
             self._merge_signals(item, payload)
             self._apply_priority(item, priority)
             return
+        carried = self._segment_continuation(event, payload)
+        if carried is not None:
+            self._carry_continuation(carried, event, payload, priority)
+            return
         resolved = next((item for item in self._resolved if item.key == key), None)
         if resolved is not None:
             item = self._reopen_escalated(resolved, payload, event_id, priority)
@@ -356,6 +364,61 @@ class TriageStore:
         self._pending[key] = item
         self._enforce_capacity()
 
+    def _segment_continuation(self, event: Event, payload: Any) -> TriageItem | None:
+        if not event.live or payload.anomaly_type == "normal":
+            return None
+        starts_at_edge = (payload.olay_baslangic or payload.t) <= SEGMENT_EDGE_SLACK
+        if not starts_at_edge:
+            return None
+        segment = float(settings.live_segment_seconds)
+        now = time.time()
+        best: TriageItem | None = None
+        for item in self._pending.values():
+            if (
+                not item.live
+                or item.sample
+                or item.feed != event.feed
+                or item.model_category != payload.anomaly_type
+                or item.incident_id == payload.incident_id
+            ):
+                continue
+            ended = item.model_end if item.model_end is not None else item.t
+            if ended < segment - SEGMENT_EDGE_SLACK:
+                continue
+            if now - item.wall > segment * 2:
+                continue
+            if best is None or item.wall > best.wall:
+                best = item
+        return best
+
+    def _carry_continuation(
+        self,
+        item: TriageItem,
+        event: Event,
+        payload: Any,
+        priority: tuple[int, str, list[str], str],
+    ) -> None:
+        item.tekrar += 1
+        item.phase = payload.phase
+        item.carried_incident_ids = [
+            *item.carried_incident_ids,
+            payload.incident_id,
+        ][-20:]
+        if RISK.index(payload.risk) > RISK.index(item.risk):
+            item.risk = payload.risk
+        if payload.olay_bitis is not None:
+            item.carried_end = float(settings.live_segment_seconds) + payload.olay_bitis
+        item.needs_review = item.needs_review or payload.needs_review
+        if payload.review_reason and payload.review_reason not in item.review_reason:
+            item.review_reason = " · ".join(
+                filter(None, [item.review_reason, payload.review_reason])
+            )
+        item.thumbnail = item.thumbnail or payload.thumbnail
+        item.evidence = item.evidence or payload.evidence
+        self._merge_signals(item, payload)
+        if priority[0] > item.intervention_score:
+            self._apply_priority(item, priority)
+
     def _observe_sample(self, event: Event, payload: Any) -> None:
         run_id, video = self._runs.get(event.feed, ("", ""))
         key = f"{event.feed}:ornek:{payload.sample_id}"
@@ -371,6 +434,7 @@ class TriageStore:
             model_category="normal",
             risk="dusuk",
             phase="sonuclandi",
+            live=event.live,
             thumbnail=payload.thumbnail,
             evidence=payload.evidence,
             sample=True,
@@ -830,6 +894,7 @@ class TriageStore:
             model_category=payload.anomaly_type,
             risk=payload.risk,
             phase=payload.phase,
+            live=event.live,
             thumbnail=payload.thumbnail,
             evidence=payload.evidence,
             evidence_refs=self._evidence_dicts(event.feed, payload.incident_id),

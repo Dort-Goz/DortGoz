@@ -174,9 +174,11 @@ class RunRecorder:
         run_id: str,
         metrics: CanonicalRunMetrics,
         feed: str = "",
+        live: bool = False,
     ) -> None:
         self.manager = manager
         self.feed = feed
+        self.live = live
         self.metrics = metrics
         self.path = settings.runs_dir / f"{run_id}.jsonl"
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -184,7 +186,7 @@ class RunRecorder:
         self._metrics_written = False
 
     async def emit(self, payload) -> None:
-        event = Event.wrap(payload, feed=self.feed)
+        event = Event.wrap(payload, feed=self.feed, live=self.live)
         await self.manager.broadcast(event)
         self._fh.write(event.model_dump_json() + "\n")
         self._fh.flush()
@@ -198,6 +200,7 @@ class RunRecorder:
             "seq": 0,
             "ts": time.time(),
             "feed": self.feed,
+            "live": self.live,
             "payload": self.metrics.to_payload(),
         }
         self._fh.write(json.dumps(envelope, ensure_ascii=False, separators=(",", ":")) + "\n")
@@ -209,6 +212,7 @@ class RunRecorder:
             "seq": 0,
             "ts": time.time(),
             "feed": self.feed,
+            "live": self.live,
             "payload": payload,
         }
         self._fh.write(json.dumps(envelope, ensure_ascii=False, separators=(",", ":")) + "\n")
@@ -450,7 +454,7 @@ async def run_video(
     source_path: Path | None = None,
 ) -> None:
     metrics = CanonicalRunMetrics(run_id)
-    rec = RunRecorder(manager, run_id, metrics, feed=feed)
+    rec = RunRecorder(manager, run_id, metrics, feed=feed, live=live)
     evidence_scope = RuntimeEvidenceScope.create(run_id)
     ctx = session.start(run_id, video, feed=feed, reset_chat=not live)
     ledger = ctx.ledger

@@ -79,6 +79,10 @@ class ApiRuntime:
             before_seconds=settings.incident_pre_capture_seconds,
             after_seconds=settings.incident_post_capture_seconds,
             timeout_seconds=settings.incident_clip_timeout_seconds,
+            live_segment_seconds=settings.live_segment_seconds,
+            live_tail_seconds=settings.live_clip_tail_seconds,
+            live_retention_hours=settings.live_clip_retention_hours,
+            live_max_per_feed=settings.live_clip_max_per_feed,
         )
         self.training_samples = TrainingSampleService(
             self.repository,

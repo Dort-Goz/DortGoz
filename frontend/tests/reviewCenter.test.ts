@@ -45,8 +45,13 @@ describe("olay inceleme merkezi", () => {
     const panel = readFileSync(
       new URL("../src/components/TriagePanel.tsx", import.meta.url), "utf8",
     );
+    const console_ = readFileSync(
+      new URL("../src/components/ReviewConsole.tsx", import.meta.url), "utf8",
+    );
 
-    expect(app).toContain('title="Olay İnceleme Merkezi"');
+    expect(console_).toContain("Olay İnceleme Merkezi");
+    expect(app).toContain("<ReviewConsole onOpenTraining={setTrainingEventId} />");
+    expect(app).toContain('title="Karar bekleyen olaylar"');
     expect(app).toContain('["analysis", "Analiz"]');
     expect(app).toContain('["live", "Canlı"]');
     expect(app).toContain('["review", "Olay inceleme"]');
@@ -59,5 +64,18 @@ describe("olay inceleme merkezi", () => {
     expect(panel).toContain("Güvenli yerel taslak önerileri");
     expect(panel).toContain("if (!r.ok) throw new Error()");
     expect(panel).toContain("İnceleme kayıtları alınamadı. Bağlantıyı denetleyin.");
+  });
+
+  test("inceleme merkezi kaynak, durum ve aciliyet süzgeçlerini sunar", () => {
+    const console_ = readFileSync(
+      new URL("../src/components/ReviewConsole.tsx", import.meta.url), "utf8",
+    );
+
+    expect(console_).toContain('value="live"');
+    expect(console_).toContain('value="analysis"');
+    expect(console_).toContain("/api/review/events?");
+    for (const label of ["kaynak", "durum", "aciliyet", "olay türü", "kamera", "ara"]) {
+      expect(console_).toContain(`>${label}</span>`);
+    }
   });
 });

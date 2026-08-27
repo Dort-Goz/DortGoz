@@ -15,6 +15,13 @@ from ..domain.memory import AnalysisStatus
 from ..pipeline.ingest import grab_frame
 from ..repositories.protocols import EventRepository
 from ..tools.context_clip import ClipWriter, write_context_clip
+from .live_archive import clip_feed, prune_live_clips
+from .live_clip import (
+    concat_segments,
+    is_live_segment,
+    segment_start_epoch,
+    segments_covering,
+)
 
 LOGGER = logging.getLogger(__name__)
 FrameReader = Callable[[Path, float, int], Awaitable[bytes]]
@@ -37,17 +44,27 @@ class IncidentMediaService:
         before_seconds: float = 8.0,
         after_seconds: float = 8.0,
         timeout_seconds: float = 90.0,
+        live_segment_seconds: float = 30.0,
+        live_tail_seconds: float = 30.0,
+        live_retention_hours: float = 72.0,
+        live_max_per_feed: int = 200,
         clip_writer: ClipWriter = write_context_clip,
         frame_reader: FrameReader = grab_frame,
     ) -> None:
         if before_seconds < 0 or after_seconds < 0 or timeout_seconds <= 0:
             raise ValueError("incident media süreleri geçerli olmalıdır")
+        if live_segment_seconds <= 0 or live_tail_seconds < 0:
+            raise ValueError("canlı segment süreleri geçerli olmalıdır")
         self.repository = repository
         self.media_root = media_root.resolve()
         self.artifact_root = (self.media_root / "_incident_media").resolve()
         self.before_seconds = before_seconds
         self.after_seconds = after_seconds
         self.timeout_seconds = timeout_seconds
+        self.live_segment_seconds = live_segment_seconds
+        self.live_tail_seconds = live_tail_seconds
+        self.live_retention_hours = live_retention_hours
+        self.live_max_per_feed = live_max_per_feed
         self.clip_writer = clip_writer
         self.frame_reader = frame_reader
 
@@ -72,6 +89,14 @@ class IncidentMediaService:
                     exc.code,
                     exc,
                 )
+        if saved and any(clip_feed(media) for media in saved):
+            await asyncio.to_thread(
+                prune_live_clips,
+                self.repository,
+                self.media_root,
+                retention_hours=self.live_retention_hours,
+                max_per_feed=self.live_max_per_feed,
+            )
         return saved
 
     async def prepare(self, event_id: str) -> IncidentMedia:
@@ -89,6 +114,7 @@ class IncidentMediaService:
         if end <= start:
             raise IncidentMediaError("EVENT_RANGE_INVALID", "Olay klibi aralığı geçersiz.")
         peak = min(max(event.peak_time, start), end)
+        stitch = self._plan_live_stitch(source, video.media_path, event, video.duration_seconds)
 
         media_id = str(uuid5(NAMESPACE_URL, f"dortgoz-incident-media:{event.event_id}"))
         relative_dir = Path("_incident_media") / media_id
@@ -109,7 +135,16 @@ class IncidentMediaService:
             return current
 
         output_dir.mkdir(parents=True, exist_ok=True)
+        stitched = output_dir / ".stitched.mp4"
+        source_refs = [video.media_path]
         try:
+            if stitch is not None:
+                segments, start, end, peak = stitch
+                await concat_segments(segments, stitched, self.timeout_seconds)
+                source = stitched
+                source_refs = [
+                    item.relative_to(self.media_root).as_posix() for item in segments
+                ]
             await self.clip_writer(
                 source, staged_clip, start, end, self.timeout_seconds
             )
@@ -133,6 +168,8 @@ class IncidentMediaService:
             raise IncidentMediaError(
                 "INCIDENT_MEDIA_WRITE_FAILED", "Olay klibi veya önizleme üretilemedi."
             ) from exc
+        finally:
+            stitched.unlink(missing_ok=True)
 
         now = datetime.now(UTC)
         stored = IncidentMedia(
@@ -141,7 +178,7 @@ class IncidentMediaService:
             analysis_id=event.analysis_id,
             video_id=event.video_id,
             event_revision=event.revision,
-            source_refs=[video.media_path],
+            source_refs=source_refs,
             source_file_sha256=video.file_hash_sha256,
             clip_ref=(relative_dir / clip.name).as_posix(),
             thumbnail_ref=(relative_dir / thumbnail.name).as_posix(),
@@ -159,6 +196,34 @@ class IncidentMediaService:
             revision=current.revision + 1 if current is not None else 1,
         )
         return self.repository.save_incident_media(stored)
+
+    def _plan_live_stitch(
+        self, source: Path, media_path: str, event, duration_seconds: float
+    ) -> tuple[list[Path], float, float, float] | None:
+        if not is_live_segment(media_path):
+            return None
+        epoch = segment_start_epoch(source)
+        if epoch is None:
+            return None
+        touches_end = event.end_time >= duration_seconds - 1.0
+        tail = self.live_tail_seconds if touches_end else self.after_seconds
+        absolute_start = epoch + max(0.0, event.start_time - self.before_seconds)
+        absolute_end = epoch + event.end_time + tail
+        segments = segments_covering(
+            source.parent, absolute_start, absolute_end, self.live_segment_seconds
+        )
+        if len(segments) < 2:
+            return None
+        first = segment_start_epoch(segments[0])
+        if first is None:
+            return None
+        span = len(segments) * self.live_segment_seconds
+        start = max(0.0, absolute_start - first)
+        end = min(span, absolute_end - first)
+        if end <= start:
+            return None
+        peak = min(max(epoch + event.peak_time - first, start), end)
+        return segments, start, end, peak
 
     def _resolve_source(self, media_path: str) -> Path:
         source = (self.media_root / media_path.lstrip("/")).resolve()

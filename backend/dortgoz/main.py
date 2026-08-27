@@ -529,6 +529,54 @@ async def live_status() -> dict:
             "feeds": [vars(s) for s in service.status()]}
 
 
+@app.get("/api/review/events")
+async def browse_stored_events(
+    origin: str = "all",
+    status: str = "all",
+    urgency: str = "all",
+    category: str = "all",
+    feed: str = "",
+    query: str = "",
+    limit: int = 100,
+    offset: int = 0,
+) -> dict:
+    from .services.event_browser import EventFilters, browse_events
+
+    return await asyncio.to_thread(
+        browse_events,
+        api_runtime.repository,
+        settings.media_dir,
+        EventFilters(
+            origin=origin,
+            status=status,
+            urgency=urgency,
+            category=category,
+            feed=feed[:128],
+            query=query[:200],
+            limit=limit,
+            offset=offset,
+        ),
+    )
+
+
+@app.get("/api/live/clips")
+async def live_clip_archive(feed: str = "", limit: int = 200) -> dict:
+    from .services.live_archive import list_live_clips
+
+    clips = await asyncio.to_thread(
+        list_live_clips,
+        api_runtime.repository,
+        settings.media_dir,
+        feed=feed,
+        limit=max(1, min(limit, 500)),
+    )
+    return {
+        "clips": clips,
+        "retention_hours": settings.live_clip_retention_hours,
+        "max_per_feed": settings.live_clip_max_per_feed,
+    }
+
+
 @app.get("/api/live/feeds")
 async def live_feed_list() -> list[dict]:
     try:

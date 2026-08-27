@@ -13,13 +13,14 @@ import LearningOrchestratorPanel from "./components/LearningOrchestratorPanel";
 import UploadPanel from "./components/UploadPanel";
 import TrainingReviewPanel from "./components/TrainingReviewPanel";
 import TriagePanel from "./components/TriagePanel";
+import ReviewConsole from "./components/ReviewConsole";
 import {
   buildChatMessage,
   eventBelongsToDialogue,
   loadDialogueId,
 } from "./lib/agentSession";
 import { includeUploadedVideo, startCanonicalRun } from "./lib/canonicalRun";
-import { consoleReducer, emptyFeed, initialState } from "./state";
+import { consoleReducer, emptyFeed, feedNames, initialState } from "./state";
 
 const EXPERIMENT_KEY = "dortgoz.experiment";
 
@@ -104,9 +105,11 @@ export default function App() {
   const [liveView, setLiveView] = useState(() => location.hash === "#canli");
   const [reviewView, setReviewView] = useState(() => location.hash === "#inceleme");
   const [trainingEventId, setTrainingEventId] = useState("");
+  const [reviewTab, setReviewTab] = useState<"kayitlar" | "bekleyen">("kayitlar");
   const [showLearningOrchestrator, setShowLearningOrchestrator] = useState(false);
   const [fixtureMode, setFixtureMode] = useState(false);
   const [triagePending, setTriagePending] = useState(0);
+  const [livePending, setLivePending] = useState(0);
   const [resolvedKeys, setResolvedKeys] = useState<string[]>([]);
   const [connection, setConnection] = useState<ConnectionState>("connecting");
 
@@ -175,7 +178,9 @@ export default function App() {
         if (!r.ok) return;
         const body = await r.json();
         if (alive) {
-          setTriagePending((body.pending ?? []).length);
+          const queued: { live?: boolean }[] = body.pending ?? [];
+          setTriagePending(queued.length);
+          setLivePending(queued.filter((item) => item.live).length);
           setResolvedKeys(body.resolved_keys ?? []);
         }
       } catch {}
@@ -209,13 +214,19 @@ export default function App() {
     }));
   }, [model, systemPrompt, taskPrompt, interpretCfg]);
 
-  const feed = state.feeds[state.active] ?? emptyFeed;
+  const analysisFeeds = useMemo(
+    () => Object.fromEntries(
+      feedNames(state, false).map((name) => [name, state.feeds[name]])),
+    [state],
+  );
+  const analysisActive = state.feeds[state.active]?.live ? "" : state.active;
+  const feed = state.feeds[analysisActive] ?? emptyFeed;
 
   const send = useMemo(() => ({
     chat: (text: string) => socketRef.current?.send(buildChatMessage(
       text,
       dialogueId,
-      state.active,
+      analysisActive,
       feed.highlight?.incident_id ?? "",
     )),
     actuator: (request_id: string, approved: boolean) =>
@@ -225,23 +236,29 @@ export default function App() {
         approved,
         operator: localStorage.getItem("dortgoz.reviewer") ?? "",
       }),
-  }), [dialogueId, state.active, feed.highlight?.incident_id]);
+  }), [dialogueId, analysisActive, feed.highlight?.incident_id]);
 
   const run = feed.runStatus;
   const selectFeed = useCallback(
     (name: string) => dispatch({ kind: "select_feed", feed: name }),
     [],
   );
+  const selectLiveFeed = useCallback(
+    (name: string) => dispatch({ kind: "select_feed", feed: name, live: true }),
+    [],
+  );
   const selectIncident = useCallback(
     (incident: IncidentUpdate) => dispatch({ kind: "select_incident", incident }),
     [],
   );
-  const busy = Object.values(state.feeds).some((f) => f.runStatus?.state === "processing");
+  const busy = Object.values(analysisFeeds).some(
+    (f) => f.runStatus?.state === "processing")
+    || state.feeds[""]?.runStatus?.state === "processing";
   const workspace = liveView ? "live" : reviewView ? "review" : "analysis";
   const liveIncidents = useMemo(
     () => Object.fromEntries(
-      Object.entries(state.feeds).map(([f, s]) => [f, s.incidents])),
-    [state.feeds],
+      feedNames(state, true).map((name) => [name, state.feeds[name].incidents])),
+    [state],
   );
 
   const overrides = useCallback(() => ({
@@ -307,10 +324,10 @@ export default function App() {
   const decided = useMemo(
     () => new Set(
       resolvedKeys
-        .filter((key) => key.slice(0, key.lastIndexOf(":")) === state.active)
+        .filter((key) => key.slice(0, key.lastIndexOf(":")) === analysisActive)
         .map((key) => key.slice(key.lastIndexOf(":") + 1)),
     ),
-    [resolvedKeys, state.active],
+    [resolvedKeys, analysisActive],
   );
   const reviewCount = useMemo(
     () => feed.incidents.filter(
@@ -377,6 +394,14 @@ export default function App() {
               {value === "review" && triagePending > 0 && (
                 <span className="ml-1.5 inline-flex min-w-4 items-center justify-center rounded-sm bg-amber-800 px-1 font-mono text-[10px] leading-4 text-amber-100">
                   {triagePending}
+                </span>
+              )}
+              {value === "live" && livePending > 0 && (
+                <span
+                  title={`${livePending} canlı olay operatör kararı bekliyor`}
+                  className="ml-1.5 inline-flex min-w-4 items-center justify-center rounded-sm bg-red-700 px-1 font-mono text-[10px] leading-4 text-red-50"
+                >
+                  {livePending}
                 </span>
               )}
             </button>
@@ -600,14 +625,14 @@ export default function App() {
       )}
 
       {workspace === "analysis" && (
-        <FeedStrip feeds={state.feeds} active={state.active} onSelect={selectFeed} />
+        <FeedStrip feeds={analysisFeeds} active={analysisActive} onSelect={selectFeed} />
       )}
 
       {workspace === "live" && (
         <div className="flex min-h-0 flex-1 flex-col p-1.5">
           <LiveGrid
             incidents={liveIncidents}
-            onSelectFeed={selectFeed}
+            onSelectFeed={selectLiveFeed}
             onOpenTraining={setTrainingEventId}
           />
         </div>
@@ -621,8 +646,7 @@ export default function App() {
             seekTo={feed.seekTo}
             seekNonce={feed.seekNonce}
             video={feed.video}
-            feed={Object.keys(state.feeds).filter((k) => k !== "").length >= 2
-              ? state.active : null}
+            feed={Object.keys(analysisFeeds).length >= 2 ? analysisActive : null}
           />
         </div>
         <div className="col-span-2 min-h-0">
@@ -643,7 +667,7 @@ export default function App() {
             messages={state.chat}
             onSend={send.chat}
             incident={feed.highlight}
-            contextLabel={`${state.active || "ana kamera"}${
+            contextLabel={`${analysisActive || "ana kamera"}${
               feed.highlight ? ` · ${feed.highlight.incident_id}` : ""
             }`}
           />
@@ -659,25 +683,59 @@ export default function App() {
       )}
 
       {workspace === "review" && (
-        <div className="min-h-0 flex-1 p-1.5">
-        <TriagePanel
-          title="Olay İnceleme Merkezi"
-          layout="workspace"
-          onSelectFeed={(selectedFeed) =>
-            dispatch({ kind: "select_feed", feed: selectedFeed })}
-          onSeek={(selectedFeed, timestamp, reviewVideo) => {
-            dispatch({
-              kind: "seek",
-              feed: selectedFeed,
-              timestamp,
-              video: reviewVideo,
-            });
-            setLiveView(false);
-            setReviewView(false);
-            history.replaceState(null, "", "#");
-          }}
-          onOpenTraining={setTrainingEventId}
-        />
+        <div className="flex min-h-0 flex-1 flex-col gap-1.5 p-1.5">
+          <nav
+            aria-label="İnceleme görünümü"
+            className="flex h-7 shrink-0 items-center gap-0.5 self-start rounded-sm border border-zinc-800 bg-zinc-950 p-0.5 text-xs"
+          >
+            {([
+              ["kayitlar", "⛁ Tüm kayıtlar"],
+              ["bekleyen", "⚑ Karar bekleyenler"],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setReviewTab(value)}
+                className={`h-full rounded-[3px] px-2.5 transition-colors ${
+                  reviewTab === value
+                    ? "bg-zinc-800 font-medium text-zinc-100"
+                    : "text-zinc-500 hover:text-zinc-200"
+                }`}
+              >
+                {label}
+                {value === "bekleyen" && triagePending > 0 && (
+                  <span className="ml-1.5 inline-flex min-w-4 items-center justify-center rounded-sm bg-amber-800 px-1 font-mono text-[10px] leading-4 text-amber-100">
+                    {triagePending}
+                  </span>
+                )}
+              </button>
+            ))}
+          </nav>
+          <div className="min-h-0 flex-1">
+            {reviewTab === "kayitlar" ? (
+              <ReviewConsole onOpenTraining={setTrainingEventId} />
+            ) : (
+              <TriagePanel
+                title="Karar bekleyen olaylar"
+                layout="workspace"
+                onSelectFeed={(selectedFeed) =>
+                  dispatch({ kind: "select_feed", feed: selectedFeed })}
+                onSeek={(selectedFeed, timestamp, reviewVideo, live) => {
+                  if (live) return;
+                  dispatch({
+                    kind: "seek",
+                    feed: selectedFeed,
+                    timestamp,
+                    video: reviewVideo,
+                  });
+                  setLiveView(false);
+                  setReviewView(false);
+                  history.replaceState(null, "", "#");
+                }}
+                onOpenTraining={setTrainingEventId}
+              />
+            )}
+          </div>
         </div>
       )}
       {trainingEventId && (

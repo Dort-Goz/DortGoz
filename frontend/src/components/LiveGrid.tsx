@@ -1,5 +1,6 @@
-import { memo, useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import type { IncidentUpdate } from "../types/events";
+import LiveArchive from "./LiveArchive";
 import TriagePanel from "./TriagePanel";
 
 interface LiveFeed {
@@ -32,6 +33,7 @@ function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
   const [active, setActive] = useState(false);
   const [error, setError] = useState("");
   const [zoom, setZoom] = useState<string | null>(null);
+  const [view, setView] = useState<"duvar" | "kayitlar">("duvar");
   const [rate, setRate] = useState<number>(() =>
     Number(localStorage.getItem("dortgoz.canliKareOrani") || 1));
   const changeRate = (v: number) => {
@@ -69,6 +71,10 @@ function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
   }, []);
 
   const zoomed = zoom ? feeds.find((f) => f.name === zoom) : null;
+  const labels = useMemo(
+    () => Object.fromEntries(feeds.filter((f) => f.desc).map((f) => [f.name, f.desc])),
+    [feeds],
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-1.5">
@@ -88,6 +94,27 @@ function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
         )}
         {error && <span className="truncate text-red-400">{error}</span>}
         <span className="flex-1" />
+        <nav
+          aria-label="Canlı görünümü"
+          className="flex h-7 shrink-0 items-center gap-0.5 rounded-sm border border-zinc-800 bg-zinc-950 p-0.5"
+        >
+          {([["duvar", "▦ Akış duvarı"], ["kayitlar", "⛁ Olay kayıtları"]] as const).map(
+            ([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setView(value)}
+                className={`h-full rounded-[3px] px-2 transition-colors ${
+                  view === value
+                    ? "bg-zinc-800 font-medium text-zinc-100"
+                    : "text-zinc-500 hover:text-zinc-200"
+                }`}
+              >
+                {label}
+              </button>
+            ),
+          )}
+        </nav>
         <label className="flex shrink-0 items-center gap-1.5 text-zinc-500">
           <span className="microlabel">kare tazeleme</span>
           <select
@@ -134,6 +161,7 @@ function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
       )}
 
       <div className="flex min-h-0 flex-1 gap-1.5">
+      {view === "kayitlar" ? <LiveArchive feedNames={labels} /> : (
       <div className="panel flex-1">
       <div className="panel-title">
         <span>Akış Duvarı</span>
@@ -208,11 +236,12 @@ function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
         )}
       </div>
       </div>
+      )}
       <TriagePanel
         onSelectFeed={onSelectFeed}
         onOpenTraining={onOpenTraining}
-        feedNames={Object.fromEntries(
-          feeds.filter((f) => f.desc).map((f) => [f.name, f.desc]))}
+        scopeLive
+        feedNames={labels}
       />
       </div>
     </div>

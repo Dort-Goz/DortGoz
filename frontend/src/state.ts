@@ -25,6 +25,7 @@ export interface FeedState {
   seekNonce: number;
   reportsPulse: number;
   video: string | null;
+  live: boolean;
 }
 
 export const emptyFeed: FeedState = {
@@ -38,11 +39,13 @@ export const emptyFeed: FeedState = {
   seekNonce: 0,
   reportsPulse: 0,
   video: null,
+  live: false,
 };
 
 export interface ConsoleState {
   feeds: Record<string, FeedState>;
   active: string;
+  activeLive: string;
   chat: ChatMessage[];
   actuatorRequests: ActuatorRequest[];
   actuatorResults: ActuatorResult[];
@@ -51,10 +54,21 @@ export interface ConsoleState {
 export const initialState: ConsoleState = {
   feeds: {},
   active: "",
+  activeLive: "",
   chat: [],
   actuatorRequests: [],
   actuatorResults: [],
 };
+
+export function isLiveFeed(state: ConsoleState, feed: string): boolean {
+  return state.feeds[feed]?.live ?? false;
+}
+
+export function feedNames(state: ConsoleState, live: boolean): string[] {
+  return Object.keys(state.feeds).filter(
+    (name) => name !== "" && state.feeds[name].live === live,
+  );
+}
 
 export const CAPS = {
   reports: 400,
@@ -75,14 +89,17 @@ export type Action =
   | { kind: "run_started"; video: string; feed: string }
   | { kind: "select_incident"; incident: IncidentUpdate }
   | { kind: "seek"; feed: string; timestamp: number; video?: string }
-  | { kind: "select_feed"; feed: string };
+  | { kind: "select_feed"; feed: string; live?: boolean };
 
-function withFeed(state: ConsoleState, feed: string,
+function withFeed(state: ConsoleState, feed: string, live: boolean,
                   patch: (f: FeedState) => FeedState): ConsoleState {
-  const cur = state.feeds[feed] ?? emptyFeed;
-  const active = state.feeds[state.active] || state.active === feed
-    ? state.active : feed;
-  return { ...state, active, feeds: { ...state.feeds, [feed]: patch(cur) } };
+  const cur = state.feeds[feed] ?? { ...emptyFeed, live };
+  const current = live ? state.activeLive : state.active;
+  const active = state.feeds[current] || current === feed ? current : feed;
+  const feeds = { ...state.feeds, [feed]: { ...patch(cur), live } };
+  return live
+    ? { ...state, activeLive: active, feeds }
+    : { ...state, active, feeds };
 }
 
 export function consoleReducer(state: ConsoleState, action: Action): ConsoleState {
@@ -97,18 +114,21 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
     };
   }
   if (action.kind === "select_feed") {
-    return { ...state, active: action.feed };
+    return action.live ?? isLiveFeed(state, action.feed)
+      ? { ...state, activeLive: action.feed }
+      : { ...state, active: action.feed };
   }
   if (action.kind === "select_incident") {
-    return withFeed(state, state.active, (f) => ({
+    return withFeed(state, state.active, false, (f) => ({
       ...f, highlight: action.incident,
       seekTo: action.incident.olay_baslangic ?? action.incident.t,
       seekNonce: f.seekNonce + 1,
     }));
   }
   if (action.kind === "seek") {
+    if (isLiveFeed(state, action.feed)) return state;
     return {
-      ...withFeed(state, action.feed, (f) => ({
+      ...withFeed(state, action.feed, false, (f) => ({
         ...f,
         seekTo: action.timestamp,
         seekNonce: f.seekNonce + 1,
@@ -119,20 +139,22 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
   }
   if (action.kind === "run_started") {
     return {
-      ...withFeed(state, action.feed, () => ({ ...emptyFeed, video: action.video })),
+      ...withFeed(state, action.feed, false,
+                  () => ({ ...emptyFeed, video: action.video })),
       active: action.feed,
     };
   }
 
   const { seq, payload: p } = action.event;
   const feed = action.event.feed ?? "";
+  const live = action.event.live ?? false;
   switch (p.type) {
     case "window_report":
-      return withFeed(state, feed, (f) => ({
+      return withFeed(state, feed, live, (f) => ({
         ...f, reports: cap([...f.reports, p], CAPS.reports),
       }));
     case "incident_update":
-      return withFeed(state, feed, (f) => {
+      return withFeed(state, feed, live, (f) => {
         const prev = f.incidentMap.get(p.incident_id);
         const merged: StoredIncident = p.boxes.length > 0
           ? { ...p, boxT: p.t }
@@ -160,14 +182,15 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
         };
       });
     case "agent_step":
-      return withFeed(state, feed, (f) => ({
+      return withFeed(state, feed, live, (f) => ({
         ...f, trace: cap([...f.trace, { seq, kind: "step" as const, step: p }], CAPS.trace),
       }));
     case "tool_call":
-      return withFeed(state, feed || state.active, (f) => ({
+      return withFeed(state, feed || (live ? state.activeLive : state.active), live, (f) => ({
         ...f, trace: cap([...f.trace, { seq, kind: "tool" as const, tool: p }], CAPS.trace),
       }));
     case "chat_message": {
+      if (live) return state;
       if (p.streaming && p.role === "agent") {
         const chat = [...state.chat];
         const last = chat[chat.length - 1];
@@ -186,6 +209,7 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
       return { ...state, chat: cap([...state.chat, p], CAPS.chat) };
     }
     case "actuator_request": {
+      if (live) return state;
       const request = p.feed || !feed ? p : { ...p, feed };
       const others = state.actuatorRequests.filter((item) => item.request_id !== p.request_id);
       return {
@@ -194,6 +218,7 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
       };
     }
     case "actuator_result": {
+      if (live) return state;
       const result = p.feed || !feed ? p : { ...p, feed };
       const others = state.actuatorResults.filter((item) => item.request_id !== p.request_id);
       return {
@@ -202,28 +227,29 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
       };
     }
     case "run_status":
-      return withFeed(state, feed, (f) => {
+      return withFeed(state, feed, live, (f) => {
         const newRun = p.run_id !== "-" && p.run_id !== f.runStatus?.run_id;
         if (newRun) {
-          return { ...emptyFeed, video: p.video || null, runStatus: p };
+          return { ...emptyFeed, live, video: p.video || null, runStatus: p };
         }
         return { ...f, runStatus: p, video: f.video ?? (p.video || null) };
       });
     case "ui_command": {
+      if (live) return state;
       const target = feed || state.active;
       if (p.action === "seek_video") {
-        return withFeed(state, target, (f) => ({
+        return withFeed(state, target, false, (f) => ({
           ...f, seekTo: Number(p.args.t ?? 0), seekNonce: f.seekNonce + 1,
         }));
       }
       if (p.action === "highlight_incident") {
-        return withFeed(state, target, (f) => ({
+        return withFeed(state, target, false, (f) => ({
           ...f,
           highlight: f.incidents.find((i) => i.incident_id === p.args.incident_id) ?? null,
         }));
       }
       if (p.action === "show_report") {
-        return withFeed(state, target, (f) => ({ ...f, reportsPulse: f.reportsPulse + 1 }));
+        return withFeed(state, target, false, (f) => ({ ...f, reportsPulse: f.reportsPulse + 1 }));
       }
       return state;
     }

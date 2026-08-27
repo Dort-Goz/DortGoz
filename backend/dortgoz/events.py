@@ -223,11 +223,14 @@ class Event(BaseModel):
     seq: int = 0
     ts: float = Field(default_factory=time.time)
     feed: str = ""
+    live: bool = False
     payload: Payload = Field(discriminator="type")
 
     @staticmethod
-    def wrap(payload: Payload, seq: int = 0, feed: str = "") -> Event:
-        return Event(seq=seq, feed=feed, payload=payload)
+    def wrap(
+        payload: Payload, seq: int = 0, feed: str = "", live: bool = False
+    ) -> Event:
+        return Event(seq=seq, feed=feed, live=live, payload=payload)
 
 
 class OperatorMessage(BaseModel):

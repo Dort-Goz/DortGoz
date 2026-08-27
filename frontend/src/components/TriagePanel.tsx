@@ -1,5 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EventEvidenceRef } from "../types/events";
+import LiveAlerts, { playChime, type LiveAlert } from "./LiveAlerts";
+import LiveEventModal from "./LiveEventModal";
+import { outranks, shouldChime, unseenAlerts } from "../lib/liveAlerts";
 
 interface SuggestedAction {
   action: string;
@@ -22,6 +25,7 @@ interface TriageItem {
   model_category: string;
   risk: string;
   phase: string;
+  live: boolean;
   thumbnail: string | null;
   evidence: string | null;
   evidence_refs: EventEvidenceRef[];
@@ -190,12 +194,16 @@ export function evidenceFrameUrl(key: string, timestamp: number): string {
   return `/api/triage/evidence-frame?${query.toString()}`;
 }
 
-function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
+export function PendingCard({
+  item, categories, feedLabel, onDecide, onSeek, onOpen, layout = "card",
+}: {
   item: TriageItem;
   categories: string[];
   feedLabel: string;
   onDecide: (decision: TriageDecision) => Promise<string>;
-  onSeek?: (feed: string, timestamp: number, video: string) => void;
+  onSeek?: (feed: string, timestamp: number, video: string, live: boolean) => void;
+  onOpen?: (item: TriageItem) => void;
+  layout?: "card" | "modal";
 }) {
   const [verdict, setVerdict] = useState<TriageVerdict | "">("");
   const [cat, setCat] = useState(
@@ -264,6 +272,16 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
           <div className="text-zinc-400">
             {feedLabel} · video <span className="font-mono">{clock(item.t)}</span> · <span className="font-mono">{wallClock(item.wall)}</span>
           </div>
+          {(item.event_start ?? item.clip_start) != null
+            && (item.event_end ?? item.clip_end) != null && (
+            <div className="text-zinc-500">
+              olay penceresi{" "}
+              <span className="font-mono text-sky-300">
+                {clock((item.event_start ?? item.clip_start)!)}
+                –{clock((item.event_end ?? item.clip_end)!)}
+              </span>
+            </div>
+          )}
           <div className="mt-1 flex flex-wrap gap-1">
             <span
               className={`chip ${PRIORITY_CLS[item.intervention_band]}`}
@@ -291,9 +309,18 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
             )}
           </div>
         </div>
-        {onSeek && item.video && (
+        {onOpen && layout === "card" && (
           <button
-            onClick={() => onSeek(item.feed, item.t, item.video)}
+            onClick={(clicked) => { clicked.stopPropagation(); onOpen(item); }}
+            className="btn btn-primary ml-auto h-6 shrink-0 px-2 text-[10px]"
+            title="Olay klibini ve raporunu büyük ekranda aç"
+          >
+            ▶ İncele
+          </button>
+        )}
+        {onSeek && item.video && !item.live && layout === "card" && !onOpen && (
+          <button
+            onClick={() => onSeek(item.feed, item.t, item.video, item.live)}
             className="btn btn-outline-accent ml-auto h-6 shrink-0 px-1.5 text-[10px]"
             title="Videoyu olay anına götür"
           >
@@ -310,7 +337,7 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
             {selectReviewEvidence(item.evidence_refs, item.event_peak ?? item.t).map((evidence) => (
               <button
                 key={`${evidence.frame_id}:${evidence.timestamp}`}
-                onClick={() => onSeek?.(item.feed, evidence.timestamp, item.video)}
+                onClick={() => onSeek?.(item.feed, evidence.timestamp, item.video, item.live)}
                 className="overflow-hidden rounded-sm border border-zinc-800 bg-zinc-950 text-left transition-colors hover:border-sky-700"
                 title={`${clock(evidence.timestamp)} · ${evidence.claim}`}
               >
@@ -343,16 +370,46 @@ function PendingCard({ item, categories, feedLabel, onDecide, onSeek }: {
           Öncelik: {item.intervention_reasons.join(" · ")}
         </div>
       )}
-      {(item.clip_url || item.evidence) && (
-        <video
-          controls
-          preload="metadata"
-          poster={item.media_thumbnail_url ?? undefined}
-          src={item.clip_url ?? item.evidence ?? undefined}
-          className="mx-auto max-h-56 w-full max-w-lg rounded-sm bg-black object-contain"
-        >
-          Tarayıcınız olay klibini oynatamıyor.
-        </video>
+      {(item.clip_url || item.evidence) ? (
+        <div className="space-y-1">
+          <video
+            controls
+            autoPlay={layout === "modal"}
+            muted={layout === "modal"}
+            playsInline
+            preload="metadata"
+            poster={item.media_thumbnail_url ?? undefined}
+            src={item.clip_url ?? item.evidence ?? undefined}
+            className={layout === "modal"
+              ? "mx-auto max-h-[46vh] w-full rounded-sm bg-black object-contain"
+              : "mx-auto max-h-56 w-full max-w-lg rounded-sm bg-black object-contain"}
+          >
+            Tarayıcınız olay klibini oynatamıyor.
+          </video>
+          {layout === "modal" && (
+            <div className="flex items-center gap-2 text-[10px] text-zinc-500">
+              <span>
+                Canlı yayından kesilmiş olay kaydı
+                {item.clip_start != null && item.clip_end != null
+                  ? ` · ${clock(item.clip_start)}–${clock(item.clip_end)}`
+                  : ""}
+              </span>
+              <span className="flex-1" />
+              <a
+                href={item.clip_url ?? item.evidence ?? "#"}
+                download
+                title="Kaydı indir — analiz istenirse “Video yükle” ile ayrıca yüklenir"
+                className="btn btn-outline h-6 px-1.5 text-[10px]"
+              >
+                ⇩ kaydı indir
+              </a>
+            </div>
+          )}
+        </div>
+      ) : layout === "modal" && (
+        <div className="flex h-40 items-center justify-center rounded-sm border border-dashed border-zinc-800 bg-black text-xs text-zinc-500">
+          Olay kaydı henüz hazır değil — segment kapanınca kesilir.
+        </div>
       )}
       {!verdict ? (
         <div className="flex gap-1">
@@ -502,15 +559,17 @@ export default function TriagePanel({
   onSeek,
   feedNames = {},
   scopeFeed,
+  scopeLive,
   title = "Nöbet kuyruğu",
   layout = "sidebar",
 }: {
   onSelectFeed?: (feed: string) => void;
   onOpenTraining?: (eventId: string) => void;
-  onSeek?: (feed: string, timestamp: number, video: string) => void;
+  onSeek?: (feed: string, timestamp: number, video: string, live: boolean) => void;
 
   feedNames?: Record<string, string>;
   scopeFeed?: string;
+  scopeLive?: boolean;
   title?: string;
   layout?: "sidebar" | "workspace";
 }) {
@@ -519,10 +578,21 @@ export default function TriagePanel({
   const [reviewer, setReviewer] = useState(
     () => localStorage.getItem("dortgoz.reviewer") ?? "operator",
   );
+  const [openKey, setOpenKey] = useState("");
+  const [dismissed, setDismissed] = useState<string[]>([]);
+  const [muted, setMuted] = useState(
+    () => localStorage.getItem("dortgoz.uyariSesi") === "kapali",
+  );
+  const seenRef = useRef<Set<string> | null>(null);
+  const chimedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     localStorage.setItem("dortgoz.reviewer", reviewer);
   }, [reviewer]);
+
+  useEffect(() => {
+    localStorage.setItem("dortgoz.uyariSesi", muted ? "kapali" : "acik");
+  }, [muted]);
 
   const loadSnapshot = useCallback(async () => {
     const response = await fetch("/api/triage");
@@ -635,6 +705,56 @@ export default function TriagePanel({
     }
   };
 
+  const inScope = useCallback(
+    (item: TriageItem) =>
+      (scopeFeed === undefined || item.feed === scopeFeed)
+      && (scopeLive === undefined || item.live === scopeLive),
+    [scopeFeed, scopeLive],
+  );
+  const scopedPending = useMemo(
+    () => (snap?.pending ?? []).filter(inScope),
+    [snap, inScope],
+  );
+  const openItem = scopedPending.find((item) => item.key === openKey);
+
+  useEffect(() => {
+    if (snap && seenRef.current === null) {
+      seenRef.current = new Set(scopedPending.map((item) => item.key));
+    }
+  }, [snap, scopedPending]);
+
+  useEffect(() => {
+    if (openKey && snap && !openItem) setOpenKey("");
+  }, [openKey, snap, openItem]);
+
+  const alerts: LiveAlert[] = useMemo(() => {
+    if (!scopeLive || seenRef.current === null) return [];
+    const seen = new Set([...seenRef.current, ...dismissed, openKey]);
+    return unseenAlerts(scopedPending, seen).map((item) => ({
+      key: item.key,
+      risk: item.risk,
+      intervention_band: item.intervention_band,
+      intervention_score: item.intervention_score,
+      wall: item.wall,
+      title: item.title,
+      feedLabel: feedNames[item.feed] || item.feed || "ana akış",
+      category: CATEGORY_TR[item.model_category] ?? item.model_category,
+      outranksWatched: openItem ? outranks(item, openItem) : false,
+    }));
+  }, [scopeLive, scopedPending, dismissed, openKey, openItem, feedNames]);
+
+  useEffect(() => {
+    const fresh = alerts.filter((alert) => !chimedRef.current.has(alert.key));
+    if (fresh.length === 0) return;
+    for (const alert of fresh) chimedRef.current.add(alert.key);
+    if (!muted && shouldChime(fresh)) playChime();
+  }, [alerts, muted]);
+
+  const openEvent = useCallback((key: string) => {
+    setDismissed((current) => [...current, key]);
+    setOpenKey(key);
+  }, []);
+
   const rootClass = layout === "workspace"
     ? "h-full min-h-0 grid grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)] gap-1.5 text-sm"
     : "w-80 shrink-0 flex flex-col gap-1.5 min-h-0 text-sm";
@@ -647,10 +767,18 @@ export default function TriagePanel({
       </div>
     );
   }
-  const pending = scopeFeed === undefined
-    ? snap.pending : snap.pending.filter((item) => item.feed === scopeFeed);
-  const confirmed = scopeFeed === undefined
-    ? snap.confirmed : snap.confirmed.filter((item) => item.feed === scopeFeed);
+  const pending = scopedPending;
+  const confirmed = snap.confirmed.filter(inScope);
+  const alertStack = (
+    <LiveAlerts
+      alerts={alerts}
+      muted={muted}
+      clearQueue={!openItem && layout === "sidebar"}
+      onMuteToggle={() => setMuted((current) => !current)}
+      onOpen={openEvent}
+      onDismiss={(key) => setDismissed((current) => [...current, key])}
+    />
+  );
   return (
     <div className={rootClass}>
       <div className="panel flex-1">
@@ -691,7 +819,8 @@ export default function TriagePanel({
             <div key={i.key} onClick={() => onSelectFeed?.(i.feed)}>
               <PendingCard item={i} categories={snap.categories}
                            feedLabel={feedNames[i.feed] || i.feed || "ana akış"}
-                           onDecide={decide} onSeek={onSeek} />
+                           onDecide={decide} onSeek={onSeek}
+                           onOpen={scopeLive ? (opened) => openEvent(opened.key) : undefined} />
             </div>
           ))}
         </div>
@@ -815,6 +944,25 @@ export default function TriagePanel({
           ))}
         </div>
       </div>
+      {openItem ? (
+        <LiveEventModal
+          title={openItem.title}
+          subtitle={`${feedNames[openItem.feed] || openItem.feed || "ana akış"} · ${
+            CATEGORY_TR[openItem.model_category] ?? openItem.model_category
+          } · ${wallClock(openItem.wall)}`}
+          onClose={() => setOpenKey("")}
+          alerts={alertStack}
+          alertsPresent={alerts.length > 0}
+        >
+          <PendingCard
+            item={openItem}
+            categories={snap.categories}
+            feedLabel={feedNames[openItem.feed] || openItem.feed || "ana akış"}
+            onDecide={decide}
+            layout="modal"
+          />
+        </LiveEventModal>
+      ) : alertStack}
     </div>
   );
 }

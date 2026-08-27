@@ -163,7 +163,10 @@ class Settings(BaseSettings):
     live_feeds_path: Path = Path(__file__).resolve().parents[2] / "config" / "live_feeds.json"
     live_segment_seconds: int = 30
     live_max_backlog: int = 2
-    live_keep_segments: int = Field(default=3, ge=1)
+    live_clip_tail_seconds: float = Field(default=30.0, ge=0, le=300)
+    live_clip_retention_hours: float = Field(default=72.0, gt=0, le=24 * 90)
+    live_clip_max_per_feed: int = Field(default=200, ge=1)
+    live_keep_segments: int = Field(default=6, ge=1)
     live_keep_runs: int = Field(default=20, ge=1)
     candidate_cache_dir: Path = Path(__file__).resolve().parents[2] / "cache" / "candidate"
     candidate_manifest_path: Path = (

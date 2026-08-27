@@ -339,3 +339,85 @@ def test_shadow_hit_is_recorded_so_the_activation_gate_is_measurable(tmp_path,
     assert line["emsal_golge"] is True
     assert line["emsal_key"] == "run/9"
     assert line["verdict"] == "anomali"
+
+
+def test_live_origin_reaches_the_queue_and_survives_a_decision(tmp_path):
+    live = Event.wrap(
+        IncidentUpdate(
+            incident_id="INC-CANLI", t=12.0, phase="basladi", title="canlı olay",
+            anomaly_type="kavga", risk="orta",
+        ),
+        feed="kamera1",
+        live=True,
+    )
+    triage.store.observe(run_started())
+    triage.store.observe(live)
+    triage.store.observe(incident("INC-DOSYA"))
+
+    pending = {item["incident_id"]: item for item in triage.store.snapshot()["pending"]}
+    assert pending["INC-CANLI"]["live"] is True
+    assert pending["INC-DOSYA"]["live"] is False
+
+    item = triage.store.decide("kamera1:INC-CANLI", "anomali", category="kavga")
+    assert item.live is True
+    assert triage.store.snapshot()["confirmed"][0]["live"] is True
+
+
+def live_incident(iid: str, start: float, end: float, risk: str = "orta",
+                  category: str = "kavga") -> Event:
+    return Event.wrap(
+        IncidentUpdate(
+            incident_id=iid, t=start, phase="sonuclandi", title="canlı olay",
+            anomaly_type=category, risk=risk,
+            olay_baslangic=start, olay_bitis=end,
+        ),
+        feed="kamera1",
+        live=True,
+    )
+
+
+def test_segment_boundary_event_stays_one_card(tmp_path):
+    triage.store.observe(run_started())
+    triage.store.observe(live_incident("INC-A", 24.0, 30.0))
+    triage.store.observe(live_incident("INC-B", 0.0, 7.0, risk="yuksek"))
+
+    pending = triage.store.snapshot()["pending"]
+    assert len(pending) == 1
+    card = pending[0]
+    assert card["incident_id"] == "INC-A"
+    assert card["tekrar"] == 2
+    assert card["carried_incident_ids"] == ["INC-B"]
+    assert card["risk"] == "yuksek"
+    assert card["carried_end"] == pytest.approx(37.0)
+
+
+def test_a_mid_segment_event_is_never_folded_into_another(tmp_path):
+    triage.store.observe(run_started())
+    triage.store.observe(live_incident("INC-A", 24.0, 30.0))
+    triage.store.observe(live_incident("INC-B", 12.0, 18.0))
+
+    assert len(triage.store.snapshot()["pending"]) == 2
+
+
+def test_a_different_category_is_never_folded_in(tmp_path):
+    triage.store.observe(run_started())
+    triage.store.observe(live_incident("INC-A", 24.0, 30.0))
+    triage.store.observe(live_incident("INC-B", 0.0, 7.0, category="yangin"))
+
+    assert len(triage.store.snapshot()["pending"]) == 2
+
+
+def test_a_file_analysis_event_is_never_folded_in(tmp_path):
+    triage.store.observe(run_started())
+    triage.store.observe(live_incident("INC-A", 24.0, 30.0))
+    triage.store.observe(
+        Event.wrap(
+            IncidentUpdate(
+                incident_id="INC-B", t=0.0, phase="sonuclandi", title="dosya olayı",
+                anomaly_type="kavga", risk="orta", olay_baslangic=0.0, olay_bitis=7.0,
+            ),
+            feed="kamera1",
+        )
+    )
+
+    assert len(triage.store.snapshot()["pending"]) == 2
