@@ -403,17 +403,15 @@ export default function TrainingReviewPanel({
     && (reviewVerdict === "anomali"
       ? validTimes
       : Boolean(falseAlarmReason));
+  const canonicalEventLabel = canonicalEvent
+    ? CANONICAL_TYPE_TR[canonicalEvent.event_type as CanonicalEventType] ?? canonicalEvent.event_type
+    : "";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 shadow-2xl">
         <header className="flex shrink-0 items-center gap-3 border-b border-zinc-800 px-4 py-3">
-          <div>
-            <h2 className="text-sm font-semibold text-zinc-100">Olayı İncele</h2>
-            <p className="mt-0.5 text-[10px] text-zinc-500">
-              Görüntüyü kontrol edin. Kararınızı verin.
-            </p>
-          </div>
+          <h2 className="text-sm font-semibold text-zinc-100">Olayı İncele</h2>
           <div className="ml-auto">
             <button onClick={onClose} className="btn btn-ghost">
               Kapat ×
@@ -424,16 +422,11 @@ export default function TrainingReviewPanel({
         <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[23rem_minmax(0,1fr)] lg:overflow-hidden">
           <aside className="border-b border-zinc-800 p-3 text-xs lg:overflow-y-auto lg:border-b-0 lg:border-r">
             <section className="mb-3 rounded-md bg-zinc-900 p-3">
-              <h3 className="font-medium text-zinc-100">Olay sonucu</h3>
-              {canonicalEvent && (
-                <p className="mt-1 text-zinc-400">
-                  {CANONICAL_TYPE_TR[canonicalEvent.event_type as CanonicalEventType] ?? canonicalEvent.event_type}
-                  {latestReview?.risk_level ? ` · ${RISK_TR[latestReview.risk_level as Risk] ?? latestReview.risk_level} önem` : ""}
-                </p>
-              )}
               {latestReview ? (
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  <span className="font-medium text-emerald-400">✓ İnceleme tamamlandı</span>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-medium text-emerald-400">
+                    ✓ {canonicalEventLabel ? `${canonicalEventLabel} olarak incelendi` : "İnceleme tamamlandı"}
+                  </span>
                   {!reviewOpen && (
                     <button
                       type="button"
@@ -445,8 +438,12 @@ export default function TrainingReviewPanel({
                   )}
                 </div>
               ) : (
-                <div className="mt-3 space-y-2">
-                  <p className="font-medium text-zinc-200">Bu olay doğru mu?</p>
+                <div className="space-y-2">
+                  <p className="font-medium text-zinc-200">
+                    {canonicalEventLabel
+                      ? `Bu olayın “${canonicalEventLabel}” olduğu doğru mu?`
+                      : "Bu olay doğru mu?"}
+                  </p>
                   <div className="grid grid-cols-3 gap-2">
                     <button
                       type="button"
@@ -465,28 +462,28 @@ export default function TrainingReviewPanel({
                     </button>
                     <button
                       type="button"
-                      disabled={busy || !reviewerName}
-                      onClick={() => run(
-                        () => saveEventReview(eventId, {
-                          decision: "reject",
-                          reviewer: reviewerName,
-                          note: "Operatör kaydı sorun değil olarak işaretledi.",
-                          false_alarm_reason: "other",
-                          intervention_required: false,
-                        }),
-                        "Kayıt sorun değil olarak işaretlendi.",
-                      )}
-                      className="btn btn-outline h-9"
-                    >
-                      Hayır, sorun yok
-                    </button>
-                    <button
-                      type="button"
                       aria-expanded={reviewOpen}
                       onClick={() => setReviewOpen(true)}
                       className="btn h-9 border-amber-500 bg-amber-500 px-1 text-[11px] text-zinc-950 hover:border-amber-400 hover:bg-amber-400"
                     >
                       Ayrıntılı karara git
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy || !reviewerName}
+                      onClick={() => run(
+                        () => saveEventReview(eventId, {
+                          decision: "reject",
+                          reviewer: reviewerName,
+                          note: "Operatör sistem sonucunu yanlış olarak işaretledi.",
+                          false_alarm_reason: "other",
+                          intervention_required: false,
+                        }),
+                        "Sistem sonucu yanlış olarak işaretlendi.",
+                      )}
+                      className="btn btn-outline h-9"
+                    >
+                      Hayır, yanlış
                     </button>
                   </div>
                 </div>
