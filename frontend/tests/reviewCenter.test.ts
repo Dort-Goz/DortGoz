@@ -49,7 +49,8 @@ describe("olay inceleme merkezi", () => {
       new URL("../src/components/ReviewConsole.tsx", import.meta.url), "utf8",
     );
 
-    expect(console_).toContain("Olay İnceleme Merkezi");
+    // Sayfa adı artık üst çubuktaki sekmededir; panelin içinde başlık hücresi yok.
+    expect(console_).toContain('className="toolbar"');
     expect(app).toContain("<ReviewConsole onOpenTraining={setTrainingEventId} />");
     expect(app).toContain('["analysis", "Analiz"]');
     expect(app).toContain('["live", "Canlı"]');

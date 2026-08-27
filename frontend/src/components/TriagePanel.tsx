@@ -565,6 +565,7 @@ export function PendingCard({
 }
 
 export default function TriagePanel({
+  user,
   onSelectFeed,
   onOpenTraining,
   onSeek,
@@ -574,6 +575,8 @@ export default function TriagePanel({
   title = "Nöbet kuyruğu",
   layout = "sidebar",
 }: {
+  /** Konsolun tek kimliği; üst çubuktan gelir ve kararı imzalar. */
+  user: string;
   onSelectFeed?: (feed: string) => void;
   onOpenTraining?: (eventId: string) => void;
   onSeek?: (feed: string, timestamp: number, video: string, live: boolean) => void;
@@ -586,9 +589,7 @@ export default function TriagePanel({
 }) {
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [error, setError] = useState("");
-  const [reviewer, setReviewer] = useState(
-    () => localStorage.getItem("dortgoz.reviewer") ?? "operator",
-  );
+  const reviewer = user;
   const [openKey, setOpenKey] = useState("");
   const [dismissed, setDismissed] = useState<string[]>([]);
   const [muted, setMuted] = useState(
@@ -596,10 +597,6 @@ export default function TriagePanel({
   );
   const seenRef = useRef<Set<string> | null>(null);
   const chimedRef = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    localStorage.setItem("dortgoz.reviewer", reviewer);
-  }, [reviewer]);
 
   useEffect(() => {
     localStorage.setItem("dortgoz.uyariSesi", muted ? "kapali" : "acik");
@@ -798,16 +795,7 @@ export default function TriagePanel({
             </span>
           )}
         </div>
-        <div className="flex shrink-0 flex-col gap-1.5 p-2 pb-0">
-          <label className="flex items-center gap-2">
-            <span className="microlabel shrink-0">İnceleyen</span>
-            <input
-              value={reviewer}
-              onChange={(event) => setReviewer(event.target.value)}
-              maxLength={120}
-              className="field min-w-0 flex-1"
-            />
-          </label>
+        <div className="flex shrink-0 flex-col gap-1.5 p-2 pb-0 empty:hidden">
           {error && (
             <div className="rounded-sm border border-red-900 bg-red-950/40 px-2 py-1 text-xs text-red-200">
               {error}

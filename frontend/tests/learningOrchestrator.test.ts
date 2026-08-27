@@ -144,7 +144,10 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
 
     expect(app).toContain("<ModelMaintenancePanel");
     expect(app).toContain("!fixtureMode");
-    expect(app).toContain('["maintenance", "Bakım"]');
+    // Bakım sekmesi operatör sekmelerinden ayrı bir kümede durur.
+    expect(app).toContain('workspaceTab("maintenance", "Bakım")');
+    expect(app).toContain('aria-label="Bakım çalışma alanı"');
+    expect(app).not.toContain('["maintenance", "Bakım"]');
     expect(app).not.toContain("LearningOrchestratorPanel");
     expect(app).not.toContain("◈ öğrenme merkezi");
     expect(detail).toContain("<details");

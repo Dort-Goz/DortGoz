@@ -88,8 +88,11 @@ function measurementCommand(modelVersionId: string): string {
 }
 
 export default function ModelMaintenancePanel({
+  user,
   onOpenEvent,
 }: {
+  /** Konsolun tek kimliği; onay, eğitim ve terfi kayıtlarını imzalar. */
+  user: string;
   onOpenEvent: (eventId: string) => void;
 }) {
   const [view, setView] = useState<LearningPipelineView | null>(null);
@@ -97,7 +100,6 @@ export default function ModelMaintenancePanel({
   const [stage, setStage] = useState<PipelineStage | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
-  const [engineer, setEngineer] = useState("");
   const [note, setNote] = useState("");
   const [promotionReason, setPromotionReason] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
@@ -191,57 +193,17 @@ export default function ModelMaintenancePanel({
   const stageCount = (name: PipelineStage) =>
     view.stages.find((item) => item.stage === name)?.count ?? 0;
   const champion = view.champion;
-  const signed = engineer.trim();
+  const signed = user.trim();
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-1.5 text-xs">
-      <div className="panel shrink-0">
-        <div className="panel-title">
-          <span>◇ Dedektör Bakım Hattı</span>
-          <span className="microlabel normal-case tracking-normal">
-            bakım mühendisi ekranı
-          </span>
-          <span className="flex-1" />
-          <span
-            title="Canlı çalışan dedektör sürümü"
-            className={`chip border normal-case tracking-normal ${
-              champion
-                ? "border-emerald-900 bg-emerald-950/30 text-emerald-200"
-                : "border-zinc-700 bg-zinc-950 text-zinc-400"
-            }`}
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="toolbar">
+        <div className="toolbar-group">
+          <span className="microlabel block">aşama</span>
+          <nav
+            aria-label="Bakım aşamaları"
+            className="flex h-7 items-center gap-0.5 rounded-sm border border-zinc-800 bg-zinc-950 p-0.5"
           >
-            {champion
-              ? `yürürlükte ${champion.version.architecture} ·`
-                + ` mAP ${ratio(champion.version.evaluation?.map_50_95)}`
-              : "yürürlükte terfi etmiş aday yok"}
-          </span>
-        </div>
-
-        <div className="space-y-2 p-2">
-          <div className="flex flex-wrap items-end gap-2">
-            <label
-              className="space-y-0.5"
-              title="Onay, eğitim ve terfi kayıtlarına bu ad yazılır"
-            >
-              <span className="microlabel block">mühendis</span>
-              <input
-                value={engineer}
-                onChange={(e) => setEngineer(e.target.value)}
-                placeholder="ad soyad"
-                className="field w-44"
-              />
-            </label>
-            <button
-              type="button"
-              disabled={busy !== ""}
-              onClick={() => void act("yenile", async () => {})}
-              className="btn btn-outline"
-            >
-              {busy === "yenile" ? "Yenileniyor…" : "Yenile"}
-            </button>
-          </div>
-
-          <nav aria-label="Bakım aşamaları" className="grid grid-cols-3 gap-2 lg:grid-cols-6">
             {STAGE_ORDER.map((name) => {
               const summary = view.stages.find((item) => item.stage === name);
               const count = summary?.count ?? 0;
@@ -254,32 +216,58 @@ export default function ModelMaintenancePanel({
                   onClick={() => setStage(name)}
                   title={summary?.detail}
                   aria-current={isActive ? "page" : undefined}
-                  className={`border px-3 py-2 text-left transition-colors ${
+                  className={`h-full px-2.5 transition-colors ${
                     isActive
-                      ? "border-sky-700 bg-zinc-800"
-                      : blocked > 0
-                        ? "border-amber-900/70 bg-amber-950/20 hover:border-amber-700"
-                        : "border-zinc-800 bg-zinc-900 hover:border-zinc-600"
+                      ? "bg-zinc-800 font-medium text-zinc-100"
+                      : "text-zinc-500 hover:text-zinc-200"
                   }`}
                 >
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className={`microlabel ${isActive ? "text-zinc-300" : ""}`}>
-                      {STAGE_TR[name]}
-                    </span>
-                    <span className="font-mono text-lg font-semibold leading-6 text-zinc-100">
+                  {STAGE_TR[name]}
+                  {count > 0 && (
+                    <span
+                      className={`ml-1.5 inline-flex min-w-4 items-center justify-center rounded-sm px-1 font-mono text-[10px] leading-4 ${
+                        blocked > 0
+                          ? "bg-amber-800 text-amber-100"
+                          : isActive
+                            ? "bg-zinc-600 text-zinc-100"
+                            : "bg-zinc-800 text-zinc-300"
+                      }`}
+                    >
                       {count}
                     </span>
-                  </div>
-                  <div className="h-3.5 text-[10px] leading-3.5 text-amber-300">
-                    {blocked > 0 ? `${blocked} engelli` : ""}
-                  </div>
+                  )}
                 </button>
               );
             })}
           </nav>
         </div>
+
+        <button
+          type="button"
+          disabled={busy !== ""}
+          onClick={() => void act("yenile", async () => {})}
+          className="btn btn-outline"
+        >
+          {busy === "yenile" ? "Yenileniyor…" : "Yenile"}
+        </button>
+
+        <span className="flex-1" />
+        <span
+          title="Canlı çalışan dedektör sürümü"
+          className={`chip border ${
+            champion
+              ? "border-emerald-900 bg-emerald-950/30 text-emerald-200"
+              : "border-zinc-700 bg-zinc-950 text-zinc-400"
+          }`}
+        >
+          {champion
+            ? `yürürlükte ${champion.version.architecture} ·`
+              + ` mAP ${ratio(champion.version.evaluation?.map_50_95)}`
+            : "yürürlükte terfi etmiş aday yok"}
+        </span>
       </div>
 
+      <div className="flex min-h-0 flex-1 flex-col gap-1.5 p-1.5 text-xs">
       {error && (
         <div className="shrink-0 border border-red-900 bg-red-950/40 px-3 py-2 text-red-200">
           {error}
@@ -339,7 +327,7 @@ export default function ModelMaintenancePanel({
                     disabled={
                       selected.length === 0 || !signed || !note.trim() || busy !== ""
                     }
-                    title={signed ? undefined : "Önce üst satıra mühendis adını yazın"}
+                    title={signed ? undefined : "Önce üst çubuktaki kullanıcı adını doldurun"}
                     onClick={() => void act("batch", async () => {
                       const uses = new Set(
                         view.approval_items
@@ -410,7 +398,7 @@ export default function ModelMaintenancePanel({
                     disabled={!view.readiness.can_plan || !signed || busy !== ""}
                     title={
                       view.readiness.can_plan
-                        ? (signed ? undefined : "Önce üst satıra mühendis adını yazın")
+                        ? (signed ? undefined : "Önce üst çubuktaki kullanıcı adını doldurun")
                         : view.readiness.blockers.join("; ")
                     }
                     onClick={() => void act("plan", () => planTrainingJob({
@@ -653,7 +641,7 @@ export default function ModelMaintenancePanel({
                           disabled={!item.gate_passed || !signed || busy !== ""}
                           title={
                             item.gate_passed
-                              ? (signed ? undefined : "Önce üst satıra mühendis adını yazın")
+                              ? (signed ? undefined : "Önce üst çubuktaki kullanıcı adını doldurun")
                               : item.gate_failures.join("; ")
                           }
                           onClick={() => void act(
@@ -710,6 +698,7 @@ export default function ModelMaintenancePanel({
         {view.readiness.promotion_policy_version ?? "—"} · otomatik eğitim ve otomatik
         terfi KAPALIDIR; her adım insan onayıyla ilerler.
       </footer>
+      </div>
     </div>
   );
 }

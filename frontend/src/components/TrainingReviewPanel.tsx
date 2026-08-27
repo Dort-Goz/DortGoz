@@ -242,10 +242,13 @@ function BoxEditor({
 }
 
 export default function TrainingReviewPanel({
+  user,
   eventId,
   onClose,
   onBack,
 }: {
+  /** Konsolun tek kimliği; üst çubuktan gelir ve kararı imzalar. */
+  user: string;
   eventId: string;
   onClose: () => void;
   onBack?: () => void;
@@ -259,7 +262,6 @@ export default function TrainingReviewPanel({
   const [samples, setSamples] = useState<TrainingSample[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [boxes, setBoxes] = useState<VerifiedBoundingBox[]>([]);
-  const [reviewer, setReviewer] = useState(() => localStorage.getItem("dortgoz.reviewer") ?? "operator");
   const [manifest, setManifest] = useState("training_manifest.json");
   const [times, setTimes] = useState({ start: 0, peak: 0, end: 0 });
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -352,10 +354,6 @@ export default function TrainingReviewPanel({
     load().catch((reason) => setError(messageOf(reason)));
   }, [load]);
 
-  useEffect(() => {
-    localStorage.setItem("dortgoz.reviewer", reviewer);
-  }, [reviewer]);
-
   const selected = useMemo(
     () => samples.find((sample) => sample.sample_id === selectedId) ?? null,
     [samples, selectedId],
@@ -399,7 +397,7 @@ export default function TrainingReviewPanel({
     }
   };
 
-  const reviewerName = reviewer.trim();
+  const reviewerName = user.trim();
   const validTimes = times.start >= 0 && times.start <= times.peak && times.peak <= times.end;
   const canSaveReview = Boolean(reviewerName && reviewNote.trim() && intervention)
     && (reviewVerdict === "anomali"
@@ -703,14 +701,10 @@ export default function TrainingReviewPanel({
                 <p className="text-[10px] leading-relaxed text-zinc-600">
                   Geçmiş kararlar ve geliştirme ekibi araçları bu alandadır.
                 </p>
-                <label className="block text-zinc-500">
-                  İşlemi yapan
-                  <input
-                    value={reviewer}
-                    onChange={(event) => setReviewer(event.target.value)}
-                    className="field mt-1 w-full"
-                  />
-                </label>
+                <p className="text-zinc-500">
+                  İşlemi yapan: <span className="text-zinc-300">{reviewerName || "—"}</span>
+                  {" · üst çubuktaki kullanıcı alanından değişir"}
+                </p>
                 <p className="break-all font-mono text-[9px] text-zinc-700">Olay kimliği: {eventId}</p>
 
             {reviews.length > 0 && (

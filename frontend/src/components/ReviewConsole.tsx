@@ -135,20 +135,9 @@ export default function ReviewConsole({ onOpenTraining }: {
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-1.5 text-sm">
-      <div className="panel shrink-0">
-        <div className="panel-title">
-          <span>⚑ Olay İnceleme Merkezi</span>
-          <span className="microlabel normal-case tracking-normal">
-            canlı ve dosya analizlerinin tamamı
-          </span>
-          <span className="flex-1" />
-          <span className="chip border border-zinc-700 font-mono normal-case tracking-normal text-zinc-300">
-            {total}
-          </span>
-        </div>
-        <div className="flex flex-wrap items-end gap-2 p-2">
-          <label className="space-y-0.5">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="toolbar">
+          <label className="toolbar-group">
             <span className="microlabel block">kaynak</span>
             <select value={origin} onChange={(e) => setOrigin(e.target.value)} className="field">
               <option value="all">tümü</option>
@@ -158,7 +147,7 @@ export default function ReviewConsole({ onOpenTraining }: {
               </option>
             </select>
           </label>
-          <label className="space-y-0.5">
+          <label className="toolbar-group">
             <span className="microlabel block">durum</span>
             <select value={status} onChange={(e) => setStatus(e.target.value)} className="field">
               <option value="all">tümü</option>
@@ -169,7 +158,7 @@ export default function ReviewConsole({ onOpenTraining }: {
               ))}
             </select>
           </label>
-          <label className="space-y-0.5">
+          <label className="toolbar-group">
             <span className="microlabel block">aciliyet</span>
             <select
               value={urgency}
@@ -184,7 +173,7 @@ export default function ReviewConsole({ onOpenTraining }: {
               ))}
             </select>
           </label>
-          <label className="space-y-0.5">
+          <label className="toolbar-group">
             <span className="microlabel block">olay türü</span>
             <select
               value={category}
@@ -199,7 +188,7 @@ export default function ReviewConsole({ onOpenTraining }: {
               ))}
             </select>
           </label>
-          <label className="space-y-0.5">
+          <label className="toolbar-group">
             <span className="microlabel block">kamera</span>
             <select value={feed} onChange={(e) => setFeed(e.target.value)} className="field">
               <option value="">tümü</option>
@@ -229,10 +218,15 @@ export default function ReviewConsole({ onOpenTraining }: {
               süzgeçleri temizle ✕
             </button>
           )}
-        </div>
+          <span
+            title="Süzgeçlere uyan toplam kayıt"
+            className="chip border border-zinc-700 font-mono text-zinc-300"
+          >
+            {total} kayıt
+          </span>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,3fr)_minmax(22rem,2fr)] gap-1.5">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,3fr)_minmax(22rem,2fr)] gap-1.5 p-1.5 text-sm">
         <div className="panel">
           <div className="panel-title"><span>Kayıtlar</span></div>
           <div className="panel-body space-y-1 p-1.5 text-xs">

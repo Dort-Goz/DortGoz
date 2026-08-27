@@ -66,6 +66,22 @@ const CONNECTION_CLS: Record<ConnectionState, string> = {
   closed: "border-red-900 bg-red-950/60 text-red-300",
 };
 
+type Workspace = "analysis" | "live" | "review" | "maintenance";
+
+/** İlk üçü nöbetteki operatöründür; bakım ayrı bir kümede durur. */
+const OPERATOR_TABS = [
+  ["analysis", "Analiz"],
+  ["live", "Canlı"],
+  ["review", "Olay inceleme"],
+] as const satisfies readonly (readonly [Workspace, string])[];
+
+const WORKSPACE_HASH: Record<Workspace, string> = {
+  analysis: "#",
+  live: "#canli",
+  review: "#inceleme",
+  maintenance: "#bakim",
+};
+
 function Clock() {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -100,12 +116,20 @@ export default function App() {
   const [liveView, setLiveView] = useState(() => location.hash === "#canli");
   const [reviewView, setReviewView] = useState(() => location.hash === "#inceleme");
   const [maintenanceView, setMaintenanceView] = useState(() => location.hash === "#bakim");
+  /** Konsolun tek kimliği: her insan kararı ve onayı bu adla kaydedilir. */
+  const [user, setUser] = useState(
+    () => localStorage.getItem("dortgoz.reviewer") ?? "operator",
+  );
   const [trainingEventId, setTrainingEventId] = useState("");
   const [openedFromMaintenance, setOpenedFromMaintenance] = useState(false);
   const [fixtureMode, setFixtureMode] = useState(false);
   const [livePending, setLivePending] = useState(0);
   const [resolvedKeys, setResolvedKeys] = useState<string[]>([]);
   const [connection, setConnection] = useState<ConnectionState>("connecting");
+
+  useEffect(() => {
+    localStorage.setItem("dortgoz.reviewer", user);
+  }, [user]);
 
   const resetDialogue = useCallback(() => {
     dialogueIdRef.current = nextBrowserDialogueId();
@@ -383,6 +407,34 @@ export default function App() {
     feed.highlight && run?.run_id && run.run_id !== "-" && run.state === "done",
   );
 
+  const workspaceTab = (value: Workspace, label: string) => (
+    <button
+      key={value}
+      type="button"
+      onClick={() => {
+        setLiveView(value === "live");
+        setReviewView(value === "review");
+        setMaintenanceView(value === "maintenance");
+        history.replaceState(null, "", WORKSPACE_HASH[value]);
+      }}
+      className={`h-full px-2.5 transition-colors ${
+        workspace === value
+          ? "bg-zinc-800 font-medium text-zinc-100"
+          : "text-zinc-500 hover:text-zinc-200"
+      }`}
+    >
+      {label}
+      {value === "live" && livePending > 0 && (
+        <span
+          title={`${livePending} canlı olay operatör kararı bekliyor`}
+          className="ml-1.5 inline-flex min-w-4 items-center justify-center rounded-sm bg-red-700 px-1 font-mono text-[10px] leading-4 text-red-50"
+        >
+          {livePending}
+        </span>
+      )}
+    </button>
+  );
+
   return (
     <div className="flex h-screen flex-col overflow-hidden">
       {fixtureMode && (
@@ -397,62 +449,46 @@ export default function App() {
           <span className="microlabel hidden sm:inline">operatör konsolu</span>
         </div>
 
+        {/* operatör çalışma alanları */}
         <nav
-          aria-label="Çalışma alanları"
+          aria-label="Operatör çalışma alanları"
           className="flex h-7 items-center gap-0.5 rounded-sm border border-zinc-800 bg-zinc-950 p-0.5 text-xs"
         >
-          {([
-            ["analysis", "Analiz"],
-            ["live", "Canlı"],
-            ["review", "Olay inceleme"],
-            ["maintenance", "Bakım"],
-          ] as const).map(([value, label]) => {
-            const tab = (
-            <button
-              key={value}
-              type="button"
-              onClick={() => {
-                setLiveView(value === "live");
-                setReviewView(value === "review");
-                setMaintenanceView(value === "maintenance");
-                history.replaceState(null, "",
-                  value === "live"
-                    ? "#canli"
-                    : value === "review"
-                      ? "#inceleme"
-                      : value === "maintenance"
-                        ? "#bakim"
-                        : "#");
-              }}
-              className={`h-full px-2.5 transition-colors ${
-                workspace === value
-                  ? "bg-zinc-800 font-medium text-zinc-100"
-                  : "text-zinc-500 hover:text-zinc-200"
-              }`}
-            >
-              {label}
-              {value === "live" && livePending > 0 && (
-                <span
-                  title={`${livePending} canlı olay operatör kararı bekliyor`}
-                  className="ml-1.5 inline-flex min-w-4 items-center justify-center rounded-sm bg-red-700 px-1 font-mono text-[10px] leading-4 text-red-50"
-                >
-                  {livePending}
+          {OPERATOR_TABS.map(([value, label]) => (
+            value === "live"
+              ? (
+                <span key={value} className="relative flex h-full">
+                  {workspaceTab(value, label)}
+                  {/* canlı bildirimler bu yuvaya, sekmenin altına düşer */}
+                  <div id={ALERT_ANCHOR_ID} className="absolute left-0 top-full z-50 pt-1.5" />
                 </span>
-              )}
-            </button>
-            );
-            if (value !== "live") return tab;
-            return (
-              <span key={value} className="relative flex h-full">
-                {tab}
-                {/* canlı bildirimler bu yuvaya, sekmenin altına düşer */}
-                <div id={ALERT_ANCHOR_ID} className="absolute left-0 top-full z-50 pt-1.5" />
-              </span>
-            );
-          })}
+              )
+              : workspaceTab(value, label)
+          ))}
+        </nav>
+
+        {/* bakım mühendisi ayrı bir kullanıcı kümesidir; sekmesi de ayrı durur */}
+        <span aria-hidden className="h-5 w-px shrink-0 bg-zinc-700" />
+        <nav
+          aria-label="Bakım çalışma alanı"
+          className="flex h-7 items-center rounded-sm border border-zinc-800 bg-zinc-950 p-0.5 text-xs"
+        >
+          {workspaceTab("maintenance", "Bakım")}
         </nav>
 
         <div className="flex-1" />
+        <label
+          className="hidden items-center gap-1.5 sm:flex"
+          title="Kararlara, onaylara ve terfilere bu ad yazan olarak geçer"
+        >
+          <span className="microlabel">kullanıcı</span>
+          <input
+            value={user}
+            onChange={(e) => setUser(e.target.value)}
+            placeholder="ad soyad"
+            className="field w-32"
+          />
+        </label>
         <span
           title={connection === "open"
             ? "Sunucu bağlantısı açık — olaylar canlı akıyor"
@@ -466,32 +502,37 @@ export default function App() {
       </header>
 
       {workspace === "analysis" && (
-        <div className="flex h-10 shrink-0 items-center gap-2 border-b border-zinc-800 bg-zinc-900 px-3">
-          <span className="microlabel">kaynak</span>
-          <select
-            value={selected}
-            onChange={(e) => selectVideo(e.target.value)}
-            disabled={busy || videos.length === 0}
-            className="field w-52"
-          >
-            {videos.length === 0 && (
-              <option value={selected}>
-                {fixtureMode ? "sanal kayıt (media/ boş)" : "media/ boş"}
-              </option>
-            )}
-            {videos.map((v) => <option key={v} value={v}>{v}</option>)}
-          </select>
-          <select
-            value={runMode}
-            onChange={(e) => setRunMode(e.target.value as "" | "temkinli" | "genis")}
-            disabled={busy}
-            title="Çalışma kipi — dengeli: varsayılan; temkinli: alarm ikinci okumayla doğrulanır (az yanlış alarm); geniş: çift okuma + son tarama (en yüksek yakalama)"
-            className="field"
-          >
-            <option value="">dengeli</option>
-            <option value="temkinli">temkinli</option>
-            <option value="genis">geniş</option>
-          </select>
+        <div className="toolbar">
+          <label className="toolbar-group">
+            <span className="microlabel block">kaynak</span>
+            <select
+              value={selected}
+              onChange={(e) => selectVideo(e.target.value)}
+              disabled={busy || videos.length === 0}
+              className="field w-52"
+            >
+              {videos.length === 0 && (
+                <option value={selected}>
+                  {fixtureMode ? "sanal kayıt (media/ boş)" : "media/ boş"}
+                </option>
+              )}
+              {videos.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </label>
+          <label className="toolbar-group">
+            <span className="microlabel block">çalışma kipi</span>
+            <select
+              value={runMode}
+              onChange={(e) => setRunMode(e.target.value as "" | "temkinli" | "genis")}
+              disabled={busy}
+              title="Çalışma kipi — dengeli: varsayılan; temkinli: alarm ikinci okumayla doğrulanır (az yanlış alarm); geniş: çift okuma + son tarama (en yüksek yakalama)"
+              className="field"
+            >
+              <option value="">dengeli</option>
+              <option value="temkinli">temkinli</option>
+              <option value="genis">geniş</option>
+            </select>
+          </label>
           <button
             onClick={busy ? stopRun : startRun}
             disabled={(!selected && !busy) || (startPending && !busy)}
@@ -500,7 +541,9 @@ export default function App() {
             {busy ? "Durdur" : startPending ? "Başlatılıyor…" : "Başlat"}
           </button>
           {!fixtureMode && videos.length > 1 && (
-            <span className="flex items-center gap-1">
+            <div className="toolbar-group">
+              <span className="microlabel block">çoklu kamera</span>
+              <span className="flex items-center gap-1">
               <button
                 onClick={() => startDemo(demoCount)}
                 disabled={busy}
@@ -517,7 +560,8 @@ export default function App() {
               >
                 {[2, 4, 8, 12, 24].map((n) => <option key={n} value={n}>×{n}</option>)}
               </select>
-            </span>
+              </span>
+            </div>
           )}
 
           <div className="min-w-0 flex-1">
@@ -596,8 +640,9 @@ export default function App() {
 
 
       {workspace === "live" && (
-        <div className="flex min-h-0 flex-1 flex-col p-1.5">
+        <div className="flex min-h-0 flex-1 flex-col">
           <LiveGrid
+            user={user}
             incidents={liveIncidents}
             activity={liveActivity}
             actionRequests={state.liveActuatorRequests}
@@ -656,18 +701,19 @@ export default function App() {
       )}
 
       {workspace === "review" && (
-        <div className="flex min-h-0 flex-1 flex-col p-1.5">
+        <div className="flex min-h-0 flex-1 flex-col">
           <ReviewConsole onOpenTraining={setTrainingEventId} />
         </div>
       )}
       {workspace === "maintenance" && (
-        <div className="flex min-h-0 flex-1 flex-col p-1.5">
-          <ModelMaintenancePanel onOpenEvent={openMaintenanceEvent} />
+        <div className="flex min-h-0 flex-1 flex-col">
+          <ModelMaintenancePanel user={user} onOpenEvent={openMaintenanceEvent} />
         </div>
       )}
 
       {trainingEventId && (
         <TrainingReviewPanel
+          user={user}
           eventId={trainingEventId}
           onClose={closeTrainingReview}
           onBack={openedFromMaintenance ? returnToMaintenance : undefined}

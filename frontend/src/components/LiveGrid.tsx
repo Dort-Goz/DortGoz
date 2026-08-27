@@ -44,9 +44,11 @@ function lagBadge(f: LiveFeed): { text: string; cls: string; hint: string } {
 }
 
 function LiveGrid({
-  incidents, activity, actionRequests, actionResults, onRespond, onSelectFeed,
+  user, incidents, activity, actionRequests, actionResults, onRespond, onSelectFeed,
   onOpenTraining,
 }: {
+  /** Konsolun tek kimliği; üst çubuktan gelir ve nöbet kararlarını imzalar. */
+  user: string;
   incidents: Record<string, IncidentUpdate[]>;
   activity: Record<string, ActivityStrip[]>;
   actionRequests: ActuatorRequest[];
@@ -137,50 +139,46 @@ function LiveGrid({
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-1.5">
-      <div className="flex h-9 shrink-0 items-center gap-3 text-xs">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="toolbar">
         <button
           onClick={active ? stop : start}
           className={`btn w-44 ${active ? "btn-danger" : "btn-primary"}`}
         >
           {active ? "Canlıyı durdur" : "Canlı akışları başlat"}
         </button>
-        {active && (
-          <span className="font-mono text-zinc-400">
-            {feeds.filter((f) => f.state !== "hata").length}/{feeds.length} akış ·{" "}
-            {feeds.filter((f) => (f.lag_s ?? 1e9) <= 45).length} canlıya yetişik ·{" "}
-            {feeds.reduce((a, f) => a + f.segments_done, 0)} segment işlendi
-          </span>
-        )}
-        {error && <span className="truncate text-red-400">{error}</span>}
-        <span className="flex-1" />
-        <nav
-          aria-label="Canlı görünümü"
-          className="flex h-7 shrink-0 items-center gap-0.5 rounded-sm border border-zinc-800 bg-zinc-950 p-0.5"
-        >
-          {([
-            ["duvar", "▦ Akış duvarı"],
-            ["kayitlar", "⛁ Olay kayıtları"],
-            ["aksiyonlar", "⚙ Aksiyon günlüğü"],
-          ] as const).map(
-            ([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setView(value)}
-                className={`h-full px-2 transition-colors ${
-                  view === value
-                    ? "bg-zinc-800 font-medium text-zinc-100"
-                    : "text-zinc-500 hover:text-zinc-200"
-                }`}
-              >
-                {label}
-              </button>
-            ),
-          )}
-        </nav>
-        <label className="flex shrink-0 items-center gap-1.5 text-zinc-500">
-          <span className="microlabel">kare tazeleme</span>
+
+        <div className="toolbar-group">
+          <span className="microlabel block">görünüm</span>
+          <nav
+            aria-label="Canlı görünümü"
+            className="flex h-7 items-center gap-0.5 rounded-sm border border-zinc-800 bg-zinc-950 p-0.5"
+          >
+            {([
+              ["duvar", "▦ Akış duvarı"],
+              ["kayitlar", "⛁ Olay kayıtları"],
+              ["aksiyonlar", "⚙ Aksiyon günlüğü"],
+            ] as const).map(
+              ([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setView(value)}
+                  className={`h-full px-2 transition-colors ${
+                    view === value
+                      ? "bg-zinc-800 font-medium text-zinc-100"
+                      : "text-zinc-500 hover:text-zinc-200"
+                  }`}
+                >
+                  {label}
+                </button>
+              ),
+            )}
+          </nav>
+        </div>
+
+        <label className="toolbar-group">
+          <span className="microlabel block">kare tazeleme</span>
           <select
             value={rate}
             onChange={(e) => changeRate(Number(e.target.value))}
@@ -193,7 +191,19 @@ function LiveGrid({
             <option value={8}>8 segmentte 1</option>
           </select>
         </label>
+
+        <span className="flex-1" />
+        {active && (
+          <span className="truncate font-mono text-zinc-400">
+            {feeds.filter((f) => f.state !== "hata").length}/{feeds.length} akış ·{" "}
+            {feeds.filter((f) => (f.lag_s ?? 1e9) <= 45).length} canlıya yetişik ·{" "}
+            {feeds.reduce((a, f) => a + f.segments_done, 0)} segment işlendi
+          </span>
+        )}
+        {error && <span className="truncate text-red-400">{error}</span>}
       </div>
+
+      <div className="flex min-h-0 flex-1 flex-col gap-1.5 p-1.5">
 
       {zoomed && (
         <div className="flex shrink-0 items-start gap-3 rounded-md border border-zinc-700 bg-zinc-900 p-2">
@@ -312,11 +322,13 @@ function LiveGrid({
       </div>
       )}
       <TriagePanel
+        user={user}
         onSelectFeed={onSelectFeed}
         onOpenTraining={onOpenTraining}
         scopeLive
         feedNames={labels}
       />
+      </div>
       </div>
     </div>
   );
