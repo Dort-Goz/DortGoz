@@ -21,27 +21,49 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from dortgoz.pipeline.ingest import scale_filter
 
-ADAYLAR: dict[str, list[str]] = {
-    "mpeg4_q5 (mevcut)": ["-c:v", "mpeg4", "-q:v", "5"],
-    "mpeg4_q2": ["-c:v", "mpeg4", "-q:v", "2"],
-    "x264_ultrafast_crf23": ["-c:v", "libx264", "-preset", "ultrafast",
-                             "-crf", "23", "-pix_fmt", "yuv420p"],
-    "x264_superfast_crf23": ["-c:v", "libx264", "-preset", "superfast",
-                             "-crf", "23", "-pix_fmt", "yuv420p"],
-    "x264_veryfast_crf23": ["-c:v", "libx264", "-preset", "veryfast",
-                            "-crf", "23", "-pix_fmt", "yuv420p"],
-    "x264_veryfast_crf28": ["-c:v", "libx264", "-preset", "veryfast",
-                            "-crf", "28", "-pix_fmt", "yuv420p"],
+# giris: -i'den ONCE gelen argumanlar; vf_ek: suzgec zincirine eklenen halka.
+ADAYLAR: dict[str, dict[str, list[str] | str]] = {
+    "mpeg4_q5 (eski)": {"kodek": ["-c:v", "mpeg4", "-q:v", "5"]},
+    "x264_veryfast_crf23 (mevcut)": {
+        "kodek": ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                  "-pix_fmt", "yuv420p"]},
+    "x264_veryfast_crf20": {
+        "kodek": ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                  "-pix_fmt", "yuv420p"]},
+    "x264_medium_crf23": {
+        "kodek": ["-c:v", "libx264", "-preset", "medium", "-crf", "23",
+                  "-pix_fmt", "yuv420p"]},
+    # Donanim: CPU'yu bosaltir. AMD RX 9070 XT uzerinde VAAPI/AMF.
+    "h264_vaapi_qp23 (donanim)": {
+        "giris": ["-vaapi_device", "/dev/dri/renderD128"],
+        "vf_ek": "format=nv12,hwupload",
+        "kodek": ["-c:v", "h264_vaapi", "-qp", "23"]},
+    "h264_amf_qp23 (donanim)": {
+        "kodek": ["-c:v", "h264_amf", "-rc", "cqp", "-qp_i", "23", "-qp_p", "23",
+                  "-pix_fmt", "yuv420p"]},
+    # Daha yeni kodekler: daha kucuk ama EVREN cozucusu kabul etmeyebilir.
+    "hevc_veryfast_crf28": {
+        "kodek": ["-c:v", "libx265", "-preset", "veryfast", "-crf", "28",
+                  "-pix_fmt", "yuv420p", "-tag:v", "hvc1"]},
+    "svtav1_p8_crf35": {
+        "kodek": ["-c:v", "libsvtav1", "-preset", "8", "-crf", "35",
+                  "-pix_fmt", "yuv420p"]},
+    # Azami uyumluluk tabani: her cozucu okur, ama govde buyuktur.
+    "mjpeg_q5": {"kodek": ["-c:v", "mjpeg", "-q:v", "5"]},
 }
 
 
 def _kodla(src: Path, out: Path, sure: float, genislik: int,
-           kodek: list[str]) -> float:
-    cmd = ["ffmpeg", "-nostdin", "-v", "error", "-y", "-ss", "0", "-to", f"{sure:.3f}",
-           "-i", str(src), "-map", "0:v:0", "-an", "-vf", scale_filter(genislik),
-           *kodek, "-f", "mp4", "-movflags", "frag_keyframe+empty_moov", str(out)]
+           aday: dict) -> float:
+    vf = scale_filter(genislik)
+    if aday.get("vf_ek"):
+        vf = f"{vf},{aday['vf_ek']}"
+    cmd = ["ffmpeg", "-nostdin", "-v", "error", "-y", *aday.get("giris", []),
+           "-ss", "0", "-to", f"{sure:.3f}",
+           "-i", str(src), "-map", "0:v:0", "-an", "-vf", vf,
+           *aday["kodek"], "-f", "mp4", "-movflags", "frag_keyframe+empty_moov", str(out)]
     t0 = time.perf_counter()
-    subprocess.run(cmd, check=True)
+    subprocess.run(cmd, check=True, capture_output=True)
     return time.perf_counter() - t0
 
 
@@ -67,12 +89,13 @@ def main() -> None:
     tmp = Path("/tmp/dortgoz_kodek")
     tmp.mkdir(exist_ok=True)
     satirlar = []
-    for ad, kodek in ADAYLAR.items():
+    for ad, aday in ADAYLAR.items():
         hedef = tmp / f"{ad.split()[0]}.mp4"
         try:
-            sn = _kodla(a.kaynak, hedef, a.sure, a.genislik, kodek)
-        except subprocess.CalledProcessError:
-            print(f"{ad:24} KODLANAMADI (kodlayıcı yok)")
+            sn = _kodla(a.kaynak, hedef, a.sure, a.genislik, aday)
+        except subprocess.CalledProcessError as exc:
+            neden = (exc.stderr or b"").decode("utf-8", "replace").strip().splitlines()
+            print(f"{ad:30} KODLANAMADI: {neden[-1][:70] if neden else '?'}")
             continue
         boyut = hedef.stat().st_size
         satirlar.append({
@@ -82,7 +105,7 @@ def main() -> None:
             "ssim": round(_ssim(hedef, a.kaynak, a.sure, a.genislik), 5),
         })
         r = satirlar[-1]
-        print(f"{ad:24} {r['kodlama_sn']:6.2f} sn  {r['boyut_kb']:6d} KB  "
+        print(f"{ad:30} {r['kodlama_sn']:6.2f} sn  {r['boyut_kb']:6d} KB  "
               f"base64 {r['base64_kb']:6d} KB  SSIM {r['ssim']:.5f}")
 
     if a.out:

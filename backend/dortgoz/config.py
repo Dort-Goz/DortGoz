@@ -84,6 +84,13 @@ class Settings(BaseSettings):
     exemplar_shadow: bool = True
     exemplar_threshold: float = 0.97
     second_opinion_motion: float = 0.30
+    # Canlı kipte ikinci görüş kapalıdır. Ölçüm (30 dk canlı, 2026-08-27):
+    # 182 koşunun 77'sinde çalıştı ve HİÇBİRİNDE olay bulmadı. Taban ölçümünde
+    # 386 çağrıda 8 olay buldu, o olayların hepsi yanlış alarmdı. Trafik
+    # kamerasında hareket her zaman eşiğin üstündedir, bu yüzden sürekli çağırılır
+    # ve pencere başına fazladan bir 122B çağrısı ekler. Çevrimdışı çözümlemede
+    # gecikme önemsizdir; orada açık kalır.
+    live_second_opinion: bool = False
     interpret_effort: str = ""
     second_opinion_effort: str = ""
     agent_effort: str = ""

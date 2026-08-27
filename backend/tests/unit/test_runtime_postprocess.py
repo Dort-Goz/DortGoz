@@ -540,6 +540,21 @@ async def test_escalation_calls_postprocess_only_for_final_report(
 
     assert len(validated_reports) == 1
     assert validated_reports[0].events
+    session.clear()
+
+    # Canlı kipte ikinci görüş çalışmaz: aynı kurulum olaysız kalmalıdır.
+    # Tırmandırma da aynı modeli çağırır; onu kapatıp ikinci görüşü izole ediyoruz.
+    monkeypatch.setattr(settings, "escalate_p", 0.0)
+    validated_reports.clear()
+    await runner.run_video(FakeManager(), "clip.mp4", "canli-run", live=True)
+    assert len(validated_reports) == 1
+    assert not validated_reports[0].events, "canlı kipte ikinci görüş çağrıldı"
+
+    # Kaçış kapısı açıkken canlıda da çalışır.
+    monkeypatch.setattr(settings, "live_second_opinion", True)
+    validated_reports.clear()
+    await runner.run_video(FakeManager(), "clip.mp4", "canli-acik-run", live=True)
+    assert validated_reports[0].events
     assert session.current() is not None
     assert session.current().reports == validated_reports
     assert not hasattr(session.current(), "validation_sidecars")

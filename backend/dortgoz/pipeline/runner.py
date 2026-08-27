@@ -875,7 +875,8 @@ async def run_video(
 
                 ikinci_gorus = ""
                 if (settings.second_opinion_model and not report.events
-                        and peak >= settings.second_opinion_motion):
+                        and peak >= settings.second_opinion_motion
+                        and (settings.live_second_opinion or not live)):
                     so_timing: dict[str, float | int] = {}
                     try:
                         so_frames = {}
