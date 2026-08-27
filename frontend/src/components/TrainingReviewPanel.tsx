@@ -408,7 +408,7 @@ export default function TrainingReviewPanel({
     : "";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
       <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 shadow-2xl">
         <header className="flex shrink-0 items-center gap-3 border-b border-zinc-800 px-4 py-3">
           <h2 className="text-sm font-semibold text-zinc-100">Olayı İncele</h2>

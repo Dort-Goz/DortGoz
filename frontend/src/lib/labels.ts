@@ -34,6 +34,13 @@ export const TYPE_TR = Object.fromEntries(
   ]),
 ) as Record<AnomalyType, string>;
 
+/** Kategori kimliğini okunur ada çevirir; kanonik ve eski adları birlikte kabul eder. */
+export function categoryLabel(category: string): string {
+  return CANONICAL_TYPE_TR[category as keyof typeof CANONICAL_TYPE_TR]
+    ?? TYPE_TR[category as keyof typeof TYPE_TR]
+    ?? category;
+}
+
 export const RISK_TR: Record<Risk, string> = {
   dusuk: "düşük", orta: "orta", yuksek: "yüksek", kritik: "kritik",
 };

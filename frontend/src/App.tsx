@@ -13,7 +13,6 @@ import ModelMaintenancePanel from "./components/ModelMaintenancePanel";
 import UploadPanel from "./components/UploadPanel";
 import TrainingReviewPanel from "./components/TrainingReviewPanel";
 import ReviewConsole from "./components/ReviewConsole";
-import { ALERT_ANCHOR_ID } from "./components/LiveAlerts";
 import {
   buildChatMessage,
   eventBelongsToDialogue,
@@ -454,17 +453,7 @@ export default function App() {
           aria-label="Operatör çalışma alanları"
           className="flex h-7 items-center gap-0.5 rounded-sm border border-zinc-800 bg-zinc-950 p-0.5 text-xs"
         >
-          {OPERATOR_TABS.map(([value, label]) => (
-            value === "live"
-              ? (
-                <span key={value} className="relative flex h-full">
-                  {workspaceTab(value, label)}
-                  {/* canlı bildirimler bu yuvaya, sekmenin altına düşer */}
-                  <div id={ALERT_ANCHOR_ID} className="absolute left-0 top-full z-50 pt-1.5" />
-                </span>
-              )
-              : workspaceTab(value, label)
-          ))}
+          {OPERATOR_TABS.map(([value, label]) => workspaceTab(value, label))}
         </nav>
 
         {/* bakım mühendisi ayrı bir kullanıcı kümesidir; sekmesi de ayrı durur */}

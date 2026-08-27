@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { CANONICAL_TYPE_TR, TYPE_TR, clock } from "../lib/labels";
+import { categoryLabel, clock } from "../lib/labels";
+
+export { categoryLabel };
 
 interface LiveClip {
   media_id: string;
@@ -29,12 +31,6 @@ const RISK_CLS: Record<string, string> = {
 const VERDICT_TR: Record<string, string> = {
   accept: "Anomali onaylandı", reject: "Yanlış alarm", edit: "Düzeltildi",
 };
-
-export function categoryLabel(category: string): string {
-  return CANONICAL_TYPE_TR[category as keyof typeof CANONICAL_TYPE_TR]
-    ?? TYPE_TR[category as keyof typeof TYPE_TR]
-    ?? category;
-}
 
 export function sizeLabel(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;

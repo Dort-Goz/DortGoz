@@ -27,19 +27,39 @@ export function playChime(): void {
 
 export interface LiveAlert extends AlertCandidate {
   feedLabel: string;
+  categoryLabel: string;
   outranksWatched: boolean;
 }
 
+/** Renk tüm karta işler: kenar, zemin ve seviye rozeti tek tondan gelir. */
 const TONE = [
-  { edge: "border-l-sky-400", text: "text-sky-300" },
-  { edge: "border-l-amber-400", text: "text-amber-300" },
-  { edge: "border-l-orange-400", text: "text-orange-300" },
-  { edge: "border-l-red-400", text: "text-red-300" },
+  {
+    box: "border-sky-700 bg-sky-950",
+    pill: "bg-sky-500 text-sky-950",
+    sub: "text-sky-200/80",
+    icon: "text-sky-300 hover:bg-sky-900",
+  },
+  {
+    box: "border-amber-700 bg-amber-950",
+    pill: "bg-amber-500 text-amber-950",
+    sub: "text-amber-200/80",
+    icon: "text-amber-300 hover:bg-amber-900",
+  },
+  {
+    box: "border-orange-600 bg-orange-950",
+    pill: "bg-orange-500 text-orange-950",
+    sub: "text-orange-200/80",
+    icon: "text-orange-300 hover:bg-orange-900",
+  },
+  {
+    box: "border-red-600 bg-red-950",
+    pill: "bg-red-500 text-red-950",
+    sub: "text-red-200/80",
+    icon: "text-red-300 hover:bg-red-900",
+  },
 ] as const;
 
 const LEVEL_TR = ["Düşük", "Orta", "Yüksek", "Kritik"] as const;
-
-export const ALERT_ANCHOR_ID = "canli-bildirim-yuvasi";
 
 export default function LiveAlerts({
   alerts, onOpen, onDismiss, muted, onMuteToggle,
@@ -50,52 +70,63 @@ export default function LiveAlerts({
   muted: boolean;
   onMuteToggle: () => void;
 }) {
-  // Bildirimler canlı sekmesinden doğar: yuva o sekme düğmesinin altındadır.
-  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  useEffect(() => setAnchor(document.getElementById(ALERT_ANCHOR_ID)), []);
+  // Bildirimler sağ alt köşeden yükselir; kipler her zaman üstlerinde kalır.
+  const [host, setHost] = useState<HTMLElement | null>(null);
+  useEffect(() => setHost(document.body), []);
 
-  if (alerts.length === 0 || !anchor) return null;
+  if (alerts.length === 0 || !host) return null;
   return createPortal(
-    <div className="flex w-80 flex-col gap-1.5">
+    // z-40: kip pencerelerinin (z-50/z-60) altında kalmak zorunda.
+    <div className="pointer-events-none fixed bottom-3 right-3 z-40 flex w-80 flex-col-reverse gap-1.5">
       {alerts.map((alert) => {
-        const rank = severityRank(alert);
+        const tone = TONE[severityRank(alert)];
         return (
           <div
             key={alert.key}
-            className={`alert-in flex items-center gap-2 border border-zinc-700 border-l-2 bg-zinc-900 px-2 py-1.5 shadow-lg shadow-black/60 ${TONE[rank].edge}`}
+            className={`alert-in pointer-events-auto border shadow-lg shadow-black/60 ${tone.box}`}
           >
-            <span className={`shrink-0 text-[11px] font-semibold ${TONE[rank].text}`}>
-              {LEVEL_TR[rank]}
-            </span>
-            <span className="min-w-0 flex-1 truncate text-xs text-zinc-100">
+            <div className="flex items-center gap-2 px-2 py-1.5">
+              <span
+                className={`shrink-0 rounded-sm px-1.5 py-px text-[10px] font-bold uppercase tracking-wide ${tone.pill}`}
+              >
+                {LEVEL_TR[severityRank(alert)]}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-xs font-semibold text-zinc-50">
+                {alert.categoryLabel}
+              </span>
+              <button
+                onClick={() => onOpen(alert.key)}
+                title="Anomaliyi ayrı pencerede aç"
+                aria-label="Anomaliyi ayrı pencerede aç"
+                className={`shrink-0 rounded-sm px-1 text-sm leading-5 transition-colors ${
+                  alert.outranksWatched ? "text-amber-200 hover:bg-amber-900" : tone.icon
+                }`}
+              >
+                ↗
+              </button>
+              <button
+                onClick={() => onDismiss(alert.key)}
+                title="Bu bildirimi gizle"
+                aria-label="Bu bildirimi gizle"
+                className={`shrink-0 rounded-sm px-1 text-xs leading-5 transition-colors ${tone.icon}`}
+              >
+                ✕
+              </button>
+            </div>
+            <p className={`truncate px-2 pb-1.5 text-[11px] ${tone.sub}`}>
               {alert.feedLabel}
-            </span>
-            <button
-              onClick={() => onOpen(alert.key)}
-              className={`btn h-6 shrink-0 ${
-                alert.outranksWatched ? "btn-outline-warn" : "btn-outline"
-              }`}
-            >
-              Anomaliye git
-            </button>
-            <button
-              onClick={() => onDismiss(alert.key)}
-              title="Bu bildirimi gizle"
-              className="shrink-0 px-1 text-xs text-zinc-500 hover:text-zinc-200"
-            >
-              ✕
-            </button>
+            </p>
           </div>
         );
       })}
       <button
         onClick={onMuteToggle}
         title={muted ? "Kritik olayda sesli uyarıyı aç" : "Sesli uyarıyı kapat"}
-        className="self-end border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-500 hover:text-zinc-200"
+        className="pointer-events-auto self-end border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-500 hover:text-zinc-200"
       >
         {muted ? "ses kapalı" : "ses açık"}
       </button>
     </div>,
-    anchor,
+    host,
   );
 }

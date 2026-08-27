@@ -22,13 +22,13 @@ export default function LiveEventModal({
       <div
         role="presentation"
         onClick={onClose}
-        className="fixed inset-0 z-40 bg-black/80 backdrop-blur-[1px]"
+        className="fixed inset-0 z-50 bg-black/80 backdrop-blur-[1px]"
       />
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="fixed inset-x-0 top-8 z-40 mx-auto flex max-h-[88vh] w-[min(56rem,94vw)] flex-col overflow-hidden rounded-md border border-zinc-700 bg-zinc-950 shadow-2xl"
+        className="fixed inset-x-0 top-8 z-50 mx-auto flex max-h-[88vh] w-[min(56rem,94vw)] flex-col overflow-hidden rounded-md border border-zinc-700 bg-zinc-950 shadow-2xl"
       >
         <div className="flex h-11 shrink-0 items-center gap-2 border-b border-zinc-800 bg-zinc-900 px-3">
           <span className="truncate text-sm font-bold text-zinc-100">{title}</span>

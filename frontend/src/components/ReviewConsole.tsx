@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CANONICAL_TYPE_TR, TYPE_TR, clock } from "../lib/labels";
+import { categoryLabel, clock } from "../lib/labels";
+
+export { categoryLabel };
 
 interface StoredEvent {
   event_id: string;
@@ -69,12 +71,6 @@ const BAND_CLS: Record<string, string> = {
 const VERDICT_TR: Record<string, string> = {
   accept: "Operatör onayladı", reject: "Operatör eledi", edit: "Operatör düzeltti",
 };
-
-export function categoryLabel(category: string): string {
-  return CANONICAL_TYPE_TR[category as keyof typeof CANONICAL_TYPE_TR]
-    ?? TYPE_TR[category as keyof typeof TYPE_TR]
-    ?? category;
-}
 
 const stamp = (epoch: number) =>
   new Date(epoch * 1000).toLocaleString("tr-TR", {

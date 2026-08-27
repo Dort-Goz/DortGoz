@@ -3,6 +3,7 @@ import type { EventEvidenceRef } from "../types/events";
 import LiveAlerts, { playChime, type LiveAlert } from "./LiveAlerts";
 import LiveEventModal from "./LiveEventModal";
 import { outranks, shouldChime, unseenAlerts } from "../lib/liveAlerts";
+import { categoryLabel } from "../lib/labels";
 
 interface SuggestedAction {
   action: string;
@@ -745,6 +746,7 @@ export default function TriagePanel({
       intervention_score: item.intervention_score,
       wall: item.wall,
       feedLabel: feedNames[item.feed] || item.feed || "ana akış",
+      categoryLabel: categoryLabel(item.model_category),
       outranksWatched: openItem ? outranks(item, openItem) : false,
     }));
   }, [scopeLive, scopedPending, dismissed, openKey, openItem, feedNames]);
