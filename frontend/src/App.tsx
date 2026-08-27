@@ -105,6 +105,7 @@ export default function App() {
   const [liveView, setLiveView] = useState(() => location.hash === "#canli");
   const [reviewView, setReviewView] = useState(() => location.hash === "#inceleme");
   const [trainingEventId, setTrainingEventId] = useState("");
+  const [trainingOpenedFromLearning, setTrainingOpenedFromLearning] = useState(false);
   const [reviewTab, setReviewTab] = useState<"kayitlar" | "bekleyen">("kayitlar");
   const [showLearningOrchestrator, setShowLearningOrchestrator] = useState(false);
   const [fixtureMode, setFixtureMode] = useState(false);
@@ -112,6 +113,23 @@ export default function App() {
   const [livePending, setLivePending] = useState(0);
   const [resolvedKeys, setResolvedKeys] = useState<string[]>([]);
   const [connection, setConnection] = useState<ConnectionState>("connecting");
+
+  const closeTrainingReview = useCallback(() => {
+    setTrainingEventId("");
+    setTrainingOpenedFromLearning(false);
+  }, []);
+
+  const returnToLearning = useCallback(() => {
+    setTrainingEventId("");
+    setTrainingOpenedFromLearning(false);
+    setShowLearningOrchestrator(true);
+  }, []);
+
+  const openLearningEvent = useCallback((eventId: string) => {
+    setShowLearningOrchestrator(false);
+    setTrainingOpenedFromLearning(true);
+    setTrainingEventId(eventId);
+  }, []);
 
   useEffect(() => {
     const socket = new DortgozSocket(
@@ -747,16 +765,14 @@ export default function App() {
       {trainingEventId && (
         <TrainingReviewPanel
           eventId={trainingEventId}
-          onClose={() => setTrainingEventId("")}
+          onClose={closeTrainingReview}
+          onBack={trainingOpenedFromLearning ? returnToLearning : undefined}
         />
       )}
       {showLearningOrchestrator && (
         <LearningOrchestratorPanel
           onClose={() => setShowLearningOrchestrator(false)}
-          onOpenEvent={(eventId) => {
-            setShowLearningOrchestrator(false);
-            setTrainingEventId(eventId);
-          }}
+          onOpenEvent={openLearningEvent}
         />
       )}
     </div>

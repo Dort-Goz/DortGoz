@@ -165,6 +165,11 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(detail).toContain("presentation.technicalComponent");
     expect(detail).toContain("presentation.technicalType");
     expect(detail).not.toContain("Kayma gözcüsü");
+    expect(app).toContain("trainingOpenedFromLearning");
+    expect(app).toContain("onBack={trainingOpenedFromLearning ? returnToLearning : undefined}");
+    expect(detail).toContain("← Geri dön");
+    expect(detail).toContain("Öğrenme Merkezi'ne dön");
+    expect(detail).toContain("Onay ver ve geri dön");
   });
 
   test("olay ayrıntısını tek karar ve tek onay akışına indirir", () => {

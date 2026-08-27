@@ -244,9 +244,11 @@ function BoxEditor({
 export default function TrainingReviewPanel({
   eventId,
   onClose,
+  onBack,
 }: {
   eventId: string;
   onClose: () => void;
+  onBack?: () => void;
 }) {
   const [canonicalEvent, setCanonicalEvent] = useState<CanonicalEvent | null>(null);
   const [reviews, setReviews] = useState<HumanReview[]>([]);
@@ -412,7 +414,12 @@ export default function TrainingReviewPanel({
       <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 shadow-2xl">
         <header className="flex shrink-0 items-center gap-3 border-b border-zinc-800 px-4 py-3">
           <h2 className="text-sm font-semibold text-zinc-100">Olayı İncele</h2>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            {onBack && (
+              <button type="button" onClick={onBack} className="btn btn-outline">
+                ← Geri dön
+              </button>
+            )}
             <button onClick={onClose} className="btn btn-ghost">
               Kapat ×
             </button>
@@ -512,8 +519,12 @@ export default function TrainingReviewPanel({
                   Canlı sistem otomatik değişmez. Otomatik eğitim başlamaz.
                 </p>
                 {activeDevelopmentApproval ? (
-                  <button type="button" onClick={onClose} className="btn btn-primary mt-3 h-9 w-full">
-                    Tamam, kapat
+                  <button
+                    type="button"
+                    onClick={onBack ?? onClose}
+                    className="btn btn-primary mt-3 h-9 w-full"
+                  >
+                    {onBack ? "Öğrenme Merkezi'ne dön" : "Tamam, kapat"}
                   </button>
                 ) : (
                   <button
@@ -530,11 +541,11 @@ export default function TrainingReviewPanel({
                         }),
                         "Geliştirme onayı kaydedildi.",
                       );
-                      if (completed) onClose();
+                      if (completed) (onBack ?? onClose)();
                     }}
                     className="btn btn-accent mt-3 h-9 w-full text-sm"
                   >
-                    Onay ver ve kapat
+                    {onBack ? "Onay ver ve geri dön" : "Onay ver ve kapat"}
                   </button>
                 )}
               </section>
