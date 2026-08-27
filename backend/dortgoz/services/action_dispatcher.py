@@ -128,6 +128,12 @@ class ActionDispatcher:
                 ):
                     return req, False
             requested_at = time.time()
+            triage_item = triage.store.get_item(f"{ctx.feed}:{incident_id}")
+            live = (
+                triage_item.live
+                if triage_item is not None
+                else ctx.run_id.startswith("canli-")
+            )
             request = ActuatorRequest(
                 request_id=self._new_id(),
                 actuator=spec.name,
@@ -137,6 +143,7 @@ class ActionDispatcher:
                 incident_title=_clean_text(incident.title, 300),
                 run_id=ctx.run_id,
                 feed=ctx.feed,
+                live=live,
                 anomaly_type=anomaly_type,
                 risk=incident.risk,
                 evidence_timestamps=evidence,
@@ -232,6 +239,7 @@ class ActionDispatcher:
                 incident_id=req.incident_id,
                 run_id=req.run_id,
                 feed=req.feed,
+                live=req.live,
                 artifact_url=artifact_url,
                 operator=_clean_text(operator, 120),
                 resolved_at=resolved_at,
@@ -377,11 +385,18 @@ class ActionDispatcher:
                     self._validate_request_id(request.request_id)
                 except (KeyError, TypeError, ValueError):
                     continue
+                if (
+                    "live" not in raw["request"]
+                    and request.run_id.startswith("canli-")
+                ):
+                    request = request.model_copy(update={"live": True})
                 result = (
                     ActuatorResult.model_validate(raw["result"])
                     if raw.get("result") is not None
                     else None
                 )
+                if result is not None and result.live != request.live:
+                    result = result.model_copy(update={"live": request.live})
                 self._records[request.request_id] = ActionRecord(
                     request=request,
                     result=result,
@@ -420,6 +435,7 @@ class ActionDispatcher:
             "action_label": request.action_label,
             "run_id": request.run_id,
             "feed": request.feed,
+            "live": request.live,
             "incident_id": request.incident_id,
             "incident_title": request.incident_title,
             "anomaly_type": request.anomaly_type,

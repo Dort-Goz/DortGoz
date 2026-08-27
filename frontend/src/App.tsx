@@ -18,19 +18,37 @@ import {
   buildChatMessage,
   eventBelongsToDialogue,
   loadDialogueId,
+  renewDialogueId,
 } from "./lib/agentSession";
 import { includeUploadedVideo, startCanonicalRun } from "./lib/canonicalRun";
-import { consoleReducer, emptyFeed, feedNames, initialState } from "./state";
+import {
+  actionBelongsToMode,
+  consoleReducer,
+  emptyFeed,
+  feedNames,
+  initialState,
+} from "./state";
 
 const EXPERIMENT_KEY = "dortgoz.experiment";
 
-function browserDialogueId(): string {
-  const createId = () => globalThis.crypto?.randomUUID?.()
+function createDialogueId(): string {
+  return globalThis.crypto?.randomUUID?.()
     ?? `dialogue-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function browserDialogueId(): string {
   try {
-    return loadDialogueId(sessionStorage, createId);
+    return loadDialogueId(sessionStorage, createDialogueId);
   } catch {
-    return createId();
+    return createDialogueId();
+  }
+}
+
+function nextBrowserDialogueId(): string {
+  try {
+    return renewDialogueId(sessionStorage, createDialogueId);
+  } catch {
+    return createDialogueId();
   }
 }
 
@@ -63,7 +81,8 @@ function Clock() {
 
 export default function App() {
   const [state, dispatch] = useReducer(consoleReducer, initialState);
-  const [dialogueId] = useState(browserDialogueId);
+  const [initialDialogueId] = useState(browserDialogueId);
+  const dialogueIdRef = useRef(initialDialogueId);
   const socketRef = useRef<DortgozSocket | null>(null);
   const [videos, setVideos] = useState<string[]>([]);
   const [selected, setSelected] = useState("");
@@ -90,6 +109,11 @@ export default function App() {
   const [resolvedKeys, setResolvedKeys] = useState<string[]>([]);
   const [connection, setConnection] = useState<ConnectionState>("connecting");
 
+  const resetDialogue = useCallback(() => {
+    dialogueIdRef.current = nextBrowserDialogueId();
+    dispatch({ kind: "clear_chat" });
+  }, []);
+
   const closeTrainingReview = useCallback(() => {
     setTrainingEventId("");
     setTrainingOpenedFromLearning(false);
@@ -110,7 +134,7 @@ export default function App() {
   useEffect(() => {
     const socket = new DortgozSocket(
       (e: Event) => {
-        if (eventBelongsToDialogue(e, dialogueId)) {
+        if (eventBelongsToDialogue(e, dialogueIdRef.current)) {
           dispatch({ kind: "event", event: e });
         }
       },
@@ -119,7 +143,7 @@ export default function App() {
     );
     socketRef.current = socket;
     return () => socket.close();
-  }, [dialogueId]);
+  }, []);
 
   useEffect(() => {
     fetch("/api/videos")
@@ -219,7 +243,7 @@ export default function App() {
   const send = useMemo(() => ({
     chat: (text: string) => socketRef.current?.send(buildChatMessage(
       text,
-      dialogueId,
+      dialogueIdRef.current,
       analysisActive,
       feed.highlight?.incident_id ?? "",
     )),
@@ -230,7 +254,7 @@ export default function App() {
         approved,
         operator: localStorage.getItem("dortgoz.reviewer") ?? "",
       }),
-  }), [dialogueId, analysisActive, feed.highlight?.incident_id]);
+  }), [analysisActive, feed.highlight?.incident_id]);
 
   const run = feed.runStatus;
   const selectFeed = useCallback(
@@ -241,6 +265,11 @@ export default function App() {
     (name: string) => dispatch({ kind: "select_feed", feed: name, live: true }),
     [],
   );
+  const selectVideo = useCallback((video: string) => {
+    if (video === selected) return;
+    resetDialogue();
+    setSelected(video);
+  }, [selected, resetDialogue]);
   const selectIncident = useCallback(
     (incident: IncidentUpdate) => dispatch({ kind: "select_incident", incident }),
     [],
@@ -258,6 +287,14 @@ export default function App() {
     () => Object.fromEntries(
       feedNames(state, true).map((name) => [name, state.feeds[name].activity])),
     [state],
+  );
+  const analysisActionRequests = useMemo(
+    () => state.actuatorRequests.filter((request) => actionBelongsToMode(request, fixtureMode)),
+    [state.actuatorRequests, fixtureMode],
+  );
+  const analysisActionResults = useMemo(
+    () => state.actuatorResults.filter((result) => actionBelongsToMode(result, fixtureMode)),
+    [state.actuatorResults, fixtureMode],
   );
 
   const overrides = useCallback(() => ({
@@ -278,8 +315,11 @@ export default function App() {
       dispatchStarted: (video) => dispatch({ kind: "run_started", video, feed: "" }),
       send: (message) => socketRef.current?.send(message),
     });
-    if (started) setStartPending(true);
-  }, [selected, busy, overrides]);
+    if (started) {
+      resetDialogue();
+      setStartPending(true);
+    }
+  }, [selected, busy, overrides, resetDialogue]);
 
   useEffect(() => {
     if (!run?.state) return;
@@ -289,6 +329,7 @@ export default function App() {
 
   const startDemo = useCallback((count: number) => {
     if (busy || videos.length === 0) return;
+    resetDialogue();
     const long = videos.filter((v) => v.toLowerCase().startsWith("kamera"));
     const pool = long.length >= 2 ? long : videos;
     const picks = Array.from({ length: count }, (_, i) => pool[i % pool.length]);
@@ -297,7 +338,7 @@ export default function App() {
       dispatch({ kind: "run_started", video, feed: feedName });
       socketRef.current?.send({ kind: "start_run", video, feed: feedName, ...overrides() });
     });
-  }, [busy, videos, overrides]);
+  }, [busy, videos, overrides, resetDialogue]);
 
   const stopRun = useCallback(() => socketRef.current?.send({ kind: "stop_run" }), []);
 
@@ -404,7 +445,6 @@ export default function App() {
           ◈ öğrenme merkezi
         </button>
 
-        {}
         <span
           title={connection === "open"
             ? "Sunucu bağlantısı açık — olaylar canlı akıyor"
@@ -422,7 +462,7 @@ export default function App() {
           <span className="microlabel">kaynak</span>
           <select
             value={selected}
-            onChange={(e) => setSelected(e.target.value)}
+            onChange={(e) => selectVideo(e.target.value)}
             disabled={busy || videos.length === 0}
             className="field w-52"
           >
@@ -510,7 +550,7 @@ export default function App() {
           )}
           <UploadPanel onUploaded={(video) => {
             setVideos((current) => includeUploadedVideo(current, video.stored_filename));
-            setSelected(video.stored_filename);
+            selectVideo(video.stored_filename);
           }} />
           <input
             ref={importInputRef}
@@ -552,6 +592,9 @@ export default function App() {
           <LiveGrid
             incidents={liveIncidents}
             activity={liveActivity}
+            actionRequests={state.liveActuatorRequests}
+            actionResults={state.liveActuatorResults}
+            onRespond={send.actuator}
             onSelectFeed={selectLiveFeed}
             onOpenTraining={setTrainingEventId}
           />
@@ -575,8 +618,8 @@ export default function App() {
         </div>
         <div className="col-span-4 min-h-0">
           <ActionLog
-            requests={state.actuatorRequests}
-            results={state.actuatorResults}
+            requests={analysisActionRequests}
+            results={analysisActionResults}
             onRespond={send.actuator}
           />
         </div>
@@ -585,9 +628,6 @@ export default function App() {
             messages={state.chat}
             onSend={send.chat}
             incident={feed.highlight}
-            contextLabel={`${analysisActive || "ana kamera"}${
-              feed.highlight ? ` · ${feed.highlight.incident_id}` : ""
-            }`}
           />
         </div>
         <div className="col-span-4 min-h-0">

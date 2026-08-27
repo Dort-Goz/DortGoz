@@ -117,6 +117,7 @@ export interface ActuatorRequest {
   incident_title: string;
   run_id: string;
   feed: string;
+  live: boolean;
   anomaly_type: AnomalyType;
   risk?: Risk | null;
   evidence_timestamps: number[];
@@ -136,6 +137,7 @@ export interface ActuatorResult {
   incident_id?: string | null;
   run_id: string;
   feed: string;
+  live: boolean;
   mode: "preview";
   delivered: false;
   external_side_effect: false;

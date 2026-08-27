@@ -344,7 +344,11 @@ async def _dispatch(
             str(args.get("gerekce", "")),
         )
         if created:
-            await manager.broadcast(Event.wrap(request, feed=request.feed))
+            await manager.broadcast(Event.wrap(
+                request,
+                feed=request.feed,
+                live=request.live,
+            ))
             return (
                 f"{request.action_label} operatöre sunuldu "
                 f"(request_id={request.request_id}). Henüz hazırlanmadı ve dış kuruma "

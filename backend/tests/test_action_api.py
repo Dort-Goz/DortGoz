@@ -61,6 +61,7 @@ def test_operator_response_resolves_exact_request(pending_action, monkeypatch):
     )))
 
     result = manager.events[-1].payload
+    assert manager.events[-1].live is False
     assert result.request_id == pending_action.request_id
     assert result.actuator == "emniyet_bildirimi_hazirla"
     assert result.status == "prepared"

@@ -117,6 +117,7 @@ def test_review_center_creates_pending_local_draft_request(tmp_path, monkeypatch
         assert body["created"] is True
         assert body["request"]["status"] == "pending"
         assert manager.events[-1].payload.type == "actuator_request"
+        assert manager.events[-1].live is False
         assert dispatcher.snapshot(fixture_only=False)["results"] == []
     finally:
         dispatcher.reset_memory()

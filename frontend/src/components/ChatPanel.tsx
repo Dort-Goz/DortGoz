@@ -43,11 +43,10 @@ const ChatText = memo(function ChatText({ text }: { text: string }) {
 });
 
 function ChatPanel({
-  messages, onSend, contextLabel, incident,
+  messages, onSend, incident,
 }: {
   messages: ChatMessage[];
   onSend: (text: string) => void;
-  contextLabel?: string;
   incident?: StoredIncident | null;
 }) {
   const [draft, setDraft] = useState("");
@@ -82,11 +81,6 @@ function ChatPanel({
           >
             Olayı aydınlat
           </button>
-        )}
-        {contextLabel && (
-          <span className={`${questionSet ? "" : "ml-auto"} normal-case font-normal text-[10px] text-zinc-500`}>
-            bağlam: {contextLabel}
-          </span>
         )}
       </div>
       <div ref={ref} onScroll={onScroll} className="panel-body space-y-1.5 p-2">

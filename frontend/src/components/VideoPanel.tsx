@@ -134,11 +134,6 @@ export default function VideoPanel({
             title={`${highlight.title} — kutular olay anının (${clock(highlight.boxT ?? highlight.t)}) çevresinde görünür`}
           >
             ▸ {highlight.title} · {clock(highlight.t)}
-            {highlight.olay_baslangic != null && highlight.olay_bitis != null && (
-              <span className="font-normal opacity-70">
-                {" "}({clock(highlight.olay_baslangic)}–{clock(highlight.olay_bitis)})
-              </span>
-            )}
           </span>
         )}
       </div>

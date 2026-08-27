@@ -155,6 +155,7 @@ class ActuatorRequest(BaseModel):
     incident_title: str = ""
     run_id: str = ""
     feed: str = ""
+    live: bool = False
     anomaly_type: AnomalyType = "bilinmeyen"
     risk: Risk | None = None
     evidence_timestamps: list[float] = Field(default_factory=list)
@@ -174,6 +175,7 @@ class ActuatorResult(BaseModel):
     incident_id: str | None = None
     run_id: str = ""
     feed: str = ""
+    live: bool = False
     mode: Literal["preview"] = "preview"
     delivered: Literal[False] = False
     external_side_effect: Literal[False] = False

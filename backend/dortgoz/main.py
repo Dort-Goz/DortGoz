@@ -686,7 +686,7 @@ async def request_action(body: dict) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     if created:
-        await manager.broadcast(Event.wrap(request, feed=request.feed))
+        await manager.broadcast(Event.wrap(request, feed=request.feed, live=request.live))
     return {"created": created, "request": request.model_dump(mode="json")}
 
 
@@ -772,7 +772,11 @@ async def handle_operator_message(msg: OperatorMessage, *, ws: WebSocket | None 
                 Event.wrap(ChatMessage(role="agent", text=f"Aksiyon kararı reddedildi: {exc}"))
             )
             return
-        await manager.broadcast(Event.wrap(result, feed=getattr(result, "feed", "")))
+        await manager.broadcast(Event.wrap(
+            result,
+            feed=getattr(result, "feed", ""),
+            live=getattr(result, "live", False),
+        ))
     elif msg.kind == "start_run":
         await start_run(msg)
     elif msg.kind == "stop_run":

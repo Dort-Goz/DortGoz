@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { consoleReducer, initialState } from "../src/state";
+import { actionBelongsToMode, consoleReducer, initialState } from "../src/state";
 import type { ActuatorRequest, ActuatorResult, Event } from "../src/types/events";
 
 const request: ActuatorRequest = {
@@ -13,6 +13,7 @@ const request: ActuatorRequest = {
   incident_title: "Saldırı şüphesi",
   run_id: "run-1",
   feed: "KAM-1",
+  live: false,
   anomaly_type: "saldiri",
   risk: "kritik",
   evidence_timestamps: [5, 7.5],
@@ -32,6 +33,7 @@ const result: ActuatorResult = {
   incident_id: "inc-1",
   run_id: "run-1",
   feed: "KAM-1",
+  live: false,
   mode: "preview",
   delivered: false,
   external_side_effect: false,
@@ -73,6 +75,30 @@ describe("aksiyon günlüğü", () => {
     expect(hydrated.actuatorResults[0].delivered).toBe(false);
   });
 
+  test("REST snapshot canlı ve analiz aksiyonlarını ayrı günlüklerde kurar", () => {
+    const liveRequest = { ...request, request_id: "req-live", live: true };
+    const liveResult = { ...result, request_id: "req-live", live: true };
+    const hydrated = consoleReducer(initialState, {
+      kind: "hydrate_actions",
+      requests: [request, liveRequest],
+      results: [result, liveResult],
+    });
+
+    expect(hydrated.actuatorRequests.map((item) => item.request_id)).toEqual(["req-1"]);
+    expect(hydrated.liveActuatorRequests.map((item) => item.request_id)).toEqual(["req-live"]);
+    expect(hydrated.actuatorResults.map((item) => item.request_id)).toEqual(["req-1"]);
+    expect(hydrated.liveActuatorResults.map((item) => item.request_id)).toEqual(["req-live"]);
+  });
+
+  test("fixture aksiyonu yalnız mock kipte görünür", () => {
+    const fixture = { ...request, run_id: "fixture-ui-crime-1" };
+
+    expect(actionBelongsToMode(fixture, true)).toBe(true);
+    expect(actionBelongsToMode(fixture, false)).toBe(false);
+    expect(actionBelongsToMode(request, false)).toBe(true);
+    expect(actionBelongsToMode(request, true)).toBe(false);
+  });
+
   test("arayüz ham fonksiyon adı yerine teslim sınırını gösterir", () => {
     const source = readFileSync(new URL("../src/components/ActionLog.tsx", import.meta.url), "utf8");
     const appSource = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
@@ -82,6 +108,7 @@ describe("aksiyon günlüğü", () => {
     expect(source).not.toContain("{req.actuator}()");
     expect(appSource).toContain(
       "ARAYÜZ TEST AKIŞI · “BAŞLAT” KAYITLI BİR ÖRNEK AKIŞI OYNATIR");
+    expect(appSource).toContain("actionBelongsToMode(request, fixtureMode)");
     expect(appSource).not.toContain("readOnly={fixtureMode}");
   });
 });

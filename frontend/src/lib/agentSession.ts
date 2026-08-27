@@ -18,6 +18,15 @@ export function loadDialogueId(
   return created;
 }
 
+export function renewDialogueId(
+  storage: SessionStorageLike,
+  createId: () => string,
+): string {
+  const created = createId();
+  storage.setItem(DIALOGUE_KEY, created);
+  return created;
+}
+
 export function buildChatMessage(
   text: string,
   dialogueId: string,

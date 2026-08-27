@@ -87,6 +87,34 @@ describe("7/24 dayanıklılık: state sınırları", () => {
     expect(state.feeds["KAM-1"].reports).toEqual([]);
   });
 
+  test("yeni analiz koşusu eski video sohbetini temizler", () => {
+    let state = consoleReducer(initialState, {
+      kind: "event",
+      event: {
+        seq: 1, ts: 1, feed: "",
+        payload: { type: "chat_message", role: "operator", text: "eski video" },
+      } as Event,
+    });
+
+    state = consoleReducer(state, {
+      kind: "run_started", video: "new.mp4", feed: "",
+    });
+
+    expect(state.chat).toEqual([]);
+  });
+
+  test("video seçimi sohbeti açıkça temizleyebilir", () => {
+    const withChat = consoleReducer(initialState, {
+      kind: "event",
+      event: {
+        seq: 1, ts: 1, feed: "",
+        payload: { type: "chat_message", role: "operator", text: "eski video" },
+      } as Event,
+    });
+
+    expect(consoleReducer(withChat, { kind: "clear_chat" }).chat).toEqual([]);
+  });
+
   test("sync reset tüm karışmış istemci state'ini temizler", () => {
     const state = consoleReducer(
       consoleReducer(initialState, { kind: "event", event: reportEvent(1) }),

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { consoleReducer, feedNames, initialState } from "../src/state";
 import type { Event } from "../src/types/events";
 
@@ -86,12 +87,15 @@ describe("canlı ve analiz ayrımı", () => {
         payload: {
           type: "actuator_request", request_id: "R-1", actuator: "emniyet",
           reason: "canlı", incident_id: "INC-1", mode: "preview", status: "pending",
+          live: true,
         },
       } as Event,
     });
 
     expect(state.chat).toEqual([]);
     expect(state.actuatorRequests).toEqual([]);
+    expect(state.liveActuatorRequests).toHaveLength(1);
+    expect(state.liveActuatorRequests[0].request_id).toBe("R-1");
   });
 
   test("canlı kayıt analiz video paneline sarılamaz", () => {
@@ -104,5 +108,13 @@ describe("canlı ve analiz ayrımı", () => {
 
     expect(state).toBe(before);
     expect(state.active).toBe("");
+  });
+
+  test("canlı çalışma alanı kendi aksiyon günlüğünü açar", () => {
+    const source = readFileSync(new URL("../src/components/LiveGrid.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain('["aksiyonlar", "⚙ Aksiyon günlüğü"]');
+    expect(source).toContain("requests={actionRequests}");
+    expect(source).toContain("results={actionResults}");
   });
 });

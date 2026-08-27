@@ -5,6 +5,7 @@ import {
   buildChatMessage,
   eventBelongsToDialogue,
   loadDialogueId,
+  renewDialogueId,
 } from "../src/lib/agentSession";
 import type { Event } from "../src/types/events";
 
@@ -31,6 +32,22 @@ describe("agent oturumu ve bağlamı", () => {
     expect(loadDialogueId(storage, create)).toBe("dialogue-1");
     expect(loadDialogueId(storage, create)).toBe("dialogue-1");
     expect(storage.getItem(DIALOGUE_KEY)).toBe("dialogue-1");
+  });
+
+  test("video değişince yeni dialogue_id üretir", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(DIALOGUE_KEY, "dialogue-old");
+
+    expect(renewDialogueId(storage, () => "dialogue-new")).toBe("dialogue-new");
+    expect(storage.getItem(DIALOGUE_KEY)).toBe("dialogue-new");
+  });
+
+  test("video seçimi ve yükleme aynı sohbet sıfırlama yolunu kullanır", async () => {
+    const source = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+
+    expect(source).toContain('onChange={(e) => selectVideo(e.target.value)}');
+    expect(source).toContain("selectVideo(video.stored_filename);");
+    expect(source).toContain('dispatch({ kind: "clear_chat" });');
   });
 
   test("sohbet mesajı seçili kamera ve olayı taşır", () => {

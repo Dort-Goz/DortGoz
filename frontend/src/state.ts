@@ -61,6 +61,8 @@ export interface ConsoleState {
   chat: ChatMessage[];
   actuatorRequests: ActuatorRequest[];
   actuatorResults: ActuatorResult[];
+  liveActuatorRequests: ActuatorRequest[];
+  liveActuatorResults: ActuatorResult[];
 }
 
 export const initialState: ConsoleState = {
@@ -70,6 +72,8 @@ export const initialState: ConsoleState = {
   chat: [],
   actuatorRequests: [],
   actuatorResults: [],
+  liveActuatorRequests: [],
+  liveActuatorResults: [],
 };
 
 export function isLiveFeed(state: ConsoleState, feed: string): boolean {
@@ -91,6 +95,13 @@ export const CAPS = {
   activity: 40,
 } as const;
 
+export function actionBelongsToMode(
+  action: Pick<ActuatorRequest | ActuatorResult, "run_id">,
+  fixtureMode: boolean,
+): boolean {
+  return action.run_id.startsWith("fixture-ui-") === fixtureMode;
+}
+
 function cap<T>(arr: T[], n: number): T[] {
   return arr.length > n ? arr.slice(arr.length - n) : arr;
 }
@@ -98,6 +109,7 @@ function cap<T>(arr: T[], n: number): T[] {
 export type Action =
   | { kind: "event"; event: Event }
   | { kind: "sync_reset" }
+  | { kind: "clear_chat" }
   | { kind: "hydrate_actions"; requests: ActuatorRequest[]; results: ActuatorResult[] }
   | { kind: "run_started"; video: string; feed: string }
   | { kind: "select_incident"; incident: IncidentUpdate }
@@ -119,11 +131,24 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
   if (action.kind === "sync_reset") {
     return initialState;
   }
+  if (action.kind === "clear_chat") {
+    return { ...state, chat: [] };
+  }
   if (action.kind === "hydrate_actions") {
     return {
       ...state,
-      actuatorRequests: cap(action.requests, CAPS.actuators),
-      actuatorResults: cap(action.results, CAPS.actuators),
+      actuatorRequests: cap(
+        action.requests.filter((request) => !request.live), CAPS.actuators,
+      ),
+      actuatorResults: cap(
+        action.results.filter((result) => !result.live), CAPS.actuators,
+      ),
+      liveActuatorRequests: cap(
+        action.requests.filter((request) => request.live), CAPS.actuators,
+      ),
+      liveActuatorResults: cap(
+        action.results.filter((result) => result.live), CAPS.actuators,
+      ),
     };
   }
   if (action.kind === "select_feed") {
@@ -155,6 +180,7 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
       ...withFeed(state, action.feed, false,
                   () => ({ ...emptyFeed, video: action.video })),
       active: action.feed,
+      chat: [],
     };
   }
 
@@ -226,31 +252,50 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
       return { ...state, chat: cap([...state.chat, p], CAPS.chat) };
     }
     case "actuator_request": {
-      if (live) return state;
+      const actionLive = live || p.live;
       const request = p.feed || !feed ? p : { ...p, feed };
-      const others = state.actuatorRequests.filter((item) => item.request_id !== p.request_id);
-      return {
-        ...state,
-        actuatorRequests: cap([...others, request], CAPS.actuators),
-      };
+      if (actionLive) {
+        const others = state.liveActuatorRequests.filter(
+          (item) => item.request_id !== p.request_id,
+        );
+        return {
+          ...state,
+          liveActuatorRequests: cap([...others, request], CAPS.actuators),
+        };
+      }
+      const others = state.actuatorRequests.filter(
+        (item) => item.request_id !== p.request_id,
+      );
+      return { ...state, actuatorRequests: cap([...others, request], CAPS.actuators) };
     }
     case "actuator_result": {
-      if (live) return state;
+      const actionLive = live || p.live;
       const result = p.feed || !feed ? p : { ...p, feed };
-      const others = state.actuatorResults.filter((item) => item.request_id !== p.request_id);
-      return {
-        ...state,
-        actuatorResults: cap([...others, result], CAPS.actuators),
-      };
+      if (actionLive) {
+        const others = state.liveActuatorResults.filter(
+          (item) => item.request_id !== p.request_id,
+        );
+        return {
+          ...state,
+          liveActuatorResults: cap([...others, result], CAPS.actuators),
+        };
+      }
+      const others = state.actuatorResults.filter(
+        (item) => item.request_id !== p.request_id,
+      );
+      return { ...state, actuatorResults: cap([...others, result], CAPS.actuators) };
     }
-    case "run_status":
-      return withFeed(state, feed, live, (f) => {
+    case "run_status": {
+      const newRun = p.run_id !== "-" && p.run_id !== state.feeds[feed]?.runStatus?.run_id;
+      const next = withFeed(state, feed, live, (f) => {
         const newRun = p.run_id !== "-" && p.run_id !== f.runStatus?.run_id;
         if (newRun) {
           return { ...emptyFeed, live, video: p.video || null, runStatus: p };
         }
         return { ...f, runStatus: p, video: f.video ?? (p.video || null) };
       });
+      return newRun && !live ? { ...next, chat: [] } : next;
+    }
     case "ui_command": {
       if (live) return state;
       const target = feed || state.active;

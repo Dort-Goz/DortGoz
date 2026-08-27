@@ -1,5 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ActivityStrip, IncidentUpdate } from "../types/events";
+import type {
+  ActivityStrip, ActuatorRequest, ActuatorResult, IncidentUpdate,
+} from "../types/events";
+import ActionLog from "./ActionLog";
 import ActivityBar from "./ActivityBar";
 import LiveArchive from "./LiveArchive";
 import TriagePanel from "./TriagePanel";
@@ -40,9 +43,15 @@ function lagBadge(f: LiveFeed): { text: string; cls: string; hint: string } {
   return { text, cls: "bg-red-800 text-red-100", hint: tail };
 }
 
-function LiveGrid({ incidents, activity, onSelectFeed, onOpenTraining }: {
+function LiveGrid({
+  incidents, activity, actionRequests, actionResults, onRespond, onSelectFeed,
+  onOpenTraining,
+}: {
   incidents: Record<string, IncidentUpdate[]>;
   activity: Record<string, ActivityStrip[]>;
+  actionRequests: ActuatorRequest[];
+  actionResults: ActuatorResult[];
+  onRespond: (requestId: string, approved: boolean) => void;
   onSelectFeed: (feed: string) => void;
   onOpenTraining: (eventId: string) => void;
 }) {
@@ -50,7 +59,7 @@ function LiveGrid({ incidents, activity, onSelectFeed, onOpenTraining }: {
   const [active, setActive] = useState(false);
   const [error, setError] = useState("");
   const [zoom, setZoom] = useState<string | null>(null);
-  const [view, setView] = useState<"duvar" | "kayitlar">("duvar");
+  const [view, setView] = useState<"duvar" | "kayitlar" | "aksiyonlar">("duvar");
   const [preview, setPreview] = useState<Record<string, string>>({});
   const previewRef = useRef<Record<string, string>>({});
   const [rate, setRate] = useState<number>(() =>
@@ -149,7 +158,11 @@ function LiveGrid({ incidents, activity, onSelectFeed, onOpenTraining }: {
           aria-label="Canlı görünümü"
           className="flex h-7 shrink-0 items-center gap-0.5 rounded-sm border border-zinc-800 bg-zinc-950 p-0.5"
         >
-          {([["duvar", "▦ Akış duvarı"], ["kayitlar", "⛁ Olay kayıtları"]] as const).map(
+          {([
+            ["duvar", "▦ Akış duvarı"],
+            ["kayitlar", "⛁ Olay kayıtları"],
+            ["aksiyonlar", "⚙ Aksiyon günlüğü"],
+          ] as const).map(
             ([value, label]) => (
               <button
                 key={value}
@@ -212,7 +225,13 @@ function LiveGrid({ incidents, activity, onSelectFeed, onOpenTraining }: {
       )}
 
       <div className="flex min-h-0 flex-1 gap-1.5">
-      {view === "kayitlar" ? <LiveArchive feedNames={labels} /> : (
+        {view === "kayitlar" ? <LiveArchive feedNames={labels} /> : view === "aksiyonlar" ? (
+          <ActionLog
+            requests={actionRequests}
+            results={actionResults}
+            onRespond={onRespond}
+          />
+        ) : (
       <div className="panel flex-1">
       <div className="panel-title">
         <span>Akış Duvarı</span>

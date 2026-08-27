@@ -42,10 +42,11 @@ def incident_context(
     return ctx, incident
 
 
-def confirm_incident(incident: Incident) -> None:
+def confirm_incident(incident: Incident, *, live: bool = False) -> None:
     triage.store.observe(Event.wrap(
         RunStatus(run_id="run-1", state="done", video="crime.mp4"),
         feed="KAM-1",
+        live=live,
     ))
     triage.store.observe(Event.wrap(
         IncidentUpdate(
@@ -58,6 +59,7 @@ def confirm_incident(incident: Incident) -> None:
             needs_review=True,
         ),
         feed="KAM-1",
+        live=live,
     ))
     triage.store.decide(
         "KAM-1:inc-1",
@@ -81,11 +83,27 @@ def test_request_is_bound_to_real_incident_and_evidence(tmp_path):
     assert created is True
     assert request.run_id == "run-1"
     assert request.feed == "KAM-1"
+    assert request.live is False
     assert request.anomaly_type == "kavga"
     assert request.risk == "yuksek"
     assert request.evidence_timestamps == [12.5, 13.0]
     assert request.mode == "preview"
     assert (tmp_path / "aksiyonlar" / "aksiyon_defteri.jsonl").is_file()
+
+
+def test_live_request_and_result_keep_workspace_identity(tmp_path):
+    _, incident = incident_context(needs_review=True)
+    confirm_incident(incident, live=True)
+    service = ActionDispatcher(tmp_path)
+
+    request, _ = service.request(
+        "emniyet_bildirimi_hazirla", "inc-1", "KAM-1", "canlı olay"
+    )
+    result = service.resolve(request.request_id, False, "Operatör 1")
+
+    assert request.live is True
+    assert result.live is True
+    assert service.snapshot()["requests"][0]["live"] is True
 
 
 def test_duplicate_pending_request_is_idempotent(tmp_path):
@@ -185,6 +203,31 @@ def test_resolution_is_restart_safe_and_conflicts_are_rejected(tmp_path):
     assert repeated == first
     with pytest.raises(ValueError, match="çelişkili"):
         restarted.resolve(request.request_id, True, "Operatör 1")
+
+
+def test_legacy_live_record_is_migrated_from_run_id(tmp_path):
+    root = tmp_path / "aksiyonlar"
+    root.mkdir(parents=True)
+    request = ActuatorRequest(
+        request_id="legacy-live",
+        actuator="emniyet_bildirimi_hazirla",
+        reason="eski canlı kayıt",
+        incident_id="inc-live",
+        run_id="canli-KAM-1-seg_001",
+        feed="KAM-1",
+        anomaly_type="hirsizlik",
+        risk="yuksek",
+        evidence_timestamps=[5.0],
+    ).model_dump(mode="json")
+    request.pop("live")
+    (root / "aksiyon_defteri.jsonl").write_text(
+        json.dumps({"version": 1, "request": request, "result": None}) + "\n",
+        encoding="utf-8",
+    )
+
+    snapshot = ActionDispatcher(tmp_path).snapshot()
+
+    assert snapshot["requests"][0]["live"] is True
 
 
 def test_artifact_route_does_not_trust_persisted_file_path(tmp_path):

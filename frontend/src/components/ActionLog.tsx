@@ -47,10 +47,6 @@ function ActionLog({
             {pendingCount} beklemede
           </span>
         )}
-        <span className="flex-1" />
-        <span className="text-[9px] font-normal normal-case tracking-normal text-zinc-500">
-          dış aksiyonlar yerel taslak olarak hazırlanır
-        </span>
       </div>
       <div className="panel-body space-y-1.5 p-2">
         {requests.length === 0 && (
