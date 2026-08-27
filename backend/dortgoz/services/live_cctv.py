@@ -17,6 +17,11 @@ from .run_identity import require_safe_run_id
 log = logging.getLogger(__name__)
 
 SEGMENT_GLOB = "seg_*.mp4"
+JPEG_SOI = b"\xff\xd8"
+JPEG_EOI = b"\xff\xd9"
+PREVIEW_BUFFER_LIMIT = 4 * 1024 * 1024
+PREVIEW_IDLE_TIMEOUT = 15.0
+PREVIEW_QUEUE_LIMIT = 24
 PrepareRun = Callable[[str, str, Path], Awaitable[VideoMetadata]]
 FinalizeRun = Callable[[str], Awaitable[object]]
 
@@ -76,7 +81,9 @@ class LiveFeedWorker:
                  mode: str = "", desc: str = "",
                  prepare_run: PrepareRun | None = None,
                  finalize_run: FinalizeRun | None = None,
-                 execution_coordinator: ExecutionCoordinator | None = None) -> None:
+                 execution_coordinator: ExecutionCoordinator | None = None,
+                 on_preview: Callable[[str, bytes], None] | None = None) -> None:
+        self.on_preview = on_preview
         self.status = FeedStatus(name=name, url=url, desc=desc)
         self.manager = manager
         self.mode = mode
@@ -90,6 +97,9 @@ class LiveFeedWorker:
         self._tasks: list[asyncio.Task] = []
         self._last_seg_mtime: float | None = None
         self.segments_failed = 0
+        self.preview_frame: bytes | None = None
+        self.preview_seq = 0
+        self._preview_event = asyncio.Event()
 
 
     def start(self) -> None:
@@ -118,11 +128,62 @@ class LiveFeedWorker:
 
 
     def _ffmpeg_cmd(self) -> list[str]:
-        return ["ffmpeg", "-nostdin", "-loglevel", "error",
-                "-i", self.status.url, "-an", "-c:v", "copy",
-                "-f", "segment", "-segment_time", str(settings.live_segment_seconds),
-                "-reset_timestamps", "1", "-strftime", "1",
-                str(self.dir / "seg_%s.mp4")]
+        cmd = ["ffmpeg", "-nostdin", "-loglevel", "error",
+               "-i", self.status.url, "-an",
+               "-map", "0:v:0", "-c:v", "copy",
+               "-f", "segment", "-segment_time", str(settings.live_segment_seconds),
+               "-reset_timestamps", "1", "-strftime", "1",
+               str(self.dir / "seg_%s.mp4")]
+        if settings.live_preview:
+            cmd += ["-map", "0:v:0", "-c:v", "mjpeg",
+                    "-vf", f"fps={settings.live_preview_fps},"
+                           f"scale={settings.live_preview_width}:-2",
+                    "-q:v", str(settings.live_preview_quality),
+                    "-f", "image2pipe", "-"]
+        return cmd
+
+    def _publish_preview(self, frame: bytes) -> None:
+        self.preview_frame = frame
+        self.preview_seq += 1
+        waiters, self._preview_event = self._preview_event, asyncio.Event()
+        waiters.set()
+        if self.on_preview is not None:
+            self.on_preview(self.status.name, frame)
+
+    async def _read_preview(self, stream: asyncio.StreamReader) -> None:
+        buffer = bytearray()
+        while True:
+            chunk = await stream.read(65536)
+            if not chunk:
+                return
+            buffer.extend(chunk)
+            while True:
+                end = buffer.find(JPEG_EOI)
+                if end == -1:
+                    break
+                start = buffer.find(JPEG_SOI)
+                if start == -1 or start > end:
+                    del buffer[: end + 2]
+                    continue
+                self._publish_preview(bytes(buffer[start : end + 2]))
+                del buffer[: end + 2]
+            if len(buffer) > PREVIEW_BUFFER_LIMIT:
+                del buffer[:-PREVIEW_BUFFER_LIMIT]
+
+    async def preview_frames(self):
+        last = -1
+        while self.running:
+            frame, seq = self.preview_frame, self.preview_seq
+            if frame is not None and seq != last:
+                last = seq
+                yield frame
+                continue
+            waiter = self._preview_event
+            try:
+                await asyncio.wait_for(waiter.wait(), timeout=PREVIEW_IDLE_TIMEOUT)
+            except TimeoutError:
+                if self.preview_frame is None:
+                    return
 
     async def _ffmpeg_loop(self) -> None:
         backoff = 5.0
@@ -131,11 +192,22 @@ class LiveFeedWorker:
                 try:
                     self._proc = await asyncio.create_subprocess_exec(
                         *self._ffmpeg_cmd(),
-                        stdout=asyncio.subprocess.DEVNULL,
+                        stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE)
                     self.status.state = "akiyor"
                     backoff = 5.0
-                    _, stderr = await self._proc.communicate()
+                    assert self._proc.stdout is not None
+                    assert self._proc.stderr is not None
+                    reader = asyncio.create_task(
+                        self._read_preview(self._proc.stdout),
+                        name=f"canli-onizleme-{self.status.name}")
+                    try:
+                        stderr = await self._proc.stderr.read()
+                        await self._proc.wait()
+                    finally:
+                        reader.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await reader
                     if not self.running:
                         return
                     tail = (stderr or b"")[-300:].decode(errors="replace").strip()
@@ -267,6 +339,27 @@ class LiveCctvService:
         self.finalize_run = finalize_run
         self.execution_coordinator = execution_coordinator
         self.workers: dict[str, LiveFeedWorker] = {}
+        self._preview_subscribers: set[asyncio.Queue] = set()
+
+    def _fan_out_preview(self, feed: str, frame: bytes) -> None:
+        for queue in self._preview_subscribers:
+            if queue.full():
+                with contextlib.suppress(asyncio.QueueEmpty):
+                    queue.get_nowait()
+            with contextlib.suppress(asyncio.QueueFull):
+                queue.put_nowait((feed, frame))
+
+    async def preview_all(self):
+        queue: asyncio.Queue = asyncio.Queue(maxsize=PREVIEW_QUEUE_LIMIT)
+        self._preview_subscribers.add(queue)
+        try:
+            for worker in self.workers.values():
+                if worker.preview_frame is not None:
+                    self._fan_out_preview(worker.status.name, worker.preview_frame)
+            while True:
+                yield await queue.get()
+        finally:
+            self._preview_subscribers.discard(queue)
 
     @property
     def active(self) -> bool:
@@ -284,7 +377,8 @@ class LiveCctvService:
                                     mode=mode, desc=f.get("desc", ""),
                                     prepare_run=self.prepare_run,
                                     finalize_run=self.finalize_run,
-                                    execution_coordinator=self.execution_coordinator)
+                                    execution_coordinator=self.execution_coordinator,
+                                    on_preview=self._fan_out_preview)
             worker.start()
             self.workers[f["name"]] = worker
         log.info("canlı kip başladı: %d akış", len(self.workers))
@@ -300,3 +394,9 @@ class LiveCctvService:
         for w in self.workers.values():
             w._refresh_lag()
         return [w.status for w in self.workers.values()]
+
+    def preview_frames(self, feed: str):
+        worker = self.workers.get(feed)
+        if worker is None or not settings.live_preview:
+            return None
+        return worker.preview_frames()

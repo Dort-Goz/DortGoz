@@ -251,6 +251,9 @@ class MockLiveService:
     def status(self) -> list[FeedStatus]:
         return list(self._statuses)
 
+    def preview_frames(self, feed: str):
+        return None
+
     def _write_snapshot(self, status: FeedStatus, tick: int) -> None:
         root = settings.media_dir / "canli-mock" / status.name
         root.mkdir(parents=True, exist_ok=True)

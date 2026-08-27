@@ -1,8 +1,9 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityStrip, IncidentUpdate } from "../types/events";
 import ActivityBar from "./ActivityBar";
 import LiveArchive from "./LiveArchive";
 import TriagePanel from "./TriagePanel";
+import { startPreviewStream } from "../lib/livePreview";
 
 interface LiveFeed {
   name: string;
@@ -16,13 +17,27 @@ interface LiveFeed {
   snapshot: string;
 }
 
-function lagBadge(f: LiveFeed): { text: string; cls: string } {
-  if (f.state === "hata") return { text: "KOPUK", cls: "bg-red-800 text-red-100" };
-  if (f.lag_s == null) return { text: "başlıyor…", cls: "bg-zinc-700 text-zinc-200" };
+function lagBadge(f: LiveFeed): { text: string; cls: string; hint: string } {
+  if (f.state === "hata") {
+    return {
+      text: "KOPUK",
+      cls: "bg-red-800 text-red-100",
+      hint: "Akış koptu — görüntü gelmiyor.",
+    };
+  }
+  const tail = "Görüntü canlıdır; bu rozet çözümlemenin ne kadar geride olduğunu söyler.";
+  if (f.lag_s == null) {
+    return {
+      text: "analiz bekliyor",
+      cls: "bg-zinc-700 text-zinc-200",
+      hint: `Henüz çözümlenmiş segment yok. ${tail}`,
+    };
+  }
   const s = Math.round(f.lag_s);
-  if (s <= 45) return { text: `CANLI −${s}s`, cls: "bg-emerald-800 text-emerald-100" };
-  if (s <= 120) return { text: `−${s}s geride`, cls: "bg-amber-800 text-amber-100" };
-  return { text: `−${Math.round(s / 60)}dk geride`, cls: "bg-red-800 text-red-100" };
+  const text = s < 90 ? `analiz −${s}s` : `analiz −${Math.round(s / 60)}dk`;
+  if (s <= 45) return { text, cls: "bg-emerald-800 text-emerald-100", hint: tail };
+  if (s <= 120) return { text, cls: "bg-amber-800 text-amber-100", hint: tail };
+  return { text, cls: "bg-red-800 text-red-100", hint: tail };
 }
 
 function LiveGrid({ incidents, activity, onSelectFeed, onOpenTraining }: {
@@ -36,6 +51,8 @@ function LiveGrid({ incidents, activity, onSelectFeed, onOpenTraining }: {
   const [error, setError] = useState("");
   const [zoom, setZoom] = useState<string | null>(null);
   const [view, setView] = useState<"duvar" | "kayitlar">("duvar");
+  const [preview, setPreview] = useState<Record<string, string>>({});
+  const previewRef = useRef<Record<string, string>>({});
   const [rate, setRate] = useState<number>(() =>
     Number(localStorage.getItem("dortgoz.canliKareOrani") || 1));
   const changeRate = (v: number) => {
@@ -71,6 +88,38 @@ function LiveGrid({ incidents, activity, onSelectFeed, onOpenTraining }: {
     await fetch("/api/live/stop", { method: "POST" });
     setZoom(null);
   }, []);
+
+  useEffect(() => {
+    if (!active) return;
+    const controller = new AbortController();
+    let pending: Record<string, string> = {};
+    let queued = false;
+    startPreviewStream((feed, url) => {
+      const previous = previewRef.current[feed] ?? pending[feed];
+      if (previous) URL.revokeObjectURL(previous);
+      pending = { ...pending, [feed]: url };
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => {
+        queued = false;
+        previewRef.current = { ...previewRef.current, ...pending };
+        pending = {};
+        setPreview(previewRef.current);
+      });
+    }, controller.signal);
+    return () => {
+      controller.abort();
+      for (const url of Object.values(previewRef.current)) URL.revokeObjectURL(url);
+      previewRef.current = {};
+      setPreview({});
+    };
+  }, [active]);
+
+  const liveSrc = useCallback(
+    (f: LiveFeed) => preview[f.name]
+      ?? (f.snapshot ? `${f.snapshot}?v=${Math.floor(f.segments_done / rate)}` : ""),
+    [preview, rate],
+  );
 
   const zoomed = zoom ? feeds.find((f) => f.name === zoom) : null;
   const labels = useMemo(
@@ -136,13 +185,13 @@ function LiveGrid({ incidents, activity, onSelectFeed, onOpenTraining }: {
       {zoomed && (
         <div className="flex shrink-0 items-start gap-3 rounded-md border border-zinc-700 bg-zinc-900 p-2">
           <img
-            src={`${zoomed.snapshot}?v=${zoomed.segments_done}`}
+            src={liveSrc(zoomed)}
             alt={zoomed.name}
             className="max-h-64 rounded-sm"
           />
           <div className="min-w-0 space-y-1 text-xs">
             <div className="text-sm font-bold text-zinc-100">{zoomed.desc || zoomed.name}</div>
-            <div className={`chip ${lagBadge(zoomed).cls}`}>
+            <div className={`chip ${lagBadge(zoomed).cls}`} title={lagBadge(zoomed).hint}>
               {lagBadge(zoomed).text}
             </div>
             <div className="font-mono text-zinc-400">
@@ -192,11 +241,10 @@ function LiveGrid({ incidents, activity, onSelectFeed, onOpenTraining }: {
               } hover:border-zinc-500`}
               title={`${f.name} · ${f.state}`}
             >
-              {f.snapshot ? (
+              {liveSrc(f) ? (
                 <img
-                  src={`${f.snapshot}?v=${Math.floor(f.segments_done / rate)}`}
+                  src={liveSrc(f)}
                   alt={f.name}
-                  loading="lazy"
                   decoding="async"
                   className="h-full w-full object-cover opacity-90"
                 />
@@ -210,7 +258,10 @@ function LiveGrid({ incidents, activity, onSelectFeed, onOpenTraining }: {
                       title={f.desc || f.name}>
                   {f.desc || f.name}
                 </span>
-                <span className={`rounded-sm px-1 font-mono leading-4 ${badge.cls}`}>{badge.text}</span>
+                <span title={badge.hint}
+                      className={`rounded-sm px-1 font-mono leading-4 ${badge.cls}`}>
+                  {badge.text}
+                </span>
               </div>
               {(f.state === "isleniyor" || inc > 0 || f.dropped_s > 0) && (
                 <div className="absolute bottom-0 left-0 right-0 flex gap-1 px-1 pb-1 text-[10px]">

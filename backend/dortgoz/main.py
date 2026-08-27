@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -45,7 +45,7 @@ from .services.analysis_job import (
 )
 from .services.deployment_readiness import DeploymentReadinessService
 from .services.execution_coordinator import ExecutionCoordinator
-from .services.run_identity import safe_run_file
+from .services.run_identity import require_safe_run_id, safe_run_file
 from .services.startup_reconciliation import StartupReconciliationService
 from .ws import ConnectionManager, replay_jsonl
 
@@ -556,6 +556,57 @@ async def browse_stored_events(
             limit=limit,
             offset=offset,
         ),
+    )
+
+
+PREVIEW_BOUNDARY = "dortgozkare"
+
+
+def _preview_part(feed: str, frame: bytes) -> bytes:
+    return (
+        f"--{PREVIEW_BOUNDARY}\r\n"
+        f"Content-Type: image/jpeg\r\n"
+        f"X-Feed: {feed}\r\n"
+        f"Content-Length: {len(frame)}\r\n\r\n"
+    ).encode() + frame + b"\r\n"
+
+
+@app.get("/api/live/preview")
+async def live_preview_all():
+    service = _live_service()
+    frames = getattr(service, "preview_all", None)
+    if frames is None or not settings.live_preview or not service.active:
+        raise HTTPException(status_code=404, detail="canlı önizleme kapalı")
+
+    async def multipart():
+        async for feed, frame in frames():
+            yield _preview_part(feed, frame)
+
+    return StreamingResponse(
+        multipart(),
+        media_type=f"multipart/x-mixed-replace; boundary={PREVIEW_BOUNDARY}",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/api/live/preview/{feed}")
+async def live_preview(feed: str):
+    try:
+        require_safe_run_id(feed)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="akış adı geçersiz")
+    frames = _live_service().preview_frames(feed)
+    if frames is None:
+        raise HTTPException(status_code=404, detail="akış canlı değil")
+
+    async def multipart():
+        async for frame in frames:
+            yield _preview_part(feed, frame)
+
+    return StreamingResponse(
+        multipart(),
+        media_type=f"multipart/x-mixed-replace; boundary={PREVIEW_BOUNDARY}",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
 
 
