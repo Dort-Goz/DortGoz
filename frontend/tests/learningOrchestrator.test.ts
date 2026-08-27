@@ -180,16 +180,19 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
 
     expect(detail).toContain("Bu olayın “${canonicalEventLabel}” olduğu doğru mu?");
     expect(detail).toContain("Evet, doğru");
-    expect(detail).toContain("Hayır, yanlış");
+    expect(detail).toContain("Hayır, düzenle");
+    expect(detail).toContain("Anomali yok");
     expect(detail).toContain("grid grid-cols-3 gap-2");
-    expect(detail).toContain("Ayrıntılı karara git");
     expect(detail).toContain("border-amber-500 bg-amber-500");
-    expect(detail.indexOf("Ayrıntılı karara git")).toBeLessThan(
-      detail.indexOf("Hayır, yanlış"),
+    expect(detail).toContain('setReviewVerdict("anomali")');
+    expect(detail.indexOf("Hayır, düzenle")).toBeLessThan(
+      detail.indexOf("Anomali yok"),
     );
     expect(detail).not.toContain("Görüntüyü kontrol edin. Kararınızı verin.");
     expect(detail).not.toContain(">Olay sonucu</h3>");
     expect(detail).not.toContain("Hayır, sorun yok");
+    expect(detail).not.toContain("Ayrıntılı karara git");
+    expect(detail).not.toContain("Hayır, yanlış");
     expect(detail).toContain("Sistem bu olaydan öğrensin mi?");
     expect(detail).toContain("Onay ver ve kapat");
     expect(detail).toContain("approved_uses: recommendedApprovalUses");

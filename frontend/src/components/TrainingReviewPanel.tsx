@@ -470,10 +470,13 @@ export default function TrainingReviewPanel({
                     <button
                       type="button"
                       aria-expanded={reviewOpen}
-                      onClick={() => setReviewOpen(true)}
+                      onClick={() => {
+                        setReviewVerdict("anomali");
+                        setReviewOpen(true);
+                      }}
                       className="btn h-9 border-amber-500 bg-amber-500 px-1 text-[11px] text-zinc-950 hover:border-amber-400 hover:bg-amber-400"
                     >
-                      Ayrıntılı karara git
+                      Hayır, düzenle
                     </button>
                     <button
                       type="button"
@@ -482,15 +485,15 @@ export default function TrainingReviewPanel({
                         () => saveEventReview(eventId, {
                           decision: "reject",
                           reviewer: reviewerName,
-                          note: "Operatör sistem sonucunu yanlış olarak işaretledi.",
+                          note: "Operatör görüntüde anomali olmadığını belirtti.",
                           false_alarm_reason: "other",
                           intervention_required: false,
                         }),
-                        "Sistem sonucu yanlış olarak işaretlendi.",
+                        "Kayıtta anomali olmadığı kaydedildi.",
                       )}
                       className="btn btn-outline h-9"
                     >
-                      Hayır, yanlış
+                      Anomali yok
                     </button>
                   </div>
                 </div>
