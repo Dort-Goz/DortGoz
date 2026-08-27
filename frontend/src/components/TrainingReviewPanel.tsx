@@ -20,6 +20,11 @@ import {
   verifyTrainingSample,
 } from "../lib/api";
 import { CANONICAL_TYPE_TR, RISK_TR } from "../lib/labels";
+import {
+  operatorApprovalState,
+  presentationForUse,
+  systemBehaviorLabel,
+} from "../lib/learningPresentation";
 import { boxFromPoints, imagePoint, type ImagePoint } from "../lib/trainingBoxes";
 import type {
   CanonicalEvent,
@@ -78,22 +83,6 @@ const APPROVAL_STATUS_TR = {
   approved: "Onaylandı",
   rejected: "Reddedildi",
   revoked: "Geri alındı",
-} as const;
-
-const DEVELOPMENT_USE_TR: Record<DevelopmentUse, string> = {
-  camera_rule: "Süreli kamera kuralı",
-  prompt_example: "İstem örneği",
-  threshold_calibration: "Eşik kalibrasyonu",
-  siglip_training: "SigLIP aday havuzu",
-  d_fine_training: "D-FINE kare havuzu",
-  evaluation: "Sabit değerlendirme",
-};
-
-const LEARNING_BAND_TR = {
-  low: "Düşük",
-  medium: "Orta",
-  high: "Yüksek",
-  priority: "Öncelikli",
 } as const;
 
 const dateTime = (value: string) => new Date(value).toLocaleString("tr-TR", {
@@ -410,9 +399,9 @@ export default function TrainingReviewPanel({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 shadow-2xl">
-        <header className="flex h-12 shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
+        <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-zinc-800 px-4 py-2.5">
           <div>
-            <h2 className="text-sm font-semibold text-zinc-200">Olay İnceleme ve Eğitim Hazırlığı</h2>
+            <h2 className="text-sm font-semibold text-zinc-200">Olay İnceleme ve Geliştirme Hazırlığı</h2>
             <p className="font-mono text-[10px] text-zinc-500">{eventId}</p>
           </div>
           <div className="ml-auto flex items-center gap-2 text-xs">
@@ -428,8 +417,8 @@ export default function TrainingReviewPanel({
           </div>
         </header>
 
-        <div className="grid min-h-0 flex-1 grid-cols-[21rem_minmax(0,1fr)]">
-          <aside className="overflow-y-auto border-r border-zinc-800 p-2.5 text-xs">
+        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[21rem_minmax(0,1fr)] lg:overflow-hidden">
+          <aside className="border-b border-zinc-800 p-2.5 text-xs lg:overflow-y-auto lg:border-b-0 lg:border-r">
             <div className="mb-2.5 space-y-1 rounded-md border border-zinc-800 bg-zinc-900 p-2.5">
               <div className="flex items-center gap-1.5 font-medium text-zinc-200">
                 <span className="chip border border-zinc-700 text-zinc-300 font-mono">1</span>
@@ -592,7 +581,7 @@ export default function TrainingReviewPanel({
                 </button>
                 {latestReview && (
                   <p className="text-[10px] leading-relaxed text-amber-300">
-                    Yeni revizyon eski eğitim karelerini geçersiz kılar. D-FINE izni yeniden verilmelidir.
+                    İnceleme sonucu değişirse önceki geliştirme onayı geçersiz olur. Yeniden onay gerekir.
                   </p>
                 )}
               </div>
@@ -627,38 +616,63 @@ export default function TrainingReviewPanel({
 
             {learningPlan && (
               <div className="mb-2.5 space-y-2 rounded-md border border-sky-900 bg-zinc-900 p-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="font-medium text-sky-300">
-                    Öğrenme Merkezi · olay planı
+                <div className="font-medium text-sky-300">Bu olay için geliştirme önerileri</div>
+                {learningPlan.routes.some((route) => route.recommended) ? (
+                  <div className="space-y-1.5">
+                    {learningPlan.routes.filter((route) => route.recommended).map((route) => {
+                      const presentation = presentationForUse(route.use);
+                      return (
+                        <div key={route.use} className="rounded-md bg-zinc-950 px-2 py-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="font-medium text-zinc-200">{presentation.title}</span>
+                            <span className={route.ready ? "text-emerald-400" : "text-amber-400"}>
+                              {operatorApprovalState(route)}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">
+                            {presentation.description}
+                          </p>
+                          <p className="mt-1 text-[10px] leading-relaxed text-sky-200">
+                            <span className="font-medium">Önerilen işlem:</span>{" "}
+                            {presentation.action}
+                          </p>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <span className="chip border border-sky-800 bg-zinc-950 font-mono text-sky-300">
-                    {learningPlan.learning_score}/100 · {LEARNING_BAND_TR[learningPlan.learning_band]}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-1 text-[10px] text-zinc-400">
-                  <span>Belirsizlik {learningPlan.components.uncertainty}</span>
-                  <span>Uyuşmazlık {learningPlan.components.disagreement}</span>
-                  <span>Yenilik {learningPlan.components.novelty}</span>
-                  <span>Kapsama açığı {learningPlan.components.coverage_gap}</span>
-                </div>
-                <p className="text-[10px] leading-relaxed text-zinc-500">
-                  Müdahale önceliği: {learningPlan.intervention_score ?? "—"} · Kayma gözcüsü: {learningPlan.drift_state}
-                </p>
-                <div className="space-y-1">
-                  {learningPlan.routes.filter((route) => route.recommended).map((route) => (
-                    <div key={route.use} className="rounded-md border border-zinc-800 bg-zinc-950 px-1.5 py-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-zinc-300">{DEVELOPMENT_USE_TR[route.use]}</span>
-                        <span className={route.ready ? "text-emerald-400" : "text-amber-400"}>
-                          {route.ready ? "hazır" : route.approval_state}
-                        </span>
-                      </div>
-                      <p className="text-[9px] text-zinc-600">{route.downstream} · {route.safety_gate}</p>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-[10px] font-medium text-amber-300">
-                  Otomatik eğitim ve canlı modele otomatik terfi kapalıdır.
+                ) : (
+                  <p className="text-zinc-500">İnsan incelemesi tamamlandıktan sonra öneriler burada görünecek.</p>
+                )}
+                <details className="rounded-md border border-zinc-800 bg-zinc-950 p-2">
+                  <summary className="cursor-pointer text-zinc-500 hover:text-zinc-300">
+                    Teknik detaylar
+                  </summary>
+                  <div className="mt-2 space-y-2 text-[10px] text-zinc-500">
+                    <p>
+                      İç plan {learningPlan.plan_version} · skor {learningPlan.learning_score}/100 ·
+                      müdahale {learningPlan.intervention_score ?? "—"}
+                    </p>
+                    <p>
+                      Belirsizlik {learningPlan.components.uncertainty} · uyuşmazlık {learningPlan.components.disagreement} ·
+                      yenilik {learningPlan.components.novelty} · kapsama açığı {learningPlan.components.coverage_gap}
+                    </p>
+                    <p>Davranış değişimi durumu: {systemBehaviorLabel(learningPlan.drift_state)}</p>
+                    {learningPlan.routes.filter((route) => route.recommended).map((route) => {
+                      const presentation = presentationForUse(route.use);
+                      return (
+                        <div key={route.use} className="border-t border-zinc-800 pt-2">
+                          <p className="font-mono text-zinc-400">{route.use}</p>
+                          <p>Kaynak bileşen: {presentation.technicalComponent}</p>
+                          <p>Geliştirme türü: {presentation.technicalType}</p>
+                          <p>İç durum: {route.approval_state}</p>
+                          <p>{route.downstream} · {route.safety_gate}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </details>
+                <p className="text-[10px] text-zinc-500">
+                  Otomatik eğitim ve canlı sisteme otomatik geçiş kapalıdır. Tüm geliştirmeler insan onayıyla ilerler.
                 </p>
               </div>
             )}
@@ -666,16 +680,16 @@ export default function TrainingReviewPanel({
             <div className="mb-2.5 space-y-1 rounded-md border border-zinc-800 bg-zinc-900 p-2.5">
               <div className="flex items-center gap-1.5 font-medium text-zinc-200">
                 <span className="chip border border-zinc-700 text-zinc-300 font-mono">2</span>
-                Geliştirme izni
+                Geliştirme onayı
               </div>
               <div className={activeDevelopmentApproval ? "text-emerald-400" : latestApproval?.status === "revoked" ? "text-red-400" : approvalNeedsRenewal ? "text-amber-400" : "text-zinc-500"}>
                 {activeDevelopmentApproval
-                  ? `${activeDevelopmentApproval.approved_uses.length} geliştirme kullanımı onaylı`
+                  ? `${activeDevelopmentApproval.approved_uses.length} işlem onaylandı`
                   : latestApproval?.status === "revoked"
-                    ? "Geliştirme izni geri alındı"
+                    ? "Geliştirme onayı geri alındı"
                     : approvalNeedsRenewal
-                      ? "Karar değişti · yeniden izin gerekli"
-                      : "Henüz izin verilmedi"}
+                      ? "İnceleme sonucu değiştiği için yeniden onay gerekiyor."
+                      : "Onay bekliyor"}
               </div>
               {latestReview && !activeDevelopmentApproval && (
                 <div className="mt-2 space-y-2">
@@ -694,8 +708,10 @@ export default function TrainingReviewPanel({
                             className="mt-0.5"
                           />
                           <span>
-                            <span className="block">{DEVELOPMENT_USE_TR[route.use]}</span>
-                            <span className="block text-[9px] text-zinc-600">{route.reason}</span>
+                            <span className="block">{presentationForUse(route.use).title}</span>
+                            <span className="block text-[9px] text-zinc-600">
+                              {presentationForUse(route.use).action}
+                            </span>
                           </span>
                         </label>
                       ))}
@@ -718,11 +734,11 @@ export default function TrainingReviewPanel({
                         note: approvalNote.trim(),
                         ...(latestApproval ? { supersedes_approval_id: latestApproval.approval_id } : {}),
                       }),
-                      "Seçilen geliştirme kullanımları kaydedildi.",
+                      "Seçilen geliştirme işlemleri onaylandı.",
                     )}
                     className="btn btn-accent w-full"
                   >
-                    Seçilen kullanımları onayla
+                    Seçilen işlemleri onayla
                   </button>
                 </div>
               )}
@@ -732,12 +748,12 @@ export default function TrainingReviewPanel({
                   onClick={() => setRevokeOpen(true)}
                   className="btn btn-outline mt-2 w-full border-red-900 text-red-300 hover:border-red-700 hover:text-red-200"
                 >
-                  Geliştirme iznini geri al
+                  Geliştirme onayını geri al
                 </button>
               )}
               {activeDevelopmentApproval && revokeOpen && (
                 <div className="mt-2 space-y-2 rounded-md border border-red-900 bg-red-950 p-2.5">
-                  <p className="text-red-200">Bu izne bağlı bütün geliştirme rotaları kapanacak.</p>
+                  <p className="text-red-200">Bu onaya bağlı bütün hazır işlemler durdurulacak.</p>
                   <textarea
                     value={revocationNote}
                     onChange={(event) => setRevocationNote(event.target.value)}
@@ -745,7 +761,7 @@ export default function TrainingReviewPanel({
                     maxLength={4000}
                     className="field-area"
                     placeholder="Geri alma gerekçesi"
-                    aria-label="Geliştirme izni geri alma gerekçesi"
+                    aria-label="Geliştirme onayı geri alma gerekçesi"
                   />
                   <div className="grid grid-cols-2 gap-1.5">
                     <button
@@ -772,11 +788,11 @@ export default function TrainingReviewPanel({
                           setRevocationNote("");
                           return result;
                         },
-                        "Geliştirme kullanım izni geri alındı.",
+                        "Geliştirme onayı geri alındı.",
                       )}
                       className="btn btn-danger"
                     >
-                      İzni geri al
+                      Onayı geri al
                     </button>
                   </div>
                 </div>
@@ -785,7 +801,7 @@ export default function TrainingReviewPanel({
 
             {approvals.length > 0 && (
               <details className="mb-2.5 rounded-md border border-zinc-800 bg-zinc-950 p-2">
-                <summary className="cursor-pointer text-zinc-400 hover:text-zinc-200">İzin geçmişi · {approvals.length}</summary>
+                <summary className="cursor-pointer text-zinc-400 hover:text-zinc-200">Onay geçmişi · {approvals.length}</summary>
                 <div className="mt-2 space-y-2">
                   {[...approvals].reverse().map((approval) => (
                     <div key={approval.approval_id} className="rounded-md border border-zinc-800 bg-zinc-900 p-2">

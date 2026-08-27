@@ -1,27 +1,17 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getLearningOrchestratorOverview } from "../lib/api";
 import { CANONICAL_TYPE_TR } from "../lib/labels";
-import type {
-  DevelopmentUse,
-  LearningOrchestratorOverview,
-} from "../types/domain";
+import {
+  approvalWaitingCount,
+  candidateReviewReason,
+  candidateStatus,
+  presentationForUse,
+  primaryPresentationForCandidate,
+  systemBehaviorLabel,
+  visibleDevelopmentSuggestions,
+} from "../lib/learningPresentation";
+import type { LearningOrchestratorOverview } from "../types/domain";
 import type { CanonicalEventType } from "../types/events";
-
-const USE_TR: Record<DevelopmentUse, string> = {
-  camera_rule: "Süreli kamera kuralı",
-  prompt_example: "İstem örneği",
-  threshold_calibration: "Eşik kalibrasyonu",
-  siglip_training: "SigLIP aday havuzu",
-  d_fine_training: "D-FINE kare havuzu",
-  evaluation: "Sabit değerlendirme",
-};
-
-const DRIFT_TR = {
-  insufficient_data: "Ölçüm için veri bekleniyor",
-  stable: "Kararlı",
-  watch: "İzleme gerekli",
-  drift: "Kayma sinyali",
-} as const;
 
 const BAND_TR = {
   low: "Düşük",
@@ -29,6 +19,10 @@ const BAND_TR = {
   high: "Yüksek",
   priority: "Öncelikli",
 } as const;
+
+function shortIdentifier(value: string): string {
+  return value.length > 18 ? value.slice(0, 8) : value;
+}
 
 export default function LearningOrchestratorPanel({
   onClose,
@@ -47,7 +41,7 @@ export default function LearningOrchestratorPanel({
     try {
       setOverview(await getLearningOrchestratorOverview());
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Orkestratör durumu alınamadı.");
+      setError(reason instanceof Error ? reason.message : "Öğrenme Merkezi durumu alınamadı.");
     } finally {
       setLoading(false);
     }
@@ -57,17 +51,22 @@ export default function LearningOrchestratorPanel({
     void load();
   }, [load]);
 
+  const suggestions = useMemo(
+    () => visibleDevelopmentSuggestions(overview?.route_summaries ?? []),
+    [overview],
+  );
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <section className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 shadow-2xl">
-        <header className="flex h-12 shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
-          <div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-2 sm:p-4">
+      <section className="flex max-h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 shadow-2xl">
+        <header className="flex shrink-0 items-center gap-3 border-b border-zinc-800 px-4 py-3">
+          <div className="min-w-0">
             <h2 className="text-sm font-semibold text-zinc-100">Öğrenme Merkezi</h2>
-            <p className="text-[10px] text-zinc-500">
-              İnsan onaylı geliştirme akışları · salt-okunur yönlendirme · gölge kayma gözcüsü
+            <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-500 sm:text-xs">
+              İncelenen olaylardan elde edilen geliştirme önerileri ve insan onaylı iyileştirme süreci
             </p>
           </div>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             <button
               type="button"
               onClick={() => void load()}
@@ -82,126 +81,178 @@ export default function LearningOrchestratorPanel({
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-4 text-xs">
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 text-xs sm:p-5">
           {error && (
-            <div className="mb-3 rounded-md border border-red-900 bg-red-950/40 p-2.5 text-xs text-red-200">
+            <div className="mb-4 rounded-md border border-red-900 bg-red-950/40 p-3 text-red-200">
               {error}
             </div>
           )}
           {loading && !overview && <p className="text-zinc-500">Sistem durumu okunuyor…</p>}
 
           {overview && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
                 {[
                   ["Toplam olay", overview.total_events],
-                  ["İncelenen", overview.reviewed_events],
                   ["İnceleme bekleyen", overview.pending_review_events],
-                  ["İzin bekleyen", overview.pending_approval_events],
-                  ["Eski izin", overview.stale_approval_events],
-                  ["Hazır rota", overview.ready_routes],
+                  [
+                    "Onay bekleyen",
+                    approvalWaitingCount(
+                      overview.pending_approval_events,
+                      overview.stale_approval_events,
+                    ),
+                  ],
+                  ["Hazır işlemler", overview.ready_routes],
                 ].map(([label, value]) => (
-                  <div key={label} className="rounded-md border border-zinc-800 bg-zinc-900 p-2">
+                  <div key={label} className="rounded-md bg-zinc-900 px-3 py-3">
                     <div className="microlabel">{label}</div>
-                    <div className="mt-1 font-mono text-lg font-semibold text-zinc-100">{value}</div>
+                    <div className="mt-1 font-mono text-xl font-semibold text-zinc-100">{value}</div>
                   </div>
                 ))}
               </div>
 
-              <div className="grid gap-3 lg:grid-cols-[18rem_minmax(0,1fr)]">
-                <section className="rounded-md border border-sky-900 bg-zinc-900 p-2.5">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium text-sky-100">Kayma gözcüsü</h3>
-                    <span className="chip border border-sky-900 bg-sky-950/40 font-mono text-sky-200">
-                      {overview.drift.score}/100
+              <section aria-labelledby="review-queue-title">
+                <div className="mb-2 flex items-end justify-between gap-3">
+                  <div>
+                    <h3 id="review-queue-title" className="text-sm font-semibold text-zinc-100">
+                      İnceleme kuyruğu
+                    </h3>
+                    <p className="mt-0.5 text-[10px] text-zinc-500">
+                      İnsan kararı veya onayı gereken olaylar öncelik sırasıyla gösterilir.
+                    </p>
+                  </div>
+                  {overview.priority_candidates.length > 0 && (
+                    <span className="text-[10px] text-zinc-600">
+                      {overview.priority_candidates.length} kayıt
                     </span>
-                  </div>
-                  <p className="mt-1 text-zinc-400">{DRIFT_TR[overview.drift.state]}</p>
-                  <p className="text-[10px] text-zinc-600">
-                    {overview.drift.reviewed_events}/{overview.drift.minimum_required} insan incelemesi · kip: gölge
-                  </p>
-                  <div className="mt-2 space-y-1">
-                    {overview.drift.metrics.map((metric) => (
-                      <div key={metric.name} className="rounded-md border border-zinc-800 bg-zinc-950 p-1.5">
-                        <div className="flex justify-between text-zinc-300">
-                          <span>{metric.detail}</span>
-                          <span>{metric.points} puan</span>
-                        </div>
-                        <div className="text-[9px] text-zinc-600">
-                          {metric.baseline.toFixed(3)} → {metric.current.toFixed(3)}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                <section className="rounded-md border border-zinc-800 bg-zinc-900 p-2.5">
-                  <h3 className="mb-2 font-medium text-zinc-200">Öğrenme rotaları</h3>
-                  <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                    {overview.route_summaries.map((route) => (
-                      <div key={route.use} className="rounded-md border border-zinc-800 bg-zinc-950 p-2">
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium text-zinc-200">{USE_TR[route.use]}</span>
-                          <span className="text-emerald-400">{route.ready_count} hazır</span>
-                        </div>
-                        <p className="mt-1 text-[10px] text-zinc-500">
-                          {route.recommended_count} öneri · {route.awaiting_gate_count} kapı bekliyor
-                        </p>
-                        <p className="mt-1 text-[9px] leading-relaxed text-zinc-600">
-                          {route.downstream} · {route.safety_gate}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              </div>
-
-              <section className="rounded-md border border-zinc-800 bg-zinc-900 p-2.5">
-                <div className="mb-2 flex items-center justify-between">
-                  <h3 className="font-medium text-zinc-200">Öncelikli inceleme kuyruğu</h3>
-                  <span className="text-[10px] text-zinc-600">Öğrenme değeri, müdahale önceliğinden ayrıdır.</span>
-                </div>
-                <div className="space-y-1.5">
-                  {overview.priority_candidates.length === 0 && (
-                    <p className="text-zinc-500">Henüz olay yok.</p>
                   )}
-                  {overview.priority_candidates.map((candidate) => (
-                    <button
-                      key={candidate.event_id}
-                      type="button"
-                      onClick={() => onOpenEvent(candidate.event_id)}
-                      className="grid w-full grid-cols-[5rem_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-zinc-800 bg-zinc-950 p-2 text-left transition-colors hover:border-sky-800"
-                    >
-                      <span className="text-center">
-                        <span className="block font-mono text-lg font-semibold text-sky-200">
-                          {candidate.learning_score}
-                        </span>
-                        <span className="text-[9px] text-zinc-600">{BAND_TR[candidate.learning_band]}</span>
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block truncate font-medium text-zinc-200">
-                          {CANONICAL_TYPE_TR[candidate.event_type as CanonicalEventType] ?? candidate.event_type}
-                        </span>
-                        <span className="block truncate font-mono text-[9px] text-zinc-600">
-                          {candidate.event_id}
-                        </span>
-                        <span className="mt-0.5 block text-[10px] text-amber-300/80">
-                          {candidate.blockers.join(" · ") || "Seçilen rotalar hazır"}
-                        </span>
-                      </span>
-                      <span className="text-right text-[10px] text-zinc-500">
-                        <span className="block">{candidate.ready_uses.length}/{candidate.recommended_uses.length} rota</span>
-                        <span className="block">Müdahale {candidate.intervention_score ?? "—"}</span>
-                      </span>
-                    </button>
-                  ))}
                 </div>
+
+                {overview.priority_candidates.length === 0 ? (
+                  <div className="rounded-md bg-zinc-900/60 px-4 py-8 text-center">
+                    <p className="font-medium text-zinc-200">İncelenecek olay yok.</p>
+                    <p className="mt-1 text-zinc-500">
+                      Yeni bir inceleme gerektiğinde burada görünecek.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {overview.priority_candidates.map((candidate) => {
+                      const presentation = primaryPresentationForCandidate(candidate);
+                      const eventLabel = CANONICAL_TYPE_TR[
+                        candidate.event_type as CanonicalEventType
+                      ] ?? candidate.event_type;
+                      return (
+                        <article
+                          key={candidate.event_id}
+                          className="rounded-md border border-zinc-800 bg-zinc-900 p-3 transition-colors hover:border-zinc-700"
+                        >
+                          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_10rem] md:items-center">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="chip border border-zinc-700 bg-zinc-950 text-zinc-400">
+                                  {presentation.category}
+                                </span>
+                                <span className="chip border border-amber-900 bg-amber-950/30 text-amber-200">
+                                  {candidateStatus(candidate)}
+                                </span>
+                                <span className="ml-auto text-[10px] text-zinc-500 md:ml-0">
+                                  Önem: {BAND_TR[candidate.learning_band]}
+                                </span>
+                              </div>
+                              <h4 className="mt-2 text-sm font-medium text-zinc-100">
+                                {presentation.title}
+                              </h4>
+                              <p className="mt-1 leading-relaxed text-zinc-400">
+                                {presentation.description}
+                              </p>
+                              <p className="mt-1.5 text-[10px] text-zinc-500">
+                                {eventLabel} · Kamera kaydı {shortIdentifier(candidate.video_id)} · Olay {shortIdentifier(candidate.event_id)}
+                              </p>
+                              <p className="mt-2 leading-relaxed text-zinc-300">
+                                {candidateReviewReason(candidate)}
+                              </p>
+                              <p className="mt-1 leading-relaxed text-sky-200">
+                                <span className="font-medium">Önerilen işlem:</span>{" "}
+                                {presentation.action}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => onOpenEvent(candidate.event_id)}
+                              className="btn btn-accent w-full"
+                            >
+                              İncele
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
               </section>
 
-              <div className="rounded-md border border-amber-900 bg-amber-950/30 p-2.5 text-xs text-amber-200">
-                Otomatik yürütme, otomatik eğitim ve canlı modele otomatik terfi kapalıdır.
-                Hazır rota yalnız ilgili insan onaylı hazırlık kuyruğuna giriş iznidir.
-              </div>
+              <section aria-labelledby="development-suggestions-title">
+                <h3 id="development-suggestions-title" className="text-sm font-semibold text-zinc-100">
+                  Geliştirme önerileri
+                </h3>
+                {suggestions.length === 0 ? (
+                  <div className="mt-2 rounded-md bg-zinc-900/60 px-4 py-7 text-center">
+                    <p className="font-medium text-zinc-200">
+                      Şu anda işlem gerektiren bir geliştirme önerisi yok.
+                    </p>
+                    <p className="mt-1 text-zinc-500">
+                      İncelenen olaylarda anlamlı bir örüntü tespit edildiğinde burada gösterilecek.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-2 grid gap-2 md:grid-cols-2">
+                    {suggestions.map((suggestion) => {
+                      const presentation = presentationForUse(suggestion.use);
+                      return (
+                        <article key={suggestion.use} className="rounded-md bg-zinc-900 px-3 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="microlabel">{presentation.category}</span>
+                            <span className="text-[10px] text-zinc-500">
+                              {suggestion.recommended_count} olay
+                            </span>
+                          </div>
+                          <h4 className="mt-1.5 font-medium text-zinc-100">{presentation.title}</h4>
+                          <p className="mt-1 leading-relaxed text-zinc-400">
+                            {presentation.description}
+                          </p>
+                          <p className="mt-2 text-sky-200">
+                            <span className="font-medium">Önerilen işlem:</span>{" "}
+                            {presentation.action}
+                          </p>
+                          <p className="mt-2 text-[10px] text-zinc-500">
+                            {suggestion.ready_count > 0 && `${suggestion.ready_count} hazır`}
+                            {suggestion.ready_count > 0 && suggestion.awaiting_gate_count > 0 && " · "}
+                            {suggestion.awaiting_gate_count > 0
+                              && `${suggestion.awaiting_gate_count} insan onayı bekliyor`}
+                          </p>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+
+              {(overview.drift.state === "watch" || overview.drift.state === "drift") && (
+                <section className="flex items-center gap-3 rounded-md border border-amber-900/60 bg-amber-950/20 px-3 py-2.5">
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />
+                  <div>
+                    <h3 className="font-medium text-amber-100">Sistem durumu</h3>
+                    <p className="mt-0.5 text-zinc-400">
+                      {systemBehaviorLabel(overview.drift.state)}. İnsan incelemeleri sürüyor.
+                    </p>
+                  </div>
+                </section>
+              )}
+
+              <p className="border-t border-zinc-800 pt-3 text-[10px] leading-relaxed text-zinc-500">
+                Otomatik eğitim ve canlı sisteme otomatik geçiş kapalıdır. Tüm geliştirmeler insan onayıyla ilerler.
+              </p>
             </div>
           )}
         </div>

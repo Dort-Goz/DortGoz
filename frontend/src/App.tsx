@@ -388,7 +388,7 @@ export default function App() {
         <button
           type="button"
           onClick={() => setShowLearningOrchestrator(true)}
-          title="İnsan kapılı öğrenme rotalarını, öncelik kuyruğunu ve gölge kayma gözcüsünü aç"
+          title="İnsan onaylı geliştirme önerilerini ve inceleme kuyruğunu aç"
           className="btn btn-ghost"
         >
           ◈ öğrenme merkezi
