@@ -141,7 +141,7 @@ describe("öğrenme hattı sunumu", () => {
 
   test("otomatik eğitim kapalı sözleşmesini arayüzde yazar", () => {
     const source = readFileSync(
-      new URL("../src/components/LearningPipelinePanel.tsx", import.meta.url),
+      new URL("../src/components/ModelMaintenancePanel.tsx", import.meta.url),
       "utf8",
     );
 
@@ -154,6 +154,11 @@ describe("öğrenme hattı sunumu", () => {
     expect(source).toContain("disabled={!item.gate_passed");
     // Eğitim düğmesi hazır olmayan makinede kapalı kalır.
     expect(source).toContain("disabled={!view.readiness.can_run");
-    expect(source).toContain("disabled={\n                    !view.readiness.can_plan");
+    // Paket düğmesi hazır olmayan veride kapalı kalır.
+    expect(source).toContain("disabled={!view.readiness.can_plan");
+    // İmza tek yerden gelir: onay, eğitim ve terfi aynı mühendis adını yazar.
+    expect(source).toContain("reviewer: signed");
+    expect(source).toContain("requested_by: signed");
+    expect(source).toContain("approved_by: signed");
   });
 });

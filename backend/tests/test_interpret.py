@@ -138,7 +138,7 @@ def test_apply_review_rewrites_incident():
     assert rev.t == 42.0
     assert "Başlangıç: Grup toplandı" in rev.detail
     assert "Zirve: Kişi yere düşürüldü" in rev.detail
-    assert "? yaralı mı belirsiz" in rev.detail
+    assert "Belirsizlik: yaralı mı belirsiz" in rev.detail
     assert led.incidents[iid].anomaly_type == "saldiri"
 
 
@@ -260,3 +260,17 @@ def test_review_title_derefs_frame_reference_inside_sentence():
     assert "f_00" not in title
     assert "yere düşüyor" in title
     assert "Sonra dağılıyorlar" not in title
+
+
+def test_deref_frames_strips_bare_frame_ids():
+    """Zaman damgasız kare kimliği operatör metnine sızmaz."""
+    from dortgoz.agent.memory import _deref_frames
+
+    # Canlı kayıttan gerçek örnek: cümle başında kare aralığı.
+    assert _deref_frames("f_021-f_022: Tanker aracından çıkan sis") \
+        == "Tanker aracından çıkan sis"
+    assert _deref_frames("f_005, f_006 kişi yolda") == "kişi yolda"
+    # Zaman damgası olan biçim saate çevrilmeye devam eder.
+    assert _deref_frames("f_012 (72.0s) itibarıyla düştü").startswith("01:12")
+    # Kare kimliği olmayan metin bozulmaz.
+    assert _deref_frames("Kamera açısı değişti.") == "Kamera açısı değişti."

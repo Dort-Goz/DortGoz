@@ -98,9 +98,13 @@ interface Snapshot {
 }
 
 
-function humanizeReason(reason: string): string {
+export function humanizeReason(reason: string): string[] {
+  // Gerekçeler " · " ile ayrı gelir ve AYRI cümlelerdir. Bunları boşluk ile
+  // birleştirmek "...oturmadı Model emin değil:..." gibi okunmaz bir dizi üretir.
   return reason
     .split(" · ")
+    .map((part) => part.trim())
+    .filter(Boolean)
     .map((part) => {
       if (/provisional|automatic confirmation|VALIDATED|Runtime evidence/i.test(part))
         return "Sistem kanıtı doğruladı; otomatik onay kapalı — karar sizde.";
@@ -108,7 +112,7 @@ function humanizeReason(reason: string): string {
         return part.replace(/model belirsizlik bildirdi:/i, "Model emin değil:");
       return part;
     })
-    .join(" ");
+    .map((part) => (/[.!?…]$/.test(part) ? part : `${part}.`));
 }
 
 const CATEGORY_TR: Record<string, string> = {
@@ -268,7 +272,9 @@ export function PendingCard({
           <img src={item.thumbnail} alt="" className="h-10 w-14 rounded-sm object-cover" />
         )}
         <div className="min-w-0">
-          <div className="truncate font-medium text-zinc-200">{item.title}</div>
+          <div className="line-clamp-2 font-medium text-zinc-200" title={item.title}>
+            {item.title}
+          </div>
           <div className="text-zinc-400">
             {feedLabel} · video <span className="font-mono">{clock(item.t)}</span> · <span className="font-mono">{wallClock(item.wall)}</span>
           </div>
@@ -362,11 +368,16 @@ export function PendingCard({
       )}
       {item.needs_review && item.review_reason && (
         <div className="text-amber-300" title={item.review_reason}>
-          ? {humanizeReason(item.review_reason)}
+          <div className="microlabel text-amber-400">İnceleme gerekçesi</div>
+          <ul className="list-disc space-y-0.5 pl-4">
+            {humanizeReason(item.review_reason).map((part) => (
+              <li key={part}>{part}</li>
+            ))}
+          </ul>
         </div>
       )}
       {item.intervention_reasons.length > 0 && (
-        <div className="truncate text-zinc-500" title={item.intervention_reasons.join("\n")}>
+        <div className="text-zinc-500" title={item.intervention_reasons.join("\n")}>
           Öncelik: {item.intervention_reasons.join(" · ")}
         </div>
       )}

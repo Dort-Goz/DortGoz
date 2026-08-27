@@ -9,7 +9,7 @@ import ActionLog from "./components/ActionLog";
 import ExperimentPanel, { type InterpretConfig } from "./components/ExperimentPanel";
 import FeedStrip from "./components/FeedStrip";
 import LiveGrid from "./components/LiveGrid";
-import LearningPipelinePanel from "./components/LearningPipelinePanel";
+import ModelMaintenancePanel from "./components/ModelMaintenancePanel";
 import UploadPanel from "./components/UploadPanel";
 import TrainingReviewPanel from "./components/TrainingReviewPanel";
 import ReviewConsole from "./components/ReviewConsole";
@@ -99,9 +99,9 @@ export default function App() {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [liveView, setLiveView] = useState(() => location.hash === "#canli");
   const [reviewView, setReviewView] = useState(() => location.hash === "#inceleme");
-  const [learningView, setLearningView] = useState(() => location.hash === "#ogrenme");
+  const [maintenanceView, setMaintenanceView] = useState(() => location.hash === "#bakim");
   const [trainingEventId, setTrainingEventId] = useState("");
-  const [trainingOpenedFromLearning, setTrainingOpenedFromLearning] = useState(false);
+  const [openedFromMaintenance, setOpenedFromMaintenance] = useState(false);
   const [fixtureMode, setFixtureMode] = useState(false);
   const [livePending, setLivePending] = useState(0);
   const [resolvedKeys, setResolvedKeys] = useState<string[]>([]);
@@ -114,20 +114,20 @@ export default function App() {
 
   const closeTrainingReview = useCallback(() => {
     setTrainingEventId("");
-    setTrainingOpenedFromLearning(false);
+    setOpenedFromMaintenance(false);
   }, []);
 
-  const returnToLearning = useCallback(() => {
+  const returnToMaintenance = useCallback(() => {
     setTrainingEventId("");
-    setTrainingOpenedFromLearning(false);
+    setOpenedFromMaintenance(false);
     setLiveView(false);
     setReviewView(false);
-    setLearningView(true);
-    history.replaceState(null, "", "#ogrenme");
+    setMaintenanceView(true);
+    history.replaceState(null, "", "#bakim");
   }, []);
 
-  const openLearningEvent = useCallback((eventId: string) => {
-    setTrainingOpenedFromLearning(true);
+  const openMaintenanceEvent = useCallback((eventId: string) => {
+    setOpenedFromMaintenance(true);
     setTrainingEventId(eventId);
   }, []);
 
@@ -280,8 +280,8 @@ export default function App() {
     ? "live"
     : reviewView
       ? "review"
-      : learningView
-        ? "learning"
+      : maintenanceView
+        ? "maintenance"
         : "analysis";
   const liveIncidents = useMemo(
     () => Object.fromEntries(
@@ -405,7 +405,7 @@ export default function App() {
             ["analysis", "Analiz"],
             ["live", "Canlı"],
             ["review", "Olay inceleme"],
-            ["learning", "Öğrenme"],
+            ["maintenance", "Bakım"],
           ] as const).map(([value, label]) => {
             const tab = (
             <button
@@ -414,14 +414,14 @@ export default function App() {
               onClick={() => {
                 setLiveView(value === "live");
                 setReviewView(value === "review");
-                setLearningView(value === "learning");
+                setMaintenanceView(value === "maintenance");
                 history.replaceState(null, "",
                   value === "live"
                     ? "#canli"
                     : value === "review"
                       ? "#inceleme"
-                      : value === "learning"
-                        ? "#ogrenme"
+                      : value === "maintenance"
+                        ? "#bakim"
                         : "#");
               }}
               className={`h-full px-2.5 transition-colors ${
@@ -660,9 +660,9 @@ export default function App() {
           <ReviewConsole onOpenTraining={setTrainingEventId} />
         </div>
       )}
-      {workspace === "learning" && (
+      {workspace === "maintenance" && (
         <div className="flex min-h-0 flex-1 flex-col p-1.5">
-          <LearningPipelinePanel onOpenEvent={openLearningEvent} />
+          <ModelMaintenancePanel onOpenEvent={openMaintenanceEvent} />
         </div>
       )}
 
@@ -670,7 +670,7 @@ export default function App() {
         <TrainingReviewPanel
           eventId={trainingEventId}
           onClose={closeTrainingReview}
-          onBack={trainingOpenedFromLearning ? returnToLearning : undefined}
+          onBack={openedFromMaintenance ? returnToMaintenance : undefined}
         />
       )}
     </div>

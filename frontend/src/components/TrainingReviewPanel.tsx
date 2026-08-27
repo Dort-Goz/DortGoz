@@ -527,7 +527,7 @@ export default function TrainingReviewPanel({
                     onClick={onBack ?? onClose}
                     className="btn btn-primary mt-3 h-9 w-full"
                   >
-                    {onBack ? "Öğrenme Merkezi'ne dön" : "Tamam, kapat"}
+                    {onBack ? "Bakım ekranına dön" : "Tamam, kapat"}
                   </button>
                 ) : (
                   <button

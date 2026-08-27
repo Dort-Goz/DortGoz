@@ -118,17 +118,19 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(approvalWaitingCount(3, 2)).toBe(5);
   });
 
-  test("kanıt görüntüsünü ve sade öneri dilini öğrenme hattı taşır", () => {
+  test("bakım ekranı kanıt görselini ve mühendis dilini taşır", () => {
     const source = readFileSync(
-      new URL("../src/components/LearningPipelinePanel.tsx", import.meta.url),
+      new URL("../src/components/ModelMaintenancePanel.tsx", import.meta.url),
       "utf8",
     );
 
     expect(source).toContain("getIncidentMedia");
     expect(source).toContain("media.thumbnail_url");
     expect(source).toContain("Kanıt {shortClock(media.clip_start)}");
-    expect(source).toContain("presentationForUse(group.use).title");
-    expect(source).toContain("presentationForUse(group.use).action");
+    // Kuyruk bileşeni operatör örtmecesiyle değil teknik adıyla anılır.
+    expect(source).toContain("presentationForUse(group.use).technicalComponent");
+    expect(source).not.toContain("presentationForUse(group.use).title");
+    expect(source).toContain("Besleyeceği bileşenler");
     expect(source).toContain("İnceleme bekleyen olay yok.");
     expect(source).toContain("Onay bekleyen olay yok.");
   });
@@ -140,9 +142,9 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
       "utf8",
     );
 
-    expect(app).toContain("<LearningPipelinePanel");
+    expect(app).toContain("<ModelMaintenancePanel");
     expect(app).toContain("!fixtureMode");
-    expect(app).toContain('["learning", "Öğrenme"]');
+    expect(app).toContain('["maintenance", "Bakım"]');
     expect(app).not.toContain("LearningOrchestratorPanel");
     expect(app).not.toContain("◈ öğrenme merkezi");
     expect(detail).toContain("<details");
@@ -150,10 +152,10 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(detail).toContain("presentation.technicalComponent");
     expect(detail).toContain("presentation.technicalType");
     expect(detail).not.toContain("Kayma gözcüsü");
-    expect(app).toContain("trainingOpenedFromLearning");
-    expect(app).toContain("onBack={trainingOpenedFromLearning ? returnToLearning : undefined}");
+    expect(app).toContain("openedFromMaintenance");
+    expect(app).toContain("onBack={openedFromMaintenance ? returnToMaintenance : undefined}");
     expect(detail).toContain("← Geri dön");
-    expect(detail).toContain("Öğrenme Merkezi'ne dön");
+    expect(detail).toContain("Bakım ekranına dön");
     expect(detail).toContain("Onay ver ve geri dön");
   });
 

@@ -150,7 +150,7 @@ class Ledger:
         ]
         detail = "\n".join(filter(None, [
             *(f"{label}: {value}" for label, value in moments if value),
-            *(f"? {_deref_frames(u)}" for u in unc[:2]),
+            *(f"Belirsizlik: {_deref_frames(u)}" for u in unc[:2]),
         ]))
         return _update(inc, review.get("zirve_t", inc.first_seen), _trim(detail))
 
@@ -293,9 +293,19 @@ def _clock_text(seconds: float) -> str:
     return f"{total // 60:02d}:{total % 60:02d}"
 
 
+# Zaman damgasız kare kimliği operatöre hiçbir şey anlatmaz. Model bunları
+# "f_021-f_022: ..." gibi cümle başına koyabiliyor ve kartta rastgele karakter
+# gibi görünüyordu. Saati bilinenler çevrilir, bilinmeyenler atılır.
+_BARE_FRAME = re.compile(
+    r"\bf_?\d+(?:\s*[-–,/]\s*f_?\d+)*(?:'[a-zçğıöşü]+)?\s*[:\-–]?\s*",
+    re.IGNORECASE)
+
+
 def _deref_frames(text: str) -> str:
-    return _FRAME_REF.sub(
+    dereferenced = _FRAME_REF.sub(
         lambda m: _clock_text(float(m.group(1).replace(",", "."))), text)
+    stripped = _BARE_FRAME.sub(" ", dereferenced)
+    return re.sub(r"\s{2,}", " ", stripped).strip(" ,;:·-–")
 
 
 def _title_text(text: str) -> str:
