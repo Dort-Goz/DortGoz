@@ -140,6 +140,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (fixtureMode && videos.length === 0) {
+      setSelected((s) => s || "sanal-test-kaydi.mp4");
+    }
+  }, [fixtureMode, videos]);
+
+  useEffect(() => {
     fetch("/api/actions")
       .then((r) => r.json())
       .then((body: { requests: ActuatorRequest[]; results: ActuatorResult[] }) => {
@@ -156,18 +162,12 @@ export default function App() {
     fetch("/health")
       .then((r) => r.json())
       .then((body: { analysis_mode?: string }) => {
-        const fixture = body.analysis_mode === "ui_fixture_replay";
-        setFixtureMode(fixture);
-        if (fixture) {
-          setLiveView(false);
-          setReviewView(false);
-        }
+        setFixtureMode(body.analysis_mode === "ui_fixture_replay");
       })
       .catch(() => setFixtureMode(false));
   }, []);
 
   useEffect(() => {
-    if (fixtureMode) return;
     let alive = true;
     const poll = async () => {
       try {
@@ -183,7 +183,7 @@ export default function App() {
     poll();
     const id = setInterval(poll, 10000);
     return () => { alive = false; clearInterval(id); };
-  }, [fixtureMode]);
+  }, []);
 
   useEffect(() => {
     fetch("/api/interpret_config")
@@ -349,54 +349,50 @@ export default function App() {
           <span className="microlabel hidden sm:inline">operatör konsolu</span>
         </div>
 
-        {!fixtureMode && (
-          <nav
-            aria-label="Çalışma alanları"
-            className="flex h-7 items-center gap-0.5 rounded-sm border border-zinc-800 bg-zinc-950 p-0.5 text-xs"
-          >
-            {([
-              ["analysis", "Analiz"],
-              ["live", "Canlı"],
-              ["review", "Olay inceleme"],
-            ] as const).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => {
-                  setLiveView(value === "live");
-                  setReviewView(value === "review");
-                  history.replaceState(null, "",
-                    value === "live" ? "#canli" : value === "review" ? "#inceleme" : "#");
-                }}
-                className={`h-full rounded-[3px] px-2.5 transition-colors ${
-                  workspace === value
-                    ? "bg-zinc-800 font-medium text-zinc-100"
-                    : "text-zinc-500 hover:text-zinc-200"
-                }`}
-              >
-                {label}
-                {value === "review" && triagePending > 0 && (
-                  <span className="ml-1.5 inline-flex min-w-4 items-center justify-center rounded-sm bg-amber-800 px-1 font-mono text-[10px] leading-4 text-amber-100">
-                    {triagePending}
-                  </span>
-                )}
-              </button>
-            ))}
-          </nav>
-        )}
+        <nav
+          aria-label="Çalışma alanları"
+          className="flex h-7 items-center gap-0.5 rounded-sm border border-zinc-800 bg-zinc-950 p-0.5 text-xs"
+        >
+          {([
+            ["analysis", "Analiz"],
+            ["live", "Canlı"],
+            ["review", "Olay inceleme"],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => {
+                setLiveView(value === "live");
+                setReviewView(value === "review");
+                history.replaceState(null, "",
+                  value === "live" ? "#canli" : value === "review" ? "#inceleme" : "#");
+              }}
+              className={`h-full rounded-[3px] px-2.5 transition-colors ${
+                workspace === value
+                  ? "bg-zinc-800 font-medium text-zinc-100"
+                  : "text-zinc-500 hover:text-zinc-200"
+              }`}
+            >
+              {label}
+              {value === "review" && triagePending > 0 && (
+                <span className="ml-1.5 inline-flex min-w-4 items-center justify-center rounded-sm bg-amber-800 px-1 font-mono text-[10px] leading-4 text-amber-100">
+                  {triagePending}
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
 
         <div className="flex-1" />
 
-        {!fixtureMode && (
-          <button
-            type="button"
-            onClick={() => setShowLearningOrchestrator(true)}
-            title="İnsan kapılı öğrenme rotalarını, öncelik kuyruğunu ve gölge kayma gözcüsünü aç"
-            className="btn btn-ghost"
-          >
-            ◈ öğrenme merkezi
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => setShowLearningOrchestrator(true)}
+          title="İnsan kapılı öğrenme rotalarını, öncelik kuyruğunu ve gölge kayma gözcüsünü aç"
+          className="btn btn-ghost"
+        >
+          ◈ öğrenme merkezi
+        </button>
 
         {}
         <span
@@ -413,20 +409,20 @@ export default function App() {
 
       {workspace === "analysis" && (
         <div className="flex h-10 shrink-0 items-center gap-2 border-b border-zinc-800 bg-zinc-900 px-3">
-          {!fixtureMode && (
-            <>
-              <span className="microlabel">kaynak</span>
-              <select
-                value={selected}
-                onChange={(e) => setSelected(e.target.value)}
-                disabled={busy || videos.length === 0}
-                className="field w-52"
-              >
-                {videos.length === 0 && <option value="">media/ boş</option>}
-                {videos.map((v) => <option key={v} value={v}>{v}</option>)}
-              </select>
-            </>
-          )}
+          <span className="microlabel">kaynak</span>
+          <select
+            value={selected}
+            onChange={(e) => setSelected(e.target.value)}
+            disabled={busy || videos.length === 0}
+            className="field w-52"
+          >
+            {videos.length === 0 && (
+              <option value={selected}>
+                {fixtureMode ? "sanal kayıt (media/ boş)" : "media/ boş"}
+              </option>
+            )}
+            {videos.map((v) => <option key={v} value={v}>{v}</option>)}
+          </select>
           <select
             value={runMode}
             onChange={(e) => setRunMode(e.target.value as "" | "temkinli" | "genis")}
@@ -478,23 +474,21 @@ export default function App() {
             )}
           </div>
 
-          {!fixtureMode && (
-            <button
-              onClick={() => {
-                if (feed.highlight && run?.run_id) {
-                  setTrainingEventId(`${run.run_id}:${feed.highlight.incident_id}`);
-                }
-              }}
-              disabled={!detailReady}
-              title={detailReady
-                ? "Seçili olayı insan incelemesine ve kontrollü eğitim verisi hazırlığına aç"
-                : "Önce analiz tamamlanmalı ve zaman çizelgesinden bir olay seçilmelidir"}
-              className="btn btn-outline-accent"
-            >
-              ◎ ayrıntılı incele
-            </button>
-          )}
-          {interpretCfg && !fixtureMode && (
+          <button
+            onClick={() => {
+              if (feed.highlight && run?.run_id) {
+                setTrainingEventId(`${run.run_id}:${feed.highlight.incident_id}`);
+              }
+            }}
+            disabled={!detailReady}
+            title={detailReady
+              ? "Seçili olayı insan incelemesine ve kontrollü eğitim verisi hazırlığına aç"
+              : "Önce analiz tamamlanmalı ve zaman çizelgesinden bir olay seçilmelidir"}
+            className="btn btn-outline-accent"
+          >
+            ◎ ayrıntılı incele
+          </button>
+          {interpretCfg && (
             <button
               onClick={() => setShowExperiment((s) => !s)}
               title="Model ve istem deneyleri"
@@ -592,7 +586,7 @@ export default function App() {
         </div>
       )}
 
-      {!fixtureMode && workspace === "analysis" && showExperiment && interpretCfg && (
+      {workspace === "analysis" && showExperiment && interpretCfg && (
         <ExperimentPanel
           config={interpretCfg}
           model={model}

@@ -8,6 +8,7 @@ import time
 import zipfile
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from itertools import count
 from pathlib import Path
 from uuid import uuid4
 
@@ -63,6 +64,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         _ui_replay_task = None
         if live_cctv.active:
             await live_cctv.stop()
+        if mock_live.active:
+            await mock_live.stop()
 
 
 app = FastAPI(title="Dörtgöz", version="0.1.0", lifespan=lifespan)
@@ -106,6 +109,8 @@ def _ui_replay_transform(
     run_id: str,
     request_id: str,
 ):
+    request_seq = count(1)
+
     def transform(event: Event) -> Event:
         transformed = event.model_copy(deep=True)
         transformed.feed = feed
@@ -117,7 +122,7 @@ def _ui_replay_transform(
             })
         elif isinstance(payload, ActuatorRequest):
             request = payload.model_copy(update={
-                "request_id": request_id,
+                "request_id": f"{request_id}-{next(request_seq)}",
                 "run_id": run_id,
                 "feed": feed,
                 "requested_at": time.time(),
@@ -146,15 +151,8 @@ async def _start_ui_replay(video: str, feed: str) -> None:
             feed=feed,
         ))
         return
-    safe_name = Path(video).name
-    video_path = (settings.media_dir / safe_name).resolve()
-    media_root = settings.media_dir.resolve()
-    if (
-        not video
-        or safe_name != video
-        or video_path.parent != media_root
-        or not video_path.is_file()
-    ):
+    safe_name = Path(video).name if video else ""
+    if video and safe_name != video:
         await manager.broadcast(Event.wrap(
             RunStatus(
                 run_id="-",
@@ -165,6 +163,24 @@ async def _start_ui_replay(video: str, feed: str) -> None:
             feed=feed,
         ))
         return
+    media_root = settings.media_dir.resolve()
+    video_path = (media_root / safe_name).resolve() if safe_name else None
+    has_file = (
+        video_path is not None
+        and video_path.parent == media_root
+        and video_path.is_file()
+    )
+    if not has_file:
+        safe_name = safe_name or "sanal-test-kaydi"
+        await manager.broadcast(Event.wrap(
+            RunStatus(
+                run_id="-",
+                state="processing",
+                detail="ARAYÜZ TEST AKIŞI · SANAL KAYIT — media/ içinde video bulunamadı",
+                video=safe_name,
+            ),
+            feed=feed,
+        ))
     token = uuid4().hex[:10]
     run_id = f"fixture-ui-crime-{token}"
     request_id = f"fixture-req-{token}"
@@ -329,6 +345,7 @@ async def import_run(request: Request) -> dict:
 
 from .services.analysis_projection import RuntimeAnalysisProjection
 from .services.live_cctv import LiveCctvService, load_feeds
+from .services.mock_console import MockLiveService, mock_chat, placeholder_frame
 
 runtime_projection = RuntimeAnalysisProjection(
     api_runtime.repository,
@@ -342,6 +359,12 @@ live_cctv = LiveCctvService(
     execution_coordinator=execution_coordinator,
 )
 app.state.live_cctv = live_cctv
+mock_live = MockLiveService(manager)
+
+
+def _live_service():
+    return mock_live if settings.mock else live_cctv
+
 
 from .services import triage
 
@@ -367,6 +390,14 @@ async def triage_snapshot() -> dict:
     return snapshot
 
 
+def _mock_frame(timestamp: float) -> Response:
+    return Response(
+        content=placeholder_frame(timestamp),
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "private, max-age=60"},
+    )
+
+
 @app.get("/api/triage/evidence-frame")
 async def triage_evidence_frame(key: str, timestamp: float) -> Response:
     item = triage.store.get_item(key)
@@ -383,8 +414,12 @@ async def triage_evidence_frame(key: str, timestamp: float) -> Response:
         None,
     )
     if matched is None:
+        if settings.mock:
+            return _mock_frame(timestamp)
         raise HTTPException(status_code=404, detail="olaya bağlı kanıt karesi bulunamadı")
     if not item.video:
+        if settings.mock:
+            return _mock_frame(timestamp)
         raise HTTPException(status_code=404, detail="kanıt videosu bulunamadı")
     from .pipeline import ingest
     from .pipeline.runner import resolve_media
@@ -392,6 +427,8 @@ async def triage_evidence_frame(key: str, timestamp: float) -> Response:
     try:
         jpeg = await ingest.grab_frame(resolve_media(item.video), timestamp, width=480)
     except (FileNotFoundError, ValueError, ingest.FFmpegError) as exc:
+        if settings.mock:
+            return _mock_frame(timestamp)
         raise HTTPException(status_code=422, detail=f"kanıt karesi üretilemedi: {exc}")
     return Response(
         content=jpeg,
@@ -472,10 +509,8 @@ async def triage_decide(body: TriageDecisionInput) -> dict:
 
 @app.post("/api/live/start")
 async def live_start(body: dict | None = None) -> list[dict]:
-    if settings.mock:
-        raise HTTPException(status_code=409, detail="mock kipte canlı akış çekilmez")
     try:
-        statuses = await live_cctv.start(mode=(body or {}).get("mode", ""))
+        statuses = await _live_service().start(mode=(body or {}).get("mode", ""))
     except (RuntimeError, FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     return [vars(s) for s in statuses]
@@ -483,14 +518,15 @@ async def live_start(body: dict | None = None) -> list[dict]:
 
 @app.post("/api/live/stop")
 async def live_stop() -> dict:
-    await live_cctv.stop()
+    await _live_service().stop()
     return {"status": "durdu"}
 
 
 @app.get("/api/live/status")
 async def live_status() -> dict:
-    return {"active": live_cctv.active,
-            "feeds": [vars(s) for s in live_cctv.status()]}
+    service = _live_service()
+    return {"active": service.active,
+            "feeds": [vars(s) for s in service.status()]}
 
 
 @app.get("/api/live/feeds")
@@ -598,16 +634,12 @@ async def handle_operator_message(msg: OperatorMessage, *, ws: WebSocket | None 
             feed=msg.feed,
         ))
         if settings.mock:
-            await manager.broadcast(
-                Event.wrap(
-                    ChatMessage(
-                        role="agent",
-                        text=f"(mock) Sorunuz alındı: '{msg.text}'. Gerçek modda bu yanıt "
-                        f"ajan grafiğinden gelir.",
-                        dialogue_id=dialogue_id,
-                    ),
-                    feed=msg.feed,
-                )
+            await mock_chat(
+                msg.text,
+                manager,
+                dialogue_id=dialogue_id,
+                feed=msg.feed,
+                referenced_event_id=msg.referenced_event_id,
             )
         else:
             from .agent.graph import run_chat

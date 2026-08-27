@@ -40,7 +40,7 @@ describe("olay inceleme merkezi", () => {
     expect(state.feeds[""].seekTo).toBe(12.5);
   });
 
-  test("tek-video ekranından erişilir ve mock akışından ayrı kalır", () => {
+  test("tek-video ekranından erişilir ve mock kipte de açıktır", () => {
     const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
     const panel = readFileSync(
       new URL("../src/components/TriagePanel.tsx", import.meta.url), "utf8",
@@ -51,7 +51,7 @@ describe("olay inceleme merkezi", () => {
     expect(app).toContain('["live", "Canlı"]');
     expect(app).toContain('["review", "Olay inceleme"]');
     expect(app).toContain('layout="workspace"');
-    expect(app).toContain("!fixtureMode && (");
+    expect(app).toContain("ARAYÜZ TEST AKIŞI");
     expect(app).toContain('kind: "seek"');
     expect(app).toContain("video: reviewVideo");
     expect(panel).toContain("Doğrulanmış video kanıtı");
