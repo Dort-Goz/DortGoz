@@ -169,3 +169,23 @@ def test_flowing_feed_with_fresh_segment_stays_healthy(worker):
     _seg(worker, 1000)
     worker._refresh_lag()
     assert worker.status.state == "akiyor"
+
+
+@pytest.mark.asyncio
+async def test_live_prompt_carries_camera_context_and_class_rules(worker, monkeypatch):
+    calls = []
+
+    async def fake_run_video(manager, video, run_id, **kw):
+        calls.append(kw)
+    monkeypatch.setattr("dortgoz.pipeline.runner.run_video", fake_run_video)
+
+    worker.status.desc = "I-10 : (136) Fremont Ave"
+    _seg(worker, 2000)
+    _seg(worker, 2030)
+    assert await worker._step() is True
+
+    prompt = calls[0]["system_prompt"]
+    assert "I-10 : (136) Fremont Ave" in prompt
+    # Sınıf disiplini: araç görmek çarpışma değildir, kamera arızası olay değildir.
+    assert "Araç görmek çarpışma" in prompt
+    assert "KAMERA VE YAYIN SORUNU OLAY DEĞİLDİR" in prompt

@@ -105,7 +105,9 @@ class Settings(BaseSettings):
     local_inference_limit: int = Field(default=2, ge=1, le=8)
     migraphx_dir: str = ""
     adjudicate_confusable: str = "hirsizlik,kavga,saldiri,bilinmeyen,arac_kazasi"
-    adjudicate_min_conf: float = 0.0
+    # Hakem sınıfı ancak bu güvenin üzerinde değiştirir; 0.0 iken 0.29 güvenli
+    # "düzeltmeler" geçiyor ve uydurma iddia üretiyordu (canlı kayıt, 2026-08-27).
+    adjudicate_min_conf: float = 0.60
     adjudicate_frame_width: int = 512
     detector_enabled: bool = True
     dfine_onnx: str = ""

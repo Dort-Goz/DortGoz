@@ -280,11 +280,10 @@ class LiveFeedWorker:
             from ..pipeline.runner import run_video
             from .triage import store as triage_store
 
-            note = triage_store.feed_note(self.status.name)
-            system_prompt = ""
-            if note:
-                from ..pipeline.interpret import SYSTEM_TR
-                system_prompt = SYSTEM_TR + note
+            from ..pipeline.interpret import SYSTEM_TR
+
+            system_prompt = (SYSTEM_TR + self._camera_note()
+                             + triage_store.feed_note(self.status.name))
             if self.prepare_run is not None:
                 await self.prepare_run(run_id, rel, seg)
             await run_video(self.manager, rel, run_id,
@@ -308,6 +307,12 @@ class LiveFeedWorker:
         self._prune(seg)
         self.status.state = "akiyor"
         return True
+
+    def _camera_note(self) -> str:
+        # Modelin sahneyi doğru yorumlaması için kameranın ne çektiğini bilmesi gerekir:
+        # bağlamsız bakan model otoyol trafiğini kaza veya hırsızlık olarak etiketliyor.
+        desc = self.status.desc.strip()
+        return f"\n\nKAMERA: {desc}\nSahneyi bu kameranın bağlamında yorumla." if desc else ""
 
     def _idle_seconds(self) -> float:
         newest = max((s.stat().st_mtime for s in self.dir.glob(SEGMENT_GLOB)),

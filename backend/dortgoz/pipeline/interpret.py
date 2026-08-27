@@ -38,12 +38,33 @@ SYSTEM_TR = (
     "Olay yoksa 'events' boş kalsın — olay uydurma. Her olayın `evidence` "
     "alanında yalnızca sana verilen FRAME_ID değerlerini kullan; yeni kare kimliği "
     "uydurma. Kanıt iddiası kısa, Türkçe ve yalnız gözlemlenebilir olmalı; kimlik "
-    "iddiası kurma, hukukî hüküm verme. Ancak şüpheli davranış SOMUT gözlemse "
-    "raporla: ürünü ödeme yapmadan çantaya/cebe koyma, kasadan izinsiz para "
-    "alma gibi davranışlar `possible_theft` kapsamında dikkat gerektirir. "
-    "Her event için `event_type` alanında "
-    "yalnız canonical şemadaki değerlerden birini kullan. Mümkünse iki ayrı "
-    "destekleyici kare, "
+    "iddiası kurma, hukukî hüküm verme.\n\n"
+    "OLAY EŞİĞİ: `events` listesi yalnız operatör müdahalesi gerektirebilecek "
+    "durumlar içindir. Sahnenin olağan işleyişini olay olarak yazma. Araç "
+    "geçişi, trafiğin akması, kavşakta durup kalkma, yaya yürümesi, park etme, "
+    "bir kişinin durması veya beklemesi olay DEĞİLDİR — bunlar `summary` "
+    "alanına aittir.\n\n"
+    "KAMERA VE YAYIN SORUNU OLAY DEĞİLDİR: kameranın sarsılması, açı veya "
+    "preset değişimi, far parlaması, gece gürültüsü, sıkıştırma bozulması, "
+    "kararma, donma, sahnenin aniden başka bir görüntüye geçmesi. Bunları "
+    "`events` içine yazma; kayda değerse `uncertainties` alanına tek satır yaz.\n\n"
+    "`event_type` olayın SINIFIDIR, sahnedeki nesnenin türü değildir. Bir sınıfı "
+    "ancak o sınıfın gerektirdiği EYLEMİ karelerde gördüysen seç:\n"
+    "- `physical_fight`: karşılıklı fiziksel şiddet, boğuşma, yumruk, itişme\n"
+    "- `assault`: bir kişinin başkasına tek taraflı saldırısı, darp\n"
+    "- `possible_theft`: eşya veya para alma, gizleme, ödemeden çıkma\n"
+    "- `possible_armed_incident`: görünür silah (tabanca, tüfek, bıçak)\n"
+    "- `fire_smoke`: alev veya duman\n"
+    "- `explosion`: patlama ânı, şok dalgası, ani parlama\n"
+    "- `vehicle_collision`: araçların çarpışması, devrilmesi, yoldan çıkması\n"
+    "- `vandalism`: mala kasıtlı zarar verme\n"
+    "Listedeki eylemi gördüysen o sınıfı seç; şiddet görüp silah görmediysen "
+    "`possible_armed_incident` YAZMA. Araç görmek çarpışma, kişi görmek "
+    "hırsızlık veya silah demek DEĞİLDİR. Hiçbir sınıfın eylemi görünmüyorsa "
+    "olayı hiç yazma; şüpheni `uncertainties` alanına koy. `unknown_anomaly` "
+    "yalnız açıkça anormal bir şey oluyor ama yukarıdaki sınıfların hiçbirine "
+    "oturmuyorsa kullanılır.\n\n"
+    "Mümkünse iki ayrı destekleyici kare, "
     "tek kare yeterliyse en az bir kare göster; kanıt yoksa olayı kesinleştirme, "
     "belirsizliği `uncertainties` alanına yaz.\n\n"
     "`anomaly_type` pencerenin baskın canonical olay sınıfıdır ve olayları yazdıktan "
@@ -56,38 +77,33 @@ SYSTEM_TR = (
 )
 
 
-SYSTEM_TR_GENIS = SYSTEM_TR.replace(
-    "raporla: ürünü ödeme yapmadan çantaya/cebe koyma, kasadan izinsiz para "
-    "alma gibi davranışlar `possible_theft` kapsamında dikkat gerektirir. ",
-    "raporla: ürünü CEBE veya giysi içine GİZLEME, kasadan izinsiz para alma, "
-    "ödemeden kasa hattını geçip çıkma `possible_theft` kapsamında dikkat "
-    "gerektirir; kasa önünde ödeme sırasında ürünü poşete koymak NORMAL "
-    "alışveriştir. ",
+MAGAZA_EK = (
+    "\n\nBu bir mağaza veya kasa kamerasıdır. Ürünü CEBE veya giysi içine "
+    "GİZLEME, kasadan izinsiz para alma, ödemeden kasa hattını geçip çıkma "
+    "`possible_theft` kapsamında dikkat gerektirir. Şunlar NORMAL işleyiştir, "
+    "olay yazma: tezgâhın veya kasanın ARKASINDAKİ personelin ürün alması, "
+    "eğilmesi, çekmece açması; müşterinin ödeme sırasında ürünü poşete koyması; "
+    "rafta ürün inceleyip yerine bırakma; kameraya yaklaşmak; güvenlik "
+    "görevlisinin rutin devriyesi."
 )
 
-SYSTEM_TR_IKINCI = (
-    "Sen bir güvenlik kamerası görüntü analiz uzmanısın ve İKİNCİ GÖRÜŞ veriyorsun. "
-    "Başka bir model bu pencereyi zaten okudu ve dikkat gerektiren bir şey bulmadı, "
-    "ama sahnede belirgin hareket var. Görevin ONUN KAÇIRMIŞ OLABİLECEĞİ ince "
-    "olayları aramaktır.\n\n"
-    "Özellikle şunlara bak: bir ürünün cebe/çantaya/giysi içine GİZLENMESİ; kasadan "
-    "veya çekmeceden izinsiz para alınması; yerde hareketsiz yatan kişi; silah benzeri "
-    "nesne; kapı/vitrin/kilit zorlanması; duman, alev veya ani parlama; bir kişiye "
-    "yönelen fiziksel temas.\n\n"
-    "⚠ UZANMAK GİZLEMEK DEĞİLDİR: bir nesneye uzanmak, dokunmak, tutmak veya "
-    "incelemek tek başına olay değildir. Ürünün cebe, çantaya veya giysi içine "
-    "girdiğini ya da ödenmeden dışarı çıkarıldığını KARELERDE GÖRMEDİYSEN hırsızlık "
-    "yazma; gördüklerini `summary`de betimle ve şüpheni `uncertainties`e koy.\n\n"
-    "Şunlar NORMAL işleyiştir, olay yazma: tezgâhın veya kasanın ARKASINDAKİ "
-    "personelin ürün alması, eğilmesi, çekmece açması; müşterinin ödeme sırasında "
-    "ürünü poşete koyması; rafta ürün inceleyip yerine bırakma; kameraya bakmak veya "
-    "yaklaşmak; güvenlik görevlisinin rutin devriyesi ve müşteriyle konuşması.\n\n"
-    "Yalnızca karelerde GÖRDÜĞÜNÜ yaz; kimlik iddiası kurma, hukukî hüküm verme. "
-    "Emin olmadığın çıkarımı `uncertainties` alanına koy. Her olayın `evidence` "
-    "alanında yalnız sana verilen FRAME_ID değerlerini kullan. `severity_hint` "
-    "ölçeğinde `dusuk` = olağan hareketlilik (ALARM DEĞİL); `orta` ve üstünü yalnız "
-    "gerçekten müdahale gerektiren durumlar için kullan. Rapor KISA olsun."
+SYSTEM_TR_GENIS = SYSTEM_TR + MAGAZA_EK
+
+IKINCI_EK = (
+    "\n\nİKİNCİ GÖRÜŞ VERİYORSUN: Başka bir model bu pencereyi zaten okudu ve "
+    "dikkat gerektiren bir şey bulmadı, ama sahnede belirgin hareket var. "
+    "Görevin ONUN KAÇIRMIŞ OLABİLECEĞİ ince olayları aramaktır: yerde "
+    "hareketsiz yatan kişi; silaha benzer nesne; kapı, vitrin veya kilit "
+    "zorlanması; duman veya alev; bir kişiye yönelen fiziksel temas; çarpışmış "
+    "ya da yoldan çıkmış araç; bir ürünün cebe veya çantaya gizlenmesi.\n\n"
+    "⚠ Daha dikkatli bakmak, daha çok olay yazmak demek değildir. Yukarıdaki "
+    "olay eşiği ve sınıf kuralları burada da geçerlidir: aradığın eylemi "
+    "karelerde GÖRMEDİYSEN olay yazma. Uzanmak, dokunmak, tutmak veya incelemek "
+    "tek başına olay değildir. Gördüğünü `summary`de betimle, şüpheni "
+    "`uncertainties` alanına koy. Rapor KISA olsun."
 )
+
+SYSTEM_TR_IKINCI = SYSTEM_TR + IKINCI_EK
 
 
 TIER_TR = (
@@ -300,19 +316,28 @@ async def review_incident(
 
 
 ADJUDICATE_TYPES = [
+    "normal", "unknown_anomaly",
     "physical_fight", "assault", "possible_theft", "possible_armed_incident",
     "fire_smoke", "explosion", "vehicle_collision", "vandalism",
 ]
 
 ADJUDICATE_SYSTEM_TR = (
-    "Sen güvenlik kamerası olay sınıflandırma uzmanısın. Sana kapanmış bir "
-    "olayın kareleri veriliyor. Tek görevin olayın SINIFINI seçmek. "
-    "Öncelik sırasıyla: görünür bir silah (tabanca, tüfek) varsa her durumda "
-    "possible_armed_incident; patlama ânı (şok dalgası, ani parlama) "
-    "explosion, sonrasındaki yangın fire_smoke; araçların çarpışması "
-    "vehicle_collision; possible_theft YALNIZ mal alma eylemi görünüyorsa; "
-    "kişiler arası fiziksel şiddet physical_fight veya assault; mala kasıtlı "
-    "zarar vandalism. Kararsız kalsan da karelere göre EN YAKIN sınıfı seç."
+    "Sen güvenlik kamerası olay sınıflandırma uzmanısın. Sana olay diye "
+    "işaretlenmiş bir kaydın kareleri veriliyor. Ön analiz yanılmış olabilir; "
+    "görevin doğru sınıfı vermektir, bir anomali sınıfı seçmek zorunda "
+    "değilsin.\n\n"
+    "Önce şunu sor: karelerde operatör müdahalesi gerektiren somut bir EYLEM var "
+    "mı? Yoksa `normal` seç. Olağan trafik akışı, yürüyen veya bekleyen "
+    "insanlar, park etme, kamera sarsıntısı, açı değişimi, far parlaması ve "
+    "görüntü bozulması `normal`dir. Bir şey oluyor ama aşağıdaki sınıfların "
+    "hiçbirinin eylemi görünmüyorsa `unknown_anomaly` seç.\n\n"
+    "Somut eylem varsa öncelik sırasıyla: görünür bir silah (tabanca, tüfek) "
+    "varsa her durumda possible_armed_incident; patlama ânı (şok dalgası, ani "
+    "parlama) explosion, sonrasındaki yangın fire_smoke; araçların ÇARPIŞMASI "
+    "veya yoldan çıkması vehicle_collision; possible_theft YALNIZ mal alma veya "
+    "gizleme eylemi görünüyorsa; kişiler arası fiziksel şiddet physical_fight "
+    "veya assault; mala kasıtlı zarar vandalism.\n\n"
+    "Sınıfı tahmin etme. Eylemi görmediysen `normal` ya da `unknown_anomaly` seç."
 )
 
 

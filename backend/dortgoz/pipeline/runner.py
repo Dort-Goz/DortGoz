@@ -884,7 +884,8 @@ async def run_video(
                             meta=percep.meta_text() if percep else "",
                             model=settings.second_opinion_model,
                             effort=settings.second_opinion_effort,
-                            system_prompt=system_prompt or SYSTEM_TR_IKINCI,
+                            system_prompt=(system_prompt + interpret.IKINCI_EK
+                                           if system_prompt else SYSTEM_TR_IKINCI),
                             task_prompt=task_prompt, context=hint,
                             timing=so_timing,
                             captured_frames=so_frames,

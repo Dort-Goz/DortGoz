@@ -108,3 +108,27 @@ async def test_hakem_dusuk_guvende_degistirmez(monkeypatch) -> None:
     assert ledger.incidents["abc"].anomaly_type == "hirsizlik"
     steps = [e for e in rec.emitted if getattr(e, "node", "") == "hakem"]
     assert steps and "düşük güven" in steps[-1].detail
+
+
+@pytest.mark.asyncio
+async def test_hakem_olay_degilse_geri_ceker(monkeypatch) -> None:
+    """Hakem bir anomali sınıfı seçmek zorunda değildir: olay yoksa geri çeker."""
+    monkeypatch.setattr(settings, "adjudicate_confusable", "hirsizlik,bilinmeyen")
+    monkeypatch.setattr(settings, "adjudicate_min_conf", 0.60)
+
+    async def fake_adjudicate(_video, _span, _keyframes, **_kwargs):
+        return "normal", 0.88
+
+    monkeypatch.setattr(interpret, "adjudicate_category", fake_adjudicate)
+    ledger = _ledger_with("hirsizlik")
+    ledger.incidents["abc"].risk = "orta"
+    rec = _FakeRec()
+    await runner._adjudicate_if_confusable(
+        rec, ledger, "abc", Path("yok.mp4"), [], "", None, 30.0)
+    assert ledger.incidents["abc"].anomaly_type == "normal"
+    assert ledger.incidents["abc"].risk == "dusuk"
+
+
+def test_hakem_null_siniflari_sunar() -> None:
+    assert "normal" in interpret.ADJUDICATE_TYPES
+    assert "unknown_anomaly" in interpret.ADJUDICATE_TYPES
