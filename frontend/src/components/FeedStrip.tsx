@@ -25,12 +25,16 @@ function FeedStrip({ feeds, active, onSelect }: {
   const { busyFeeds, total, enough } = summary;
 
   return (
-    <div className="shrink-0 border-b border-zinc-800 bg-zinc-950 p-1.5">
-      <div
-        className="grid max-h-32 gap-1 overflow-y-auto"
-        style={{ gridTemplateColumns: "repeat(auto-fill, minmax(11rem, 1fr))" }}
-      >
-        <div className={`rounded-sm border px-2 py-1.5 ${
+    <div className="panel w-52 shrink-0">
+      <div className="panel-title">
+        <span>Akışlar</span>
+        <span className="flex-1" />
+        <span className="chip border border-zinc-700 font-mono normal-case tracking-normal text-zinc-300">
+          {names.length}
+        </span>
+      </div>
+      <div className="panel-body flex flex-col gap-1 p-1.5">
+        <div className={`shrink-0 rounded-sm border px-2 py-1.5 ${
           enough ? "border-emerald-900 bg-emerald-950/30" : "border-red-900 bg-red-950/30"
         }`}>
           <div className={`font-mono text-sm font-bold ${
@@ -60,8 +64,8 @@ function FeedStrip({ feeds, active, onSelect }: {
             <button
               key={name}
               onClick={() => onSelect(name)}
-              className={`rounded-sm border bg-zinc-900 px-2 py-1.5 text-left transition-colors hover:bg-zinc-800 ${
-                name === active ? "border-zinc-500" : "border-zinc-800"
+              className={`shrink-0 rounded-sm border bg-zinc-900 px-2 py-1.5 text-left transition-colors hover:bg-zinc-800 ${
+                name === active ? "border-sky-600 ring-1 ring-sky-800" : "border-zinc-800"
               }`}
             >
               <div className="flex items-center gap-1.5">

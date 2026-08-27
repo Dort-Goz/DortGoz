@@ -624,9 +624,6 @@ export default function App() {
         />
       )}
 
-      {workspace === "analysis" && (
-        <FeedStrip feeds={analysisFeeds} active={analysisActive} onSelect={selectFeed} />
-      )}
 
       {workspace === "live" && (
         <div className="flex min-h-0 flex-1 flex-col p-1.5">
@@ -639,7 +636,9 @@ export default function App() {
       )}
 
       {workspace === "analysis" && (
-      <div className="grid min-h-0 flex-1 grid-cols-6 grid-rows-[minmax(0,3fr)_minmax(0,2fr)] gap-1.5 p-1.5">
+      <div className="flex min-h-0 flex-1 gap-1.5 p-1.5">
+      <FeedStrip feeds={analysisFeeds} active={analysisActive} onSelect={selectFeed} />
+      <div className="grid min-h-0 flex-1 grid-cols-6 grid-rows-[minmax(0,3fr)_minmax(0,2fr)] gap-1.5">
         <div className="col-span-4 min-h-0">
           <VideoPanel
             highlight={feed.highlight}
@@ -679,6 +678,7 @@ export default function App() {
             onRespond={send.actuator}
           />
         </div>
+      </div>
       </div>
       )}
 
