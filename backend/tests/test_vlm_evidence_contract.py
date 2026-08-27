@@ -166,8 +166,8 @@ async def test_native_video_uses_same_evidence_schema(monkeypatch):
     async def fake_video_parts(*_args, **_kwargs):
         return [{"type": "video_url", "video_url": {"url": "data:video/mp4;base64,eA=="}}]
 
-    async def fake_grab_frame(_video, _timestamp, _width=512):
-        return b"jpeg"
+    async def fake_grab_many(_video, timestamps, _width=512):
+        return [b"jpeg" for _ in timestamps]
 
     async def fake_create_chat(_client, **kwargs):
         captured.update(kwargs)
@@ -188,7 +188,7 @@ async def test_native_video_uses_same_evidence_schema(monkeypatch):
         )
 
     monkeypatch.setattr(interpret, "_video_parts", fake_video_parts)
-    monkeypatch.setattr(interpret, "grab_frame", fake_grab_frame)
+    monkeypatch.setattr(interpret, "grab_many", fake_grab_many)
     monkeypatch.setattr(interpret, "create_chat", fake_create_chat)
     monkeypatch.setattr(interpret, "main_client", lambda: object())
     monkeypatch.setattr(settings, "two_tier", True)

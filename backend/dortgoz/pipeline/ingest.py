@@ -274,6 +274,22 @@ async def grab_frames(video: Path, timestamps: list[float],
     return dict(zip(wanted, frames))
 
 
+async def grab_many(video: Path, timestamps: list[float],
+                    width: int = 512) -> list[bytes]:
+    """İstenen sırada kare listesi: önce tek süreç, tutmazsa kare-başına.
+
+    Çağıranın sırasını ve yinelenen zaman damgalarını korur.
+    """
+    if not timestamps:
+        return []
+    batch = await grab_frames(video, timestamps, width)
+    keys = [round(float(t), 3) for t in timestamps]
+    if batch and all(k in batch for k in keys):
+        return [batch[k] for k in keys]
+    return list(await asyncio.gather(
+        *(grab_frame(video, t, width) for t in timestamps)))
+
+
 _frame_tasks: dict[tuple[str, float, int], asyncio.Task] = {}
 _FRAME_TASKS_MAX = 128
 

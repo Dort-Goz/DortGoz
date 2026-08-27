@@ -17,7 +17,7 @@ from ..domain.taxonomy import CanonicalEventType, legacy_ws_label_from_canonical
 from ..events import EventEvidenceRef, FrameReference, Risk, WindowReport
 from ..tools.protocols import VlmSchemaError
 from ..utils import inline_defs
-from .ingest import grab_frame, shared_clip
+from .ingest import grab_many, shared_clip
 from .thinking import thinking_extra
 
 
@@ -692,9 +692,7 @@ async def _capture_evidence_frames(
         return
     allowed = {frame.frame_id: frame for frame in frame_refs}
     selected = [allowed[frame_id] for frame_id in dict.fromkeys(frame_ids) if frame_id in allowed]
-    jpegs = await asyncio.gather(
-        *(grab_frame(video, frame.timestamp) for frame in selected)
-    )
+    jpegs = await grab_many(video, [frame.timestamp for frame in selected])
     captured_frames.update(
         {frame.frame_id: (frame, jpeg) for frame, jpeg in zip(selected, jpegs)}
     )
@@ -708,9 +706,8 @@ async def _frame_parts(
     include_timestamps: bool = False,
     frame_width: int = 512,
 ) -> list[dict[str, Any]]:
-    jpegs = await asyncio.gather(
-        *(grab_frame(video, frame.timestamp, frame_width) for frame in frame_refs)
-    )
+    jpegs = await grab_many(
+        video, [frame.timestamp for frame in frame_refs], frame_width)
     parts: list[dict[str, Any]] = []
     for frame, jpeg in zip(frame_refs, jpegs):
         if captured_frames is not None:

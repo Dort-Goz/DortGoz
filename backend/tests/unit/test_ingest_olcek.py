@@ -123,3 +123,34 @@ async def test_perception_toplu_rgb(tmp_path) -> None:
     assert frames is not None and len(frames) == 2
     boyut = perception.SIZE * perception.SIZE * 3
     assert all(len(f) == boyut for f in frames)
+
+
+@pytest.mark.asyncio
+async def test_grab_many_sirayi_ve_yinelemeyi_korur(tmp_path) -> None:
+    """Çağıranın sırası korunur; aynı damga iki kez istenirse iki kez döner."""
+    from dortgoz.pipeline.ingest import grab_many
+
+    src = _kaynak(tmp_path / "sira.mp4", 320, 240)
+    istenen = [1.2, 0.4, 1.2]
+    kareler = await grab_many(src, istenen, 320)
+    assert len(kareler) == 3
+    assert kareler[0] == kareler[2] != kareler[1]
+
+
+@pytest.mark.asyncio
+async def test_grab_many_toplu_basarisizsa_kare_basina_duser(tmp_path) -> None:
+    """Toplu yol boş dönse bile sonuç eksiksiz gelir."""
+    from dortgoz.pipeline import ingest
+
+    src = _kaynak(tmp_path / "geri.mp4", 320, 240)
+
+    async def bos_toplu(*_a, **_k):
+        return {}
+
+    ingest_grab_frames = ingest.grab_frames
+    ingest.grab_frames = bos_toplu
+    try:
+        kareler = await ingest.grab_many(src, [0.4, 1.2], 320)
+    finally:
+        ingest.grab_frames = ingest_grab_frames
+    assert len(kareler) == 2 and all(k.startswith(b"\xff\xd8") for k in kareler)
