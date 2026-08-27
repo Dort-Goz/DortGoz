@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   approveEventsInBatch,
   exportCandidateOnnx,
@@ -168,57 +175,56 @@ export default function LearningPipelinePanel({
   const dfineQueue = view.queue.find((group) => group.use === "d_fine_training");
 
   return (
-    <div className="flex h-full min-h-0 flex-col text-xs">
+    <div className="flex h-full min-h-0 flex-col gap-1.5 text-xs">
       <nav
         aria-label="Öğrenme hattı"
-        className="flex shrink-0 items-stretch gap-px overflow-x-auto border-b border-zinc-800 bg-zinc-900"
+        className="flex h-7 shrink-0 items-center gap-0.5 self-start rounded-sm border border-zinc-800 bg-zinc-950 p-0.5"
       >
         {STAGE_ORDER.map((name, index) => {
           const summary = view.stages.find((item) => item.stage === name);
           const isActive = active === name;
+          const count = summary?.count ?? 0;
+          const blocked = summary?.blocked_count ?? 0;
           return (
-            <button
-              key={name}
-              type="button"
-              onClick={() => setStage(name)}
-              title={summary?.detail}
-              className={`flex min-w-28 flex-1 flex-col gap-0.5 px-3 py-2 text-left transition-colors ${
-                isActive ? "bg-zinc-800" : "bg-zinc-950 hover:bg-zinc-900"
-              }`}
-            >
-              <span className="flex items-center gap-1.5">
-                <span
-                  className={`text-[10px] uppercase tracking-wide ${
-                    isActive ? "text-zinc-200" : "text-zinc-500"
-                  }`}
-                >
-                  {index + 1}. {STAGE_TR[name]}
-                </span>
-                {(summary?.blocked_count ?? 0) > 0 && (
-                  <span className="inline-flex min-w-4 items-center justify-center bg-amber-800 px-1 font-mono text-[10px] leading-4 text-amber-100">
-                    {summary?.blocked_count}
-                  </span>
-                )}
-              </span>
-              <span
-                className={`font-mono text-lg font-semibold ${
-                  isActive ? "text-zinc-100" : "text-zinc-400"
+            <Fragment key={name}>
+              {index > 0 && (
+                <span aria-hidden className="select-none text-zinc-700">›</span>
+              )}
+              <button
+                type="button"
+                onClick={() => setStage(name)}
+                title={summary?.detail}
+                className={`h-full px-2.5 transition-colors ${
+                  isActive
+                    ? "bg-zinc-800 font-medium text-zinc-100"
+                    : "text-zinc-500 hover:text-zinc-200"
                 }`}
               >
-                {summary?.count ?? 0}
-              </span>
-            </button>
+                {STAGE_TR[name]}
+                {count > 0 && (
+                  <span
+                    className={`ml-1.5 inline-flex min-w-4 items-center justify-center rounded-sm px-1 font-mono text-[10px] leading-4 ${
+                      blocked > 0
+                        ? "bg-amber-800 text-amber-100"
+                        : "bg-zinc-800 text-zinc-300"
+                    }`}
+                  >
+                    {count}
+                  </span>
+                )}
+              </button>
+            </Fragment>
           );
         })}
       </nav>
 
       {error && (
-        <div className="shrink-0 border-b border-red-900 bg-red-950/40 px-3 py-2 text-red-200">
+        <div className="shrink-0 border border-red-900 bg-red-950/40 px-3 py-2 text-red-200">
           {error}
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {active === "review" && (
           <StageBody
             title="İnsan kararı bekleyen olaylar"
@@ -641,7 +647,7 @@ export default function LearningPipelinePanel({
         )}
       </div>
 
-      <footer className="shrink-0 border-t border-zinc-800 bg-zinc-900 px-3 py-2 text-[10px] leading-relaxed text-zinc-500">
+      <footer className="shrink-0 border-t border-zinc-800 pt-1.5 text-[10px] leading-relaxed text-zinc-500">
         {readinessSummary(view.readiness)} · eğitim politikası{" "}
         {view.readiness.training_policy_version ?? "—"} · terfi politikası{" "}
         {view.readiness.promotion_policy_version ?? "—"} · otomatik eğitim ve otomatik

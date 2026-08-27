@@ -341,12 +341,14 @@ class LearningPipelineService:
                 action_label="Paket oluştur",
                 detail="İzinli örnekler eğitim paketine alınmaya hazır.",
             ),
+            # blocked her aşamada count'un alt kümesidir; başarısız iş de
+            # insan bekler, bu yüzden count'a girer.
             PipelineStageSummary(
                 stage=PipelineStage.TRAINING,
-                count=len(active_jobs),
+                count=len(active_jobs) + len(attention_jobs),
                 blocked_count=len(attention_jobs),
                 action_label="Eğitimi başlat",
-                detail="Planlanan ve çalışan D-FINE eğitim işleri.",
+                detail="Planlanan, çalışan ve insan bekleyen D-FINE eğitim işleri.",
             ),
             PipelineStageSummary(
                 stage=PipelineStage.MEASUREMENT,

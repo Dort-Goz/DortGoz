@@ -51,14 +51,16 @@ describe("olay inceleme merkezi", () => {
 
     expect(console_).toContain("Olay İnceleme Merkezi");
     expect(app).toContain("<ReviewConsole onOpenTraining={setTrainingEventId} />");
-    expect(app).toContain('title="Karar bekleyen olaylar"');
     expect(app).toContain('["analysis", "Analiz"]');
     expect(app).toContain('["live", "Canlı"]');
     expect(app).toContain('["review", "Olay inceleme"]');
-    expect(app).toContain('layout="workspace"');
     expect(app).toContain("ARAYÜZ TEST AKIŞI");
-    expect(app).toContain('kind: "seek"');
-    expect(app).toContain("video: reviewVideo");
+    // Nöbet kuyruğu geçici canlı kuyruktur; yeri Canlı çalışma alanıdır.
+    // Olay inceleme kalıcı kayıt defteridir ve kendi durum süzgecini taşır.
+    expect(app).not.toContain('title="Karar bekleyen olaylar"');
+    expect(app).not.toContain('layout="workspace"');
+    expect(app).not.toContain("triagePending");
+    expect(console_).toContain("setStatus");
     expect(panel).toContain("Doğrulanmış video kanıtı");
     expect(panel).toContain("Operatör notu");
     expect(panel).toContain("Güvenli yerel taslak önerileri");

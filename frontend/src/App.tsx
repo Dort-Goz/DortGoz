@@ -12,7 +12,6 @@ import LiveGrid from "./components/LiveGrid";
 import LearningPipelinePanel from "./components/LearningPipelinePanel";
 import UploadPanel from "./components/UploadPanel";
 import TrainingReviewPanel from "./components/TrainingReviewPanel";
-import TriagePanel from "./components/TriagePanel";
 import ReviewConsole from "./components/ReviewConsole";
 import {
   buildChatMessage,
@@ -102,9 +101,7 @@ export default function App() {
   const [learningView, setLearningView] = useState(() => location.hash === "#ogrenme");
   const [trainingEventId, setTrainingEventId] = useState("");
   const [trainingOpenedFromLearning, setTrainingOpenedFromLearning] = useState(false);
-  const [reviewTab, setReviewTab] = useState<"kayitlar" | "bekleyen">("kayitlar");
   const [fixtureMode, setFixtureMode] = useState(false);
-  const [triagePending, setTriagePending] = useState(0);
   const [livePending, setLivePending] = useState(0);
   const [resolvedKeys, setResolvedKeys] = useState<string[]>([]);
   const [connection, setConnection] = useState<ConnectionState>("connecting");
@@ -199,7 +196,6 @@ export default function App() {
         const body = await r.json();
         if (alive) {
           const queued: { live?: boolean }[] = body.pending ?? [];
-          setTriagePending(queued.length);
           setLivePending(queued.filter((item) => item.live).length);
           setResolvedKeys(body.resolved_keys ?? []);
         }
@@ -433,11 +429,6 @@ export default function App() {
               }`}
             >
               {label}
-              {value === "review" && triagePending > 0 && (
-                <span className="ml-1.5 inline-flex min-w-4 items-center justify-center rounded-sm bg-amber-800 px-1 font-mono text-[10px] leading-4 text-amber-100">
-                  {triagePending}
-                </span>
-              )}
               {value === "live" && livePending > 0 && (
                 <span
                   title={`${livePending} canlı olay operatör kararı bekliyor`}
@@ -654,59 +645,8 @@ export default function App() {
       )}
 
       {workspace === "review" && (
-        <div className="flex min-h-0 flex-1 flex-col gap-1.5 p-1.5">
-          <nav
-            aria-label="İnceleme görünümü"
-            className="flex h-7 shrink-0 items-center gap-0.5 self-start rounded-sm border border-zinc-800 bg-zinc-950 p-0.5 text-xs"
-          >
-            {([
-              ["kayitlar", "⛁ Tüm kayıtlar"],
-              ["bekleyen", "⚑ Karar bekleyenler"],
-            ] as const).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setReviewTab(value)}
-                className={`h-full px-2.5 transition-colors ${
-                  reviewTab === value
-                    ? "bg-zinc-800 font-medium text-zinc-100"
-                    : "text-zinc-500 hover:text-zinc-200"
-                }`}
-              >
-                {label}
-                {value === "bekleyen" && triagePending > 0 && (
-                  <span className="ml-1.5 inline-flex min-w-4 items-center justify-center rounded-sm bg-amber-800 px-1 font-mono text-[10px] leading-4 text-amber-100">
-                    {triagePending}
-                  </span>
-                )}
-              </button>
-            ))}
-          </nav>
-          <div className="min-h-0 flex-1">
-            {reviewTab === "kayitlar" ? (
-              <ReviewConsole onOpenTraining={setTrainingEventId} />
-            ) : (
-              <TriagePanel
-                title="Karar bekleyen olaylar"
-                layout="workspace"
-                onSelectFeed={(selectedFeed) =>
-                  dispatch({ kind: "select_feed", feed: selectedFeed })}
-                onSeek={(selectedFeed, timestamp, reviewVideo, live) => {
-                  if (live) return;
-                  dispatch({
-                    kind: "seek",
-                    feed: selectedFeed,
-                    timestamp,
-                    video: reviewVideo,
-                  });
-                  setLiveView(false);
-                  setReviewView(false);
-                  history.replaceState(null, "", "#");
-                }}
-                onOpenTraining={setTrainingEventId}
-              />
-            )}
-          </div>
+        <div className="flex min-h-0 flex-1 flex-col p-1.5">
+          <ReviewConsole onOpenTraining={setTrainingEventId} />
         </div>
       )}
       {workspace === "learning" && (
