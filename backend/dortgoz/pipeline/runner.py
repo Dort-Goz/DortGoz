@@ -487,8 +487,11 @@ async def run_video(
         _raise_if_stop_requested(stop_probe)
         ctx.duration = duration
         ctx.ledger.duration = duration
-        async with _local_inference():
-            profile = await ingest.motion_profile(path, settings.base_fps)
+        # ⚠ `_local_inference` YEREL MODEL yuvasıdır ve yalnız 2 genişlikteğdir
+        # (ölçüm: 6'ya çıkarmak SigLIP'i 756 ms'den 3278 ms'ye çıkardı, GPU
+        # aşırı abone olur). Hareket profili ffmpeg + saf Python'dur, modele
+        # DOKUNMAZ; kıt GPU yuvasını tutması gereksiz sıraya sokuyordu.
+        profile = await ingest.motion_profile(path, settings.base_fps)
         _raise_if_stop_requested(stop_probe)
         gate = (ingest.adaptive_gate(profile, minimum=settings.motion_gate)
                 if settings.motion_gate_adaptive else settings.motion_gate)
