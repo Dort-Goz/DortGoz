@@ -5,8 +5,13 @@ import type {
   HumanReview,
   IncidentMedia,
   InterventionPriority,
-  LearningOrchestratorOverview,
+  BatchApprovalResult,
+  DfineArchitecture,
+  LearningPipelineView,
   LearningPlan,
+  ModelVersion,
+  PipelineModelItem,
+  TrainingJob,
   TrainingSample,
   VerifiedBoundingBox,
   VideoMetadata,
@@ -101,8 +106,51 @@ export const getDevelopmentApprovals = (eventId: string) =>
 export const getLearningPlan = (eventId: string) =>
   request<LearningPlan>(`/api/events/${encodeURIComponent(eventId)}/learning-plan`);
 
-export const getLearningOrchestratorOverview = () =>
-  request<LearningOrchestratorOverview>("/api/system/learning-orchestrator");
+export const getLearningPipeline = () =>
+  request<LearningPipelineView>("/api/learning/pipeline");
+
+export const approveEventsInBatch = (body: {
+  event_ids: string[];
+  approved_uses: DevelopmentUse[];
+  reviewer: string;
+  note: string;
+}) => request<BatchApprovalResult>("/api/learning/approvals/batch", json(body));
+
+export const planTrainingJob = (body: {
+  architecture: DfineArchitecture;
+  requested_by: string;
+  epochs?: number;
+  batch_size?: number;
+  workers?: number;
+  gpu_index?: number;
+  max_gpu_minutes?: number;
+  seed?: number;
+}) => request<TrainingJob>("/api/learning/jobs", json(body));
+
+export const runTrainingJob = (jobId: string) =>
+  request<TrainingJob>(
+    `/api/learning/jobs/${encodeURIComponent(jobId)}/run`,
+    { method: "POST" },
+  );
+
+export const exportCandidateOnnx = (modelVersionId: string) =>
+  request<ModelVersion>(
+    `/api/learning/models/${encodeURIComponent(modelVersionId)}/export-onnx`,
+    { method: "POST" },
+  );
+
+export const getPromotionGate = (modelVersionId: string) =>
+  request<PipelineModelItem>(
+    `/api/learning/models/${encodeURIComponent(modelVersionId)}/gate`,
+  );
+
+export const promoteModel = (
+  modelVersionId: string,
+  body: { approved_by: string; reason: string },
+) => request<ModelVersion>(
+  `/api/learning/models/${encodeURIComponent(modelVersionId)}/promote`,
+  json(body),
+);
 
 export const approveEventForLearning = (
   eventId: string,

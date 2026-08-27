@@ -9,7 +9,7 @@ import ActionLog from "./components/ActionLog";
 import ExperimentPanel, { type InterpretConfig } from "./components/ExperimentPanel";
 import FeedStrip from "./components/FeedStrip";
 import LiveGrid from "./components/LiveGrid";
-import LearningOrchestratorPanel from "./components/LearningOrchestratorPanel";
+import LearningPipelinePanel from "./components/LearningPipelinePanel";
 import UploadPanel from "./components/UploadPanel";
 import TrainingReviewPanel from "./components/TrainingReviewPanel";
 import TriagePanel from "./components/TriagePanel";
@@ -99,10 +99,10 @@ export default function App() {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [liveView, setLiveView] = useState(() => location.hash === "#canli");
   const [reviewView, setReviewView] = useState(() => location.hash === "#inceleme");
+  const [learningView, setLearningView] = useState(() => location.hash === "#ogrenme");
   const [trainingEventId, setTrainingEventId] = useState("");
   const [trainingOpenedFromLearning, setTrainingOpenedFromLearning] = useState(false);
   const [reviewTab, setReviewTab] = useState<"kayitlar" | "bekleyen">("kayitlar");
-  const [showLearningOrchestrator, setShowLearningOrchestrator] = useState(false);
   const [fixtureMode, setFixtureMode] = useState(false);
   const [triagePending, setTriagePending] = useState(0);
   const [livePending, setLivePending] = useState(0);
@@ -122,11 +122,13 @@ export default function App() {
   const returnToLearning = useCallback(() => {
     setTrainingEventId("");
     setTrainingOpenedFromLearning(false);
-    setShowLearningOrchestrator(true);
+    setLiveView(false);
+    setReviewView(false);
+    setLearningView(true);
+    history.replaceState(null, "", "#ogrenme");
   }, []);
 
   const openLearningEvent = useCallback((eventId: string) => {
-    setShowLearningOrchestrator(false);
     setTrainingOpenedFromLearning(true);
     setTrainingEventId(eventId);
   }, []);
@@ -277,7 +279,13 @@ export default function App() {
   const busy = Object.values(analysisFeeds).some(
     (f) => f.runStatus?.state === "processing")
     || state.feeds[""]?.runStatus?.state === "processing";
-  const workspace = liveView ? "live" : reviewView ? "review" : "analysis";
+  const workspace = liveView
+    ? "live"
+    : reviewView
+      ? "review"
+      : learningView
+        ? "learning"
+        : "analysis";
   const liveIncidents = useMemo(
     () => Object.fromEntries(
       feedNames(state, true).map((name) => [name, state.feeds[name].incidents])),
@@ -400,6 +408,7 @@ export default function App() {
             ["analysis", "Analiz"],
             ["live", "Canlı"],
             ["review", "Olay inceleme"],
+            ["learning", "Öğrenme"],
           ] as const).map(([value, label]) => (
             <button
               key={value}
@@ -407,8 +416,15 @@ export default function App() {
               onClick={() => {
                 setLiveView(value === "live");
                 setReviewView(value === "review");
+                setLearningView(value === "learning");
                 history.replaceState(null, "",
-                  value === "live" ? "#canli" : value === "review" ? "#inceleme" : "#");
+                  value === "live"
+                    ? "#canli"
+                    : value === "review"
+                      ? "#inceleme"
+                      : value === "learning"
+                        ? "#ogrenme"
+                        : "#");
               }}
               className={`h-full px-2.5 transition-colors ${
                 workspace === value
@@ -435,16 +451,6 @@ export default function App() {
         </nav>
 
         <div className="flex-1" />
-
-        <button
-          type="button"
-          onClick={() => setShowLearningOrchestrator(true)}
-          title="İnsan onaylı geliştirme önerilerini ve inceleme kuyruğunu aç"
-          className="btn btn-ghost"
-        >
-          ◈ öğrenme merkezi
-        </button>
-
         <span
           title={connection === "open"
             ? "Sunucu bağlantısı açık — olaylar canlı akıyor"
@@ -703,17 +709,17 @@ export default function App() {
           </div>
         </div>
       )}
+      {workspace === "learning" && (
+        <div className="flex min-h-0 flex-1 flex-col p-1.5">
+          <LearningPipelinePanel onOpenEvent={openLearningEvent} />
+        </div>
+      )}
+
       {trainingEventId && (
         <TrainingReviewPanel
           eventId={trainingEventId}
           onClose={closeTrainingReview}
           onBack={trainingOpenedFromLearning ? returnToLearning : undefined}
-        />
-      )}
-      {showLearningOrchestrator && (
-        <LearningOrchestratorPanel
-          onClose={() => setShowLearningOrchestrator(false)}
-          onOpenEvent={openLearningEvent}
         />
       )}
     </div>

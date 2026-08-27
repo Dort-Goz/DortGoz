@@ -79,6 +79,22 @@ class _PlanningContext:
     video_category_counts: Counter[tuple[str, str]]
 
 
+@dataclass(frozen=True, slots=True)
+class PlannedEvent:
+    event: VerifiedEvent
+    plan: LearningPlan
+    summary: LearningCandidateSummary
+    review_id: str | None
+    approval_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class LearningSnapshot:
+
+    drift: DriftSnapshot
+    events: list[PlannedEvent]
+
+
 def learning_band_for_score(score: int) -> LearningBand:
     if score >= 75:
         return LearningBand.PRIORITY
@@ -157,43 +173,68 @@ class LearningOrchestrator:
         context = self._planning_context(events)
         return self._plan(event, self.drift_snapshot(), context)
 
-    def route_queue(self, use: DevelopmentUse) -> LearningRouteQueue:
+    def snapshot(self) -> LearningSnapshot:
+
+
         events = self.repository.list_all_events()
         drift = self.drift_snapshot()
         context = self._planning_context(events)
-        items: list[LearningRouteItem] = []
+        planned: list[PlannedEvent] = []
         for event in events:
             review = context.reviews[event.event_id]
             approval = context.approvals[event.event_id]
-            if review is None or approval is None:
-                continue
             plan = self._plan(event, drift, context)
-            route = next(item for item in plan.routes if item.use == use)
+            planned.append(
+                PlannedEvent(
+                    event=event,
+                    plan=plan,
+                    summary=self._candidate_summary(event, plan, review),
+                    review_id=review.review_id if review is not None else None,
+                    approval_id=approval.approval_id if approval is not None else None,
+                )
+            )
+        return LearningSnapshot(drift=drift, events=planned)
+
+    def route_queue(
+        self, use: DevelopmentUse, *, snapshot: LearningSnapshot | None = None
+    ) -> LearningRouteQueue:
+        resolved = snapshot if snapshot is not None else self.snapshot()
+        items: list[LearningRouteItem] = []
+        for entry in resolved.events:
+            if entry.review_id is None or entry.approval_id is None:
+                continue
+            route = next(item for item in entry.plan.routes if item.use == use)
             if not route.ready:
                 continue
             items.append(
                 LearningRouteItem(
-                    event_id=event.event_id,
-                    event_revision=event.revision,
-                    review_id=review.review_id,
-                    approval_id=approval.approval_id,
+                    event_id=entry.event.event_id,
+                    event_revision=entry.event.revision,
+                    review_id=entry.review_id,
+                    approval_id=entry.approval_id,
                     use=use,
-                    learning_score=plan.learning_score,
-                    learning_band=plan.learning_band,
+                    learning_score=entry.plan.learning_score,
+                    learning_band=entry.plan.learning_band,
                     downstream=route.downstream,
                 )
             )
         items.sort(key=lambda item: (-item.learning_score, item.event_id))
         return LearningRouteQueue(use=use, items=items, count=len(items))
 
-    def overview(self, *, candidate_limit: int = 12) -> LearningOrchestratorOverview:
+    def overview(
+        self,
+        *,
+        candidate_limit: int = 12,
+        snapshot: LearningSnapshot | None = None,
+    ) -> LearningOrchestratorOverview:
 
         if candidate_limit < 1 or candidate_limit > 100:
             raise ValueError("candidate_limit 1 ile 100 arasında olmalıdır")
-        events = self.repository.list_all_events()
-        drift = self.drift_snapshot()
-        context = self._planning_context(events)
-        planned = [(event, self._plan(event, drift, context)) for event in events]
+        resolved = snapshot if snapshot is not None else self.snapshot()
+        drift = resolved.drift
+        events = [entry.event for entry in resolved.events]
+        planned = [(entry.event, entry.plan) for entry in resolved.events]
+        summaries = {entry.event.event_id: entry.summary for entry in resolved.events}
         route_summaries: list[LearningRouteSummary] = []
         for use in DevelopmentUse:
             routes = [
@@ -230,10 +271,7 @@ class LearningOrchestrator:
             planned,
             key=lambda item: (-item[1].learning_score, item[0].event_id),
         )[:candidate_limit]
-        priority_candidates = [
-            self._candidate_summary(event, plan, context.reviews[event.event_id])
-            for event, plan in candidates
-        ]
+        priority_candidates = [summaries[event.event_id] for event, _ in candidates]
         return LearningOrchestratorOverview(
             total_events=len(events),
             reviewed_events=len(events) - pending_review,
@@ -597,4 +635,9 @@ class LearningOrchestrator:
         )
 
 
-__all__ = ["LearningOrchestrator", "learning_band_for_score"]
+__all__ = [
+    "LearningOrchestrator",
+    "LearningSnapshot",
+    "PlannedEvent",
+    "learning_band_for_score",
+]
