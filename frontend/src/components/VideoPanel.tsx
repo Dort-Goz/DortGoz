@@ -23,13 +23,15 @@ function boxTag(box: BoundingBox): string {
 }
 
 export default function VideoPanel({
-  highlight, seekTo, seekNonce, video, feed,
+  highlight, seekTo, seekNonce, video, feed, progress, progressError,
 }: {
   highlight: StoredIncident | null;
   seekTo: number | null;
   seekNonce: number;
   video: string | null;
   feed?: string | null;
+  progress?: number | null;
+  progressError?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -159,6 +161,14 @@ export default function VideoPanel({
         )}
         <canvas ref={canvasRef} className="pointer-events-none absolute inset-0" />
       </div>
+      {progress != null && (
+        <div className="h-1 shrink-0 bg-zinc-800" title={`analiz ilerlemesi %${progress}`}>
+          <div
+            className={`h-full ${progressError ? "bg-red-500" : "bg-emerald-500"}`}
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      )}
     </div>
   );
 }

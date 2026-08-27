@@ -48,30 +48,6 @@ const CONNECTION_CLS: Record<ConnectionState, string> = {
   closed: "border-red-900 bg-red-950/60 text-red-300",
 };
 
-const RUN_STATE_TR: Record<string, string> = {
-  idle: "beklemede",
-  processing: "işleniyor",
-  done: "tamamlandı",
-  error: "hata",
-};
-
-const RUN_STATE_CLS: Record<string, string> = {
-  idle: "border-zinc-700 text-zinc-400",
-  processing: "border-emerald-800 bg-emerald-950/30 text-emerald-300",
-  done: "border-sky-900 bg-sky-950/30 text-sky-300",
-  error: "border-red-800 bg-red-950/40 text-red-300",
-};
-
-const RISK_ORDER = ["dusuk", "orta", "yuksek", "kritik"] as const;
-
-const VERDICT_TONE: Record<string, string> = {
-  none: "text-emerald-300",
-  dusuk: "text-sky-300",
-  orta: "text-amber-300",
-  yuksek: "text-red-300",
-  kritik: "text-red-300",
-};
-
 function Clock() {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -352,20 +328,6 @@ export default function App() {
     ),
     [resolvedKeys, analysisActive],
   );
-  const reviewCount = useMemo(
-    () => feed.incidents.filter(
-      (i) => i.needs_review && !decided.has(i.incident_id)).length,
-    [feed.incidents, decided],
-  );
-  const worstRisk = useMemo(() => feed.incidents.reduce<string | null>(
-    (w, i) =>
-      w === null || RISK_ORDER.indexOf(i.risk) > RISK_ORDER.indexOf(w as typeof RISK_ORDER[number])
-        ? i.risk
-        : w,
-    null,
-  ), [feed.incidents]);
-  const verdictReady = runState === "done" && Boolean(run?.detail);
-  const verdictTone = VERDICT_TONE[worstRisk ?? "none"] ?? "text-red-300";
   const experimentDirty = Boolean(interpretCfg && (
     model !== interpretCfg.default_model ||
     systemPrompt !== interpretCfg.system_prompt ||
@@ -407,7 +369,7 @@ export default function App() {
                 history.replaceState(null, "",
                   value === "live" ? "#canli" : value === "review" ? "#inceleme" : "#");
               }}
-              className={`h-full rounded-[3px] px-2.5 transition-colors ${
+              className={`h-full px-2.5 transition-colors ${
                 workspace === value
                   ? "bg-zinc-800 font-medium text-zinc-100"
                   : "text-zinc-500 hover:text-zinc-200"
@@ -571,69 +533,6 @@ export default function App() {
         </div>
       )}
 
-      {workspace === "analysis" && (
-        <div className="flex h-8 shrink-0 items-center gap-2 border-b border-zinc-800 bg-zinc-900/60 px-3 text-xs">
-          <span
-            className={`chip w-24 justify-center border font-semibold uppercase tracking-wide ${
-              RUN_STATE_CLS[runState] ?? RUN_STATE_CLS.idle
-            }`}
-          >
-            {RUN_STATE_TR[runState] ?? runState}
-          </span>
-          <div className="h-1 w-36 shrink-0 overflow-hidden rounded-full bg-zinc-800">
-            <div
-              className={`h-full ${runState === "error" ? "bg-red-500" : "bg-emerald-500"}`}
-              style={{ width: `${progressPct}%` }}
-            />
-          </div>
-          <span className="w-10 shrink-0 font-mono text-[11px] text-zinc-500">
-            %{progressPct}
-          </span>
-          {(run?.speed ?? 0) > 0 && runState === "processing" && (
-            <span
-              className={`chip border font-mono font-semibold ${
-                (run?.speed ?? 0) >= 1
-                  ? "border-emerald-900 text-emerald-300"
-                  : "border-red-900 text-red-300"
-              }`}
-              title="İşleme hızı — ×1 üstü gerçek zamandan hızlı"
-            >
-              ×{(run?.speed ?? 0) >= 10 ? (run?.speed ?? 0).toFixed(0) : (run?.speed ?? 0).toFixed(1)}
-            </span>
-          )}
-
-          <div className="min-w-0 flex-1 truncate" title={run?.detail || undefined}>
-            {verdictReady ? (
-              <>
-                <span className="microlabel mr-2">karar</span>
-                <span className={`font-medium ${verdictTone}`}>{run?.detail}</span>
-              </>
-            ) : (
-              <span className="text-zinc-500">{run?.detail ?? ""}</span>
-            )}
-          </div>
-
-          {!fixtureMode && runState === "done" && run && run.run_id !== "-" && (
-            <a
-              href={`/api/runs/${run.run_id}/export`}
-              download
-              title="Analizi taşınabilir paket (.zip) olarak indir: akış + özet + video + kanıt kareleri"
-              className="btn btn-outline h-6"
-            >
-              ⇩ paket
-            </a>
-          )}
-          {reviewCount > 0 && (
-            <span className="chip border border-amber-900 bg-amber-950/40 text-amber-300">
-              ⚑ {reviewCount} inceleme
-            </span>
-          )}
-          <span className="chip border border-zinc-800 text-zinc-400">
-            {feed.incidents.length} olay
-          </span>
-        </div>
-      )}
-
       {workspace === "analysis" && showExperiment && interpretCfg && (
         <ExperimentPanel
           config={interpretCfg}
@@ -662,7 +561,7 @@ export default function App() {
       {workspace === "analysis" && (
       <div className="flex min-h-0 flex-1 gap-1.5 p-1.5">
       <FeedStrip feeds={analysisFeeds} active={analysisActive} onSelect={selectFeed} />
-      <div className="grid min-h-0 flex-1 grid-cols-6 grid-rows-[minmax(0,3fr)_minmax(0,2fr)] gap-1.5">
+      <div className="grid min-h-0 flex-1 grid-cols-12 grid-rows-[minmax(0,3fr)_minmax(0,2fr)] gap-1.5">
         <div className="col-span-4 min-h-0">
           <VideoPanel
             highlight={feed.highlight}
@@ -670,22 +569,18 @@ export default function App() {
             seekNonce={feed.seekNonce}
             video={feed.video}
             feed={Object.keys(analysisFeeds).length >= 2 ? analysisActive : null}
+            progress={run ? progressPct : null}
+            progressError={runState === "error"}
           />
         </div>
-        <div className="col-span-2 min-h-0">
-          <Timeline
-            incidents={feed.incidents}
-            reports={feed.reports}
-            highlightId={feed.highlight?.incident_id}
-            reportsPulse={feed.reportsPulse}
-            decided={decided}
-            onSelect={selectIncident}
+        <div className="col-span-4 min-h-0">
+          <ActionLog
+            requests={state.actuatorRequests}
+            results={state.actuatorResults}
+            onRespond={send.actuator}
           />
         </div>
-        <div className="col-span-2 min-h-0">
-          <AgentTrace entries={feed.trace} />
-        </div>
-        <div className="col-span-2 min-h-0">
+        <div className="col-span-4 row-span-2 min-h-0">
           <ChatPanel
             messages={state.chat}
             onSend={send.chat}
@@ -695,11 +590,17 @@ export default function App() {
             }`}
           />
         </div>
-        <div className="col-span-2 min-h-0">
-          <ActionLog
-            requests={state.actuatorRequests}
-            results={state.actuatorResults}
-            onRespond={send.actuator}
+        <div className="col-span-4 min-h-0">
+          <AgentTrace entries={feed.trace} />
+        </div>
+        <div className="col-span-4 min-h-0">
+          <Timeline
+            incidents={feed.incidents}
+            reports={feed.reports}
+            highlightId={feed.highlight?.incident_id}
+            reportsPulse={feed.reportsPulse}
+            decided={decided}
+            onSelect={selectIncident}
           />
         </div>
       </div>
@@ -720,7 +621,7 @@ export default function App() {
                 key={value}
                 type="button"
                 onClick={() => setReviewTab(value)}
-                className={`h-full rounded-[3px] px-2.5 transition-colors ${
+                className={`h-full px-2.5 transition-colors ${
                   reviewTab === value
                     ? "bg-zinc-800 font-medium text-zinc-100"
                     : "text-zinc-500 hover:text-zinc-200"

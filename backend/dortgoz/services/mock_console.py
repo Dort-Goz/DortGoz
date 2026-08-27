@@ -299,6 +299,7 @@ class MockLiveService:
                 ActivityStrip(
                     window_start=self._activity_end[status.name] - span,
                     window_end=self._activity_end[status.name],
+                    content_start=time.time() - span,
                     gate=gate,
                     peak=gate * (1 + max(levels)),
                     status=resolved,

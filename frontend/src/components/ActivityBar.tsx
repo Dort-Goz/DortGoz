@@ -1,79 +1,122 @@
-import { memo } from "react";
+import { memo, useEffect, useState } from "react";
 import type { ActivityStatus, ActivityStrip } from "../types/events";
 import { ACTIVITY_WINDOW_SECONDS } from "../state";
 
-const STATUS_TR: Record<ActivityStatus, string> = {
-  sakin: "eşik altı — hareket yok",
-  eleme: "aday taraması eledi",
+export type SlotKind = "bos" | "bekliyor" | "sessiz" | "hareket" | "dikkat" | "anomali";
+
+export interface Slot {
+  kind: SlotKind;
+  level: number;
+  wall: number;
+}
+
+const RAMP: Record<SlotKind, readonly string[]> = {
+  bos: ["bg-zinc-950"],
+  bekliyor: ["bg-zinc-100"],
+  sessiz: ["bg-zinc-700"],
+  hareket: ["bg-emerald-900", "bg-emerald-700", "bg-emerald-400"],
+  dikkat: ["bg-amber-800", "bg-amber-600", "bg-amber-300"],
+  anomali: ["bg-red-900", "bg-red-600", "bg-red-400"],
+};
+
+const KIND_TR: Record<SlotKind, string> = {
+  bos: "kayıt yok",
+  bekliyor: "henüz çözümlenmedi",
+  sessiz: "eşik altı — hareket yok",
   hareket: "hareket var, olay yok",
   dikkat: "dikkat çeken pencere",
   anomali: "anomali",
 };
 
-const TONE: Record<ActivityStatus, readonly [string, string, string]> = {
-  sakin: ["bg-zinc-800", "bg-zinc-700", "bg-zinc-600"],
-  eleme: ["bg-sky-950", "bg-sky-800", "bg-sky-600"],
-  hareket: ["bg-emerald-950", "bg-emerald-800", "bg-emerald-500"],
-  dikkat: ["bg-amber-900", "bg-amber-700", "bg-amber-400"],
-  anomali: ["bg-red-900", "bg-red-600", "bg-red-400"],
+const STATUS_KIND: Record<ActivityStatus, SlotKind> = {
+  sakin: "sessiz",
+  eleme: "hareket",
+  hareket: "hareket",
+  dikkat: "dikkat",
+  anomali: "anomali",
 };
 
-export interface ActivityCell {
-  key: string;
-  level: number;
-  status: ActivityStatus;
-  t: number;
-  wall: number;
+function stripStart(strip: ActivityStrip): number {
+  if (strip.content_start && strip.content_start > 0) return strip.content_start;
+  return strip.wall_end - (strip.window_end - strip.window_start);
 }
 
-export function toCells(strips: ActivityStrip[], limit = 120): ActivityCell[] {
-  const cells: ActivityCell[] = [];
-  for (const strip of [...strips].sort((a, b) => a.wall_end - b.wall_end)) {
+export function buildTimeline(
+  strips: ActivityStrip[],
+  now: number,
+  seconds = ACTIVITY_WINDOW_SECONDS,
+): Slot[] {
+  const from = now - seconds;
+  const slots: Slot[] = Array.from({ length: seconds }, (_, i) => ({
+    kind: "bos" as SlotKind,
+    level: 0,
+    wall: from + i,
+  }));
+  let newest = 0;
+  let oldest = Number.POSITIVE_INFINITY;
+
+  for (const strip of strips) {
     const span = Math.max(strip.window_end - strip.window_start, 0.001);
     const step = span / Math.max(strip.levels.length, 1);
+    const base = stripStart(strip);
+    oldest = Math.min(oldest, base);
+    newest = Math.max(newest, base + span);
+    const kind = STATUS_KIND[strip.status] ?? "sessiz";
     strip.levels.forEach((level, index) => {
-      cells.push({
-        key: `${strip.wall_end}:${index}`,
+      const index0 = Math.floor(base + index * step - from);
+      if (index0 < 0 || index0 >= seconds) return;
+      slots[index0] = {
+        kind: kind === "hareket" && level === 0 ? "sessiz" : kind,
         level,
-        status: strip.status,
-        t: strip.window_start + index * step,
-        wall: strip.wall_end - (strip.levels.length - index) * step,
-      });
+        wall: from + index0,
+      };
     });
   }
-  return cells.length > limit ? cells.slice(cells.length - limit) : cells;
+
+  for (const slot of slots) {
+    if (slot.kind !== "bos") continue;
+    if (slot.wall >= newest && newest > 0) slot.kind = "bekliyor";
+    else if (slot.wall > oldest && slot.wall < newest) slot.kind = "bekliyor";
+  }
+  return slots;
 }
 
-const clock = (t: number) =>
-  `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+function tone(slot: Slot): string {
+  const shades = RAMP[slot.kind];
+  return shades[Math.min(shades.length - 1, Math.max(0, slot.level - 1))];
+}
+
+const hhmm = (epoch: number) =>
+  new Date(epoch * 1000).toLocaleTimeString("tr-TR", {
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
 
 function ActivityBar({ strips, height = "h-2.5" }: {
   strips: ActivityStrip[];
   height?: string;
 }) {
-  const cells = toCells(strips);
-  if (cells.length === 0) {
-    return (
-      <div
-        className={`flex w-full ${height} items-center justify-center rounded-[2px] bg-zinc-900/80`}
-        title={`Son ${ACTIVITY_WINDOW_SECONDS / 60} dakikada işlenmiş pencere yok`}
-      />
-    );
-  }
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now() / 1000), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const slots = buildTimeline(strips, now);
+  const pending = slots.filter((s) => s.kind === "bekliyor").length;
+  const moving = slots.filter((s) => s.level > 0).length;
+
   return (
     <div
-      className={`flex w-full ${height} overflow-hidden rounded-[2px] bg-zinc-900/80`}
-      title={`Son ${ACTIVITY_WINDOW_SECONDS / 60} dakika · ${cells.length} kare · `
-        + `eşiği geçen ${cells.filter((c) => c.level > 0).length} kare`}
+      className={`flex w-full ${height} overflow-hidden bg-zinc-950`}
+      title={`Son ${ACTIVITY_WINDOW_SECONDS / 60} dakika · eşiği geçen ${moving} kare`
+        + (pending > 0 ? ` · ${pending} sn çözümlenmeyi bekliyor` : "")}
     >
-      {cells.map((cell) => (
+      {slots.map((slot) => (
         <span
-          key={cell.key}
-          className={`min-w-0 flex-1 ${
-            cell.level === 0 ? "bg-zinc-800/70" : TONE[cell.status][Math.min(2, cell.level - 1)]
-          }`}
-          title={`${clock(cell.t)} · ${STATUS_TR[cell.status]}${
-            cell.level === 0 ? " · eşik altı" : ` · yoğunluk ${cell.level}`
+          key={slot.wall}
+          className={`min-w-0 flex-1 ${tone(slot)}`}
+          title={`${hhmm(slot.wall)} · ${KIND_TR[slot.kind]}${
+            slot.level > 0 ? ` · yoğunluk ${slot.level}` : ""
           }`}
         />
       ))}

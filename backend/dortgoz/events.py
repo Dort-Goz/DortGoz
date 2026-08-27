@@ -76,6 +76,7 @@ class ActivityStrip(BaseModel):
     window_start: float
     window_end: float
     wall_end: float = Field(default_factory=time.time)
+    content_start: float = 0.0
     gate: float = 0.0
     peak: float = 0.0
     status: ActivityStatus = "sakin"

@@ -155,7 +155,7 @@ function LiveGrid({ incidents, activity, onSelectFeed, onOpenTraining }: {
                 key={value}
                 type="button"
                 onClick={() => setView(value)}
-                className={`h-full rounded-[3px] px-2 transition-colors ${
+                className={`h-full px-2 transition-colors ${
                   view === value
                     ? "bg-zinc-800 font-medium text-zinc-100"
                     : "text-zinc-500 hover:text-zinc-200"
