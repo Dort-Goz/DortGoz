@@ -648,7 +648,8 @@ async def run_video(
             gated = not settings.dynamic_windows and peak < gate
             screened_out = bool(cand_spans is not None
                                 and not screening_covers(start, end, cand_spans))
-            rescued = bool((gated or screened_out) and percep and percep.rescue_persons)
+            rescued = bool(gated and not screened_out
+                           and percep and percep.rescue_persons)
             if rescued:
                 metrics.dfine_rescue_count += 1
             if (gated or screened_out) and not rescued:

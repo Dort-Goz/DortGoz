@@ -22,6 +22,7 @@ JPEG_EOI = b"\xff\xd9"
 PREVIEW_BUFFER_LIMIT = 4 * 1024 * 1024
 PREVIEW_IDLE_TIMEOUT = 15.0
 PREVIEW_QUEUE_LIMIT = 24
+STALL_SEGMENTS = 3
 PrepareRun = Callable[[str, str, Path], Awaitable[VideoMetadata]]
 FinalizeRun = Callable[[str], Awaitable[object]]
 
@@ -96,6 +97,7 @@ class LiveFeedWorker:
         self._proc: asyncio.subprocess.Process | None = None
         self._tasks: list[asyncio.Task] = []
         self._last_seg_mtime: float | None = None
+        self._started_at = time.time()
         self.segments_failed = 0
         self.preview_frame: bytes | None = None
         self.preview_seq = 0
@@ -195,6 +197,7 @@ class LiveFeedWorker:
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE)
                     self.status.state = "akiyor"
+                    self._started_at = time.time()
                     backoff = 5.0
                     assert self._proc.stdout is not None
                     assert self._proc.stderr is not None
@@ -202,7 +205,7 @@ class LiveFeedWorker:
                         self._read_preview(self._proc.stdout),
                         name=f"canli-onizleme-{self.status.name}")
                     try:
-                        stderr = await self._proc.stderr.read()
+                        stderr = await self._drain_stderr(self._proc.stderr)
                         await self._proc.wait()
                     finally:
                         reader.cancel()
@@ -225,6 +228,15 @@ class LiveFeedWorker:
                 with contextlib.suppress(ProcessLookupError):
                     self._proc.kill()
 
+
+    async def _drain_stderr(self, stream: asyncio.StreamReader) -> bytes:
+        tail = b""
+        while True:
+            chunk = await stream.read(4096)
+            if not chunk:
+                return tail
+            tail = (tail + chunk)[-300:]
+            self.status.last_error = tail.decode(errors="replace").strip()
 
     def _closed_segments(self) -> list[Path]:
         segs = sorted(self.dir.glob(SEGMENT_GLOB))
@@ -297,9 +309,20 @@ class LiveFeedWorker:
         self.status.state = "akiyor"
         return True
 
+    def _idle_seconds(self) -> float:
+        newest = max((s.stat().st_mtime for s in self.dir.glob(SEGMENT_GLOB)),
+                     default=self._started_at)
+        return time.time() - newest
+
     def _refresh_lag(self) -> None:
         if self._last_seg_mtime is not None:
             self.status.lag_s = round(time.time() - self._last_seg_mtime, 1)
+        if self.status.state != "akiyor":
+            return
+        idle = self._idle_seconds()
+        if idle > STALL_SEGMENTS * settings.live_segment_seconds:
+            self.status.state = "hata"
+            self.status.last_error = f"akış {idle:.0f} sn'dir segment üretmiyor"
 
     async def _snapshot(self, seg: Path) -> None:
         out = self.dir / "latest.jpg"

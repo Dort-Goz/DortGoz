@@ -6,6 +6,7 @@ import pytest
 
 from dortgoz.config import settings
 from dortgoz.services.live_cctv import (
+    STALL_SEGMENTS,
     LiveFeedWorker,
     load_feeds,
     plan_segments,
@@ -152,3 +153,19 @@ def test_wipe_stale_clears_previous_session_segments(worker):
     worker._wipe_stale()
     assert list(worker.dir.glob("seg_*.mp4")) == []
     assert (worker.dir / "latest.jpg").exists()
+
+
+def test_flowing_feed_without_segments_is_marked_broken(worker):
+    worker.status.state = "akiyor"
+    worker._started_at -= STALL_SEGMENTS * settings.live_segment_seconds + 1
+    worker._refresh_lag()
+    assert worker.status.state == "hata"
+    assert "segment üretmiyor" in worker.status.last_error
+
+
+def test_flowing_feed_with_fresh_segment_stays_healthy(worker):
+    worker.status.state = "akiyor"
+    worker._started_at -= STALL_SEGMENTS * settings.live_segment_seconds + 1
+    _seg(worker, 1000)
+    worker._refresh_lag()
+    assert worker.status.state == "akiyor"

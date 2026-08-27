@@ -3,6 +3,7 @@ from __future__ import annotations
 from .ingest import MotionSample
 
 WINDOW_SECONDS = 30.0
+MIN_TAIL_SECONDS = 8.0
 
 
 def windows(duration: float, length: float = WINDOW_SECONDS) -> list[tuple[float, float]]:
@@ -13,6 +14,8 @@ def windows(duration: float, length: float = WINDOW_SECONDS) -> list[tuple[float
     while start < duration:
         out.append((start, min(start + length, duration)))
         start += length
+    if len(out) > 1 and out[-1][1] - out[-1][0] < MIN_TAIL_SECONDS:
+        out[-2:] = [(out[-2][0], out[-1][1])]
     return out
 
 

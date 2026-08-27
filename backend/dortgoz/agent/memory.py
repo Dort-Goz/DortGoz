@@ -122,6 +122,8 @@ class Ledger:
         was_review_required = inc.needs_review
         previous_review_reason = inc.review_reason
         inc.anomaly_type = review.get("anomaly_type", inc.anomaly_type)
+        if inc.anomaly_type == "normal":
+            inc.risk = "dusuk"
         title_candidate = _title_text(str(review.get("zirve", "")))
         if len(title_candidate) >= 12:
             inc.title = title_candidate

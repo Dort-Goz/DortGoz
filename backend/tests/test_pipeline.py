@@ -82,6 +82,12 @@ def test_windows_cover_duration_without_gaps():
     assert windowing.windows(0.0) == []
 
 
+def test_short_tail_merges_into_previous_window():
+    assert windowing.windows(34.0, 30.0) == [(0.0, 34.0)]
+    assert windowing.windows(64.0, 30.0) == [(0.0, 30.0), (30.0, 64.0)]
+    assert windowing.windows(4.0, 30.0) == [(0.0, 4.0)]
+
+
 def _sample(t: float, activity: float, fg: float = 0.0) -> ingest.MotionSample:
     return ingest.MotionSample(t=t, changed=activity, fg=fg, mad=activity)
 

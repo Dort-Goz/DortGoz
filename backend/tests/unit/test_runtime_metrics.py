@@ -178,12 +178,14 @@ async def test_run_metrics_count_real_skip_rescue_and_two_qwen_calls(
     monkeypatch.setattr(settings, "candidate_screening", True)
     monkeypatch.setattr(settings, "candidate_model_manifest", "fixture-semantic.json")
     monkeypatch.setattr(settings, "detector_enabled", True)
+    monkeypatch.setattr(settings, "motion_gate", 0.5)
 
     async def fake_probe_duration(_path):
         return 90.0
 
     async def fake_motion_profile(_path, _fps):
-        return [MotionSample(t=float(t), changed=1, fg=0, mad=0) for t in range(90)]
+        return [MotionSample(t=float(t), changed=0 if 30 <= t < 60 else 1, fg=0, mad=0)
+                for t in range(90)]
 
     class FakeSiglip:
         model_id = "siglip-fixture"
@@ -219,7 +221,7 @@ async def test_run_metrics_count_real_skip_rescue_and_two_qwen_calls(
     monkeypatch.setattr(
         runner,
         "build_candidate_intervals",
-        lambda *_args, **_kwargs: [SimpleNamespace(start_time=60.0, end_time=90.0)],
+        lambda *_args, **_kwargs: [SimpleNamespace(start_time=30.0, end_time=90.0)],
     )
     monkeypatch.setattr(runner.perception, "scan_window", fake_scan)
     monkeypatch.setattr(runner, "interpret_window", fake_interpret)

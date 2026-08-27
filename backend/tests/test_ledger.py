@@ -182,3 +182,13 @@ def test_title_truncation_cuts_on_a_word_boundary():
     assert opened.title.endswith("…")
     assert not opened.title.rstrip("…").endswith(" ")
     assert long_title.startswith(opened.title.rstrip("… "))
+
+
+def test_review_to_normal_drops_alarm_risk():
+    from dortgoz.agent.memory import Ledger
+    led = Ledger()
+    iid = led.ingest(_serious_report())[0].incident_id
+    up = led.apply_review(iid, {"anomaly_type": "normal", "risk": "orta",
+                                "zirve": "Trafik olağan akıyor", "zirve_t": 6.0,
+                                "baslangic": "b", "sonuc": "s", "belirsizlikler": []})
+    assert up.risk == "dusuk"
