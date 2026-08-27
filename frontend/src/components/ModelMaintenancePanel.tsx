@@ -27,6 +27,7 @@ import type {
   LearningPipelineView,
   PipelineEventItem,
   PipelineModelItem,
+  PipelineStage,
   TrainingJob,
 } from "../types/domain";
 import type { CanonicalEventType } from "../types/events";
@@ -176,6 +177,9 @@ export default function ModelMaintenancePanel({
   }
 
   const attention = firstActionableStage(view.stages);
+  /** Aşama sayısı gerçek birikimi verir; liste uçları sunucuda kırpılıdır. */
+  const stageCount = (name: PipelineStage) =>
+    view.stages.find((item) => item.stage === name)?.count ?? 0;
   const measuring = view.candidates.filter((item) => !item.measured);
   const promotable = view.candidates.filter((item) => item.measured);
   const signed = engineer.trim();
@@ -293,12 +297,12 @@ export default function ModelMaintenancePanel({
           <Section
             title="İnsan kararı bekleyen olaylar"
             note="Eğitim verisi bu kararlardan üretilir; karar verilmeyen olay hiçbir bileşene gitmez."
-            count={view.review_items.length}
+            count={stageCount("review")}
           >
             {view.review_items.length === 0 ? (
               <Empty>İnceleme bekleyen olay yok.</Empty>
             ) : (
-              <List rest={view.review_items.length - LIST_LIMIT}>
+              <List rest={stageCount("review") - LIST_LIMIT}>
                 {view.review_items.slice(0, LIST_LIMIT).map((item) => (
                   <EventCard
                     key={item.event_id}
@@ -314,7 +318,7 @@ export default function ModelMaintenancePanel({
           <Section
             title="Geliştirme izni bekleyen olaylar"
             note="İnsan kararı var, geliştirme kullanımı için ayrı ve adı kayda geçen bir izin bekliyor."
-            count={view.approval_items.length}
+            count={stageCount("approval")}
           >
             {view.approval_items.length === 0 ? (
               <Empty>Onay bekleyen olay yok.</Empty>
@@ -363,7 +367,7 @@ export default function ModelMaintenancePanel({
                       : `Seçilenleri onayla (${selected.length})`}
                   </button>
                 </div>
-                <List rest={view.approval_items.length - LIST_LIMIT}>
+                <List rest={stageCount("approval") - LIST_LIMIT}>
                   {view.approval_items.slice(0, LIST_LIMIT).map((item) => (
                     <EventCard
                       key={item.event_id}
