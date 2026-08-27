@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { severityRank, type AlertCandidate } from "../lib/liveAlerts";
+import { alertLifetimeMs, severityRank, type AlertCandidate } from "../lib/liveAlerts";
 
 export function playChime(): void {
   try {
@@ -73,6 +73,36 @@ export default function LiveAlerts({
   // Bildirimler sağ alt köşeden yükselir; kipler her zaman üstlerinde kalır.
   const [host, setHost] = useState<HTMLElement | null>(null);
   useEffect(() => setHost(document.body), []);
+
+  // Sayacı anahtar başına tutarız: yoklama listeyi tazeledikçe süre sıfırlanmasın.
+  const timersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const dismissRef = useRef(onDismiss);
+  dismissRef.current = onDismiss;
+
+  useEffect(() => {
+    const timers = timersRef.current;
+    const live = new Set(alerts.map((alert) => alert.key));
+    for (const alert of alerts) {
+      if (timers.has(alert.key)) continue;
+      timers.set(alert.key, setTimeout(() => {
+        timers.delete(alert.key);
+        dismissRef.current(alert.key);
+      }, alertLifetimeMs(alert)));
+    }
+    for (const [key, timer] of timers) {
+      if (live.has(key)) continue;
+      clearTimeout(timer);
+      timers.delete(key);
+    }
+  }, [alerts]);
+
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => {
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
 
   if (alerts.length === 0 || !host) return null;
   return createPortal(

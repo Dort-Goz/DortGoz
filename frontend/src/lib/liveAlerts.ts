@@ -24,6 +24,13 @@ export function severityRank(item: AlertCandidate): number {
   return Math.max(RISK_RANK[item.risk] ?? 0, BAND_RANK[item.intervention_band] ?? 0);
 }
 
+/** Bildirim ömrü ağırlıkla uzar: düşük olan hızla çekilir, kritik olan bekler. */
+const LIFETIME_MS = [6_000, 10_000, 20_000, 45_000] as const;
+
+export function alertLifetimeMs(item: AlertCandidate): number {
+  return LIFETIME_MS[severityRank(item)];
+}
+
 export function outranks(candidate: AlertCandidate, watched: AlertCandidate): boolean {
   const gap = severityRank(candidate) - severityRank(watched);
   if (gap !== 0) return gap > 0;

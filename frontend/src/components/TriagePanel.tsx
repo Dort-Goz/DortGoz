@@ -222,6 +222,9 @@ export function PendingCard({
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState("");
+  /** Sunucudan gelmeyen kanıt karesi kocaman siyah bir kutu bırakmasın. */
+  const [brokenFrames, setBrokenFrames] = useState<string[]>([]);
+  const modal = layout === "modal";
 
   const validTimes = start >= 0 && start <= peak && peak <= end;
   const canSubmit = intervention !== ""
@@ -267,17 +270,25 @@ export function PendingCard({
   };
 
   return (
-    <div className="space-y-1.5 rounded-md border border-zinc-800 bg-zinc-950 p-2 text-xs">
+    <div
+      className={modal
+        ? "space-y-2 text-xs"
+        : "space-y-1.5 rounded-md border border-zinc-800 bg-zinc-950 p-2 text-xs"}
+    >
       <div className="flex items-center gap-2">
-        {item.thumbnail && (
+        {item.thumbnail && !modal && (
           <img src={item.thumbnail} alt="" className="h-10 w-14 rounded-sm object-cover" />
         )}
         <div className="min-w-0">
-          <div className="line-clamp-2 font-medium text-zinc-200" title={item.title}>
-            {item.title}
-          </div>
+          {/* Kip başlığı zaten başlığı ve kamerayı yazıyor; burada tekrar etmeyiz. */}
+          {!modal && (
+            <div className="line-clamp-2 font-medium text-zinc-200" title={item.title}>
+              {item.title}
+            </div>
+          )}
           <div className="text-zinc-400">
-            {feedLabel} · video <span className="font-mono">{clock(item.t)}</span> · <span className="font-mono">{wallClock(item.wall)}</span>
+            {!modal && `${feedLabel} · `}
+            video <span className="font-mono">{clock(item.t)}</span> · <span className="font-mono">{wallClock(item.wall)}</span>
           </div>
           {(item.event_start ?? item.clip_start) != null
             && (item.event_end ?? item.clip_end) != null && (
@@ -340,30 +351,48 @@ export function PendingCard({
           <div className="microlabel mb-1">
             Doğrulanmış video kanıtı
           </div>
-          <div className="grid grid-cols-3 gap-1">
-            {selectReviewEvidence(item.evidence_refs, item.event_peak ?? item.t).map((evidence) => (
-              <button
-                key={`${evidence.frame_id}:${evidence.timestamp}`}
-                onClick={() => onSeek?.(item.feed, evidence.timestamp, item.video, item.live)}
-                className="overflow-hidden rounded-sm border border-zinc-800 bg-zinc-950 text-left transition-colors hover:border-sky-700"
-                title={`${clock(evidence.timestamp)} · ${evidence.claim}`}
-              >
-                <img
-                  src={evidenceFrameUrl(item.key, evidence.timestamp)}
-                  alt={`${clock(evidence.timestamp)} kanıt karesi`}
-                  loading="lazy"
-                  className="aspect-video w-full bg-black object-cover"
-                />
-                <div className="px-1 py-0.5">
-                  <div className="font-mono text-[9px] text-sky-300">
-                    {clock(evidence.timestamp)}
+          {/* Sabit genişlikli döşeme: tek kare de kalan boşluğa yayılmaz. */}
+          <div className="flex flex-wrap gap-1.5">
+            {selectReviewEvidence(item.evidence_refs, item.event_peak ?? item.t).map((evidence) => {
+              const frameKey = `${evidence.frame_id}:${evidence.timestamp}`;
+              const seekable = Boolean(onSeek);
+              return (
+                <button
+                  key={frameKey}
+                  type="button"
+                  disabled={!seekable}
+                  onClick={() => onSeek?.(item.feed, evidence.timestamp, item.video, item.live)}
+                  className={`overflow-hidden rounded-sm border border-zinc-800 bg-zinc-950 text-left transition-colors ${
+                    modal ? "w-56" : "w-40"
+                  } ${seekable ? "cursor-pointer hover:border-sky-700" : "cursor-default"}`}
+                  title={`${clock(evidence.timestamp)} · ${evidence.claim}`}
+                >
+                  {brokenFrames.includes(frameKey) ? (
+                    <div className="flex aspect-video w-full items-center justify-center border-b border-dashed border-zinc-800 bg-zinc-900 px-1 text-center text-[9px] text-zinc-600">
+                      kanıt karesi alınamadı
+                    </div>
+                  ) : (
+                    <img
+                      src={evidenceFrameUrl(item.key, evidence.timestamp)}
+                      alt=""
+                      loading="lazy"
+                      onError={() => setBrokenFrames(
+                        (current) => current.includes(frameKey) ? current : [...current, frameKey],
+                      )}
+                      className="aspect-video w-full bg-black object-cover"
+                    />
+                  )}
+                  <div className="px-1 py-0.5">
+                    <div className="font-mono text-[9px] text-sky-300">
+                      {clock(evidence.timestamp)}
+                    </div>
+                    <div className="line-clamp-2 text-[9px] leading-tight text-zinc-400">
+                      {evidence.claim}
+                    </div>
                   </div>
-                  <div className="line-clamp-2 text-[9px] leading-tight text-zinc-400">
-                    {evidence.claim}
-                  </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -386,19 +415,19 @@ export function PendingCard({
         <div className="space-y-1">
           <video
             controls
-            autoPlay={layout === "modal"}
-            muted={layout === "modal"}
+            autoPlay={modal}
+            muted={modal}
             playsInline
             preload="metadata"
             poster={item.media_thumbnail_url ?? undefined}
             src={item.clip_url ?? item.evidence ?? undefined}
-            className={layout === "modal"
+            className={modal
               ? "mx-auto max-h-[46vh] w-full rounded-sm bg-black object-contain"
               : "mx-auto max-h-56 w-full max-w-lg rounded-sm bg-black object-contain"}
           >
             Tarayıcınız olay klibini oynatamıyor.
           </video>
-          {layout === "modal" && (
+          {modal && (
             <div className="flex items-center gap-2 text-[10px] text-zinc-500">
               <span>
                 Canlı yayından kesilmiş olay kaydı
@@ -418,13 +447,13 @@ export function PendingCard({
             </div>
           )}
         </div>
-      ) : layout === "modal" && (
+      ) : modal && (
         <div className="flex h-40 items-center justify-center rounded-sm border border-dashed border-zinc-800 bg-black text-xs text-zinc-500">
           Olay kaydı henüz hazır değil — segment kapanınca kesilir.
         </div>
       )}
       {!verdict ? (
-        <div className="flex gap-1">
+        <div className={`flex gap-1 ${modal ? "mx-auto max-w-md" : ""}`}>
           <button
             onClick={() => setVerdict("anomali")}
             className="btn btn-primary flex-1"

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  alertLifetimeMs,
   outranks,
   severityRank,
   shouldChime,
@@ -48,5 +49,20 @@ describe("canlı anomali bildirimleri", () => {
   test("yalnız kritik seviye sesli uyarı ister", () => {
     expect(shouldChime([item("a", "yuksek", "high", 70)])).toBe(false);
     expect(shouldChime([item("b", "kritik", "urgent", 90)])).toBe(true);
+  });
+
+  test("bildirim ömrü ağırlıkla uzar", () => {
+    const lifetimes = [
+      alertLifetimeMs(item("a", "dusuk")),
+      alertLifetimeMs(item("b", "orta", "review")),
+      alertLifetimeMs(item("c", "yuksek", "high")),
+      alertLifetimeMs(item("d", "kritik", "urgent")),
+    ];
+
+    expect(lifetimes).toEqual([...lifetimes].sort((a, b) => a - b));
+    expect(new Set(lifetimes).size).toBe(4);
+    expect(lifetimes[0]).toBeGreaterThan(0);
+    // Öncelik bandı risk etiketini aşarsa ömür de onunla uzar.
+    expect(alertLifetimeMs(item("e", "dusuk", "urgent", 95))).toBe(lifetimes[3]);
   });
 });
