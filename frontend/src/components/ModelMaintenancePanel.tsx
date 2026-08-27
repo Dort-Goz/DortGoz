@@ -262,11 +262,13 @@ export default function ModelMaintenancePanel({
                         : "border-zinc-800 bg-zinc-900 hover:border-zinc-600"
                   }`}
                 >
-                  <div className={`microlabel ${isActive ? "text-zinc-300" : ""}`}>
-                    {STAGE_TR[name]}
-                  </div>
-                  <div className="font-mono text-lg font-semibold leading-6 text-zinc-100">
-                    {count}
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className={`microlabel ${isActive ? "text-zinc-300" : ""}`}>
+                      {STAGE_TR[name]}
+                    </span>
+                    <span className="font-mono text-lg font-semibold leading-6 text-zinc-100">
+                      {count}
+                    </span>
                   </div>
                   <div className="h-3.5 text-[10px] leading-3.5 text-amber-300">
                     {blocked > 0 ? `${blocked} engelli` : ""}
