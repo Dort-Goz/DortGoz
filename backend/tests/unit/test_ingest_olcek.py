@@ -88,3 +88,38 @@ async def test_kodlayici_yoksa_geri_duser(monkeypatch, kodlayici, beklenen) -> N
     assert secilen[1] == kodlayici
     for bayrak in beklenen:
         assert bayrak in secilen
+
+
+@pytest.mark.asyncio
+async def test_toplu_kare_cikarma_tek_surecte(tmp_path) -> None:
+    """Birden çok kare tek ffmpeg süreciyle, doğru sayıda ve ayrı ayrı gelir."""
+    from dortgoz.pipeline.ingest import grab_frames
+
+    src = _kaynak(tmp_path / "toplu.mp4", 320, 240)
+    kareler = await grab_frames(src, [0.3, 0.9, 1.5], 320)
+    assert len(kareler) == 3
+    for jpeg in kareler.values():
+        assert jpeg.startswith(b"\xff\xd8") and jpeg.endswith(b"\xff\xd9")
+    # testsrc her karede degisir: kareler birbirinden farkli olmali.
+    assert len(set(kareler.values())) == 3
+
+
+@pytest.mark.asyncio
+async def test_toplu_kare_sayi_tutmazsa_bos_doner(tmp_path) -> None:
+    """Sözleşme: sayı tutmazsa boş döner ki çağıran eski yola düşebilsin."""
+    from dortgoz.pipeline.ingest import grab_frames
+
+    src = _kaynak(tmp_path / "kisa.mp4", 320, 240)
+    # Klip 2 sn; 9. saniye hicbir kare vermez.
+    assert await grab_frames(src, [0.5, 9.0], 320) == {}
+
+
+@pytest.mark.asyncio
+async def test_perception_toplu_rgb(tmp_path) -> None:
+    from dortgoz.pipeline import perception
+
+    src = _kaynak(tmp_path / "rgb.mp4", 320, 240)
+    frames = await perception.frames_rgb(src, [0.3, 0.9])
+    assert frames is not None and len(frames) == 2
+    boyut = perception.SIZE * perception.SIZE * 3
+    assert all(len(f) == boyut for f in frames)

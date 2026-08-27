@@ -106,6 +106,18 @@ class Settings(BaseSettings):
 
 
 
+    # ffmpeg çözümlemesini GPU'ya taşır. Ölçüm (2026-08-27, arcpcl, RX 9070 XT):
+    # 1080p önizleme dalı yazılım çözümle %14 çekirdek, VAAPI ile %3; hareket
+    # profili 0.388 -> 0.158 sn.
+    # ⚠ VARSAYILAN KAPALIDIR ve öyle kalmalıdır. g14 dizüstünde (AMD iGPU +
+    # NVIDIA) aynı VAAPI çağrısı ffmpeg'i çözümleme sırasında kilitledi; süreç
+    # SIGTERM'e yanıt vermedi. Yoklama + geri düşme bunu KURTARMAZ, çünkü arıza
+    # biçimi hata değil ASILI KALMAdir. Yalnız ölçülmüş makinede .env ile açın:
+    #   DORTGOZ_HWACCEL=vaapi
+    hwaccel: str = "off"
+    hwaccel_device: str = "/dev/dri/renderD128"
+    # Donanım çözümleme denemesi bu süreyi aşarsa kalıcı olarak yazılıma düşülr.
+    hwaccel_timeout_seconds: float = 20.0
     onnx_device: str = "cpu"
     onnx_providers: str = ""
     onnx_intra_threads: int = 4

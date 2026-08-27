@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import logging
 from dataclasses import dataclass
 from pathlib import Path
+
+from ..config import settings
+
+log = logging.getLogger(__name__)
 
 GRAY_W, GRAY_H = 64, 48
 _FRAME_BYTES = GRAY_W * GRAY_H
@@ -47,6 +52,66 @@ async def probe_duration(video: Path) -> float:
     )
     return float(out.decode().strip())
 
+_hwaccel: list[str] | None = None
+
+
+async def hwaccel_args() -> list[str]:
+    """VAAPI çözümleme argümanları; kullanılamıyorsa boş liste.
+
+    Bir kez arar ve önbelleğe alır. `disable_hwaccel()` çalışma anındaki bir
+    başarısızlıktan sonra kalıcı olarak yazılıma düşürür.
+    """
+    global _hwaccel
+    if _hwaccel is not None:
+        return _hwaccel
+    mode = settings.hwaccel.strip().casefold()
+    # Varsayılan kapalı. "auto" bilerek desteklenmez: bozuk bir VAAPI yığınında
+    # arıza "hata" değil "asılı kalma" olduğu için otomatik seçim güvenli değildir.
+    if mode != "vaapi":
+        _hwaccel = []
+        return _hwaccel
+    device = settings.hwaccel_device.strip()
+    if not device or not Path(device).exists():
+        _hwaccel = []
+        return _hwaccel
+    try:
+        listed = await _run("ffmpeg", "-v", "quiet", "-hwaccels")
+    except (FFmpegError, FileNotFoundError):
+        _hwaccel = []
+        return _hwaccel
+    if b"vaapi" not in listed:
+        _hwaccel = []
+        return _hwaccel
+    _hwaccel = ["-hwaccel", "vaapi", "-hwaccel_device", device]
+    return _hwaccel
+
+
+def disable_hwaccel() -> None:
+    global _hwaccel
+    _hwaccel = []
+
+
+async def _run_decode(head: list[str], tail: list[str]) -> bytes:
+    """Çözümlemeyi donanımda dener, başarısız olursa kalıcı olarak yazılıma düşer.
+
+    Başlığı (`-v error` gibi) ve gerisini (`-i ...`) ayrı alır çünkü `-hwaccel`
+    girdiden ÖNCE gelmelidir. Özel bir süzgeç gerekmez: çıkış biçimi
+    verilmediğinde ffmpeg kareleri sistem belleğine indirir ve mevcut yazılım
+    süzgeçleri aynen çalışır.
+    """
+    hw = await hwaccel_args()
+    if hw:
+        try:
+            return await asyncio.wait_for(
+                _run(*head, *hw, *tail),
+                timeout=settings.hwaccel_timeout_seconds)
+        except (FFmpegError, TimeoutError) as exc:
+            disable_hwaccel()
+            log.warning("donanım çözümleme kapatıldı, yazılıma düşüldü: %s",
+                        f"{type(exc).__name__}: {str(exc)[:140]}")
+    return await _run(*head, *tail)
+
+
 def scale_filter(width: int) -> str:
     """Kaynaktan BÜYÜTME yapmayan tek ölçekleme süzgeci.
 
@@ -84,20 +149,22 @@ async def clip_codec() -> list[str]:
 async def grab_clip(video: Path, start: float, end: float, width: int = 720) -> bytes:
     if start < 0 or end <= start:
         raise ValueError("video aralığı geçersiz")
-    return await _run(
-        "ffmpeg", "-nostdin", "-v", "error", "-ss", f"{start:.3f}", "-to", f"{end:.3f}",
-        "-i", str(video), "-map", "0:v:0", "-an",
-        "-vf", scale_filter(width),
-        *await clip_codec(), "-f", "mp4",
-        "-movflags", "frag_keyframe+empty_moov", "-",
+    return await _run_decode(
+        ["ffmpeg", "-nostdin", "-v", "error"],
+        ["-ss", f"{start:.3f}", "-to", f"{end:.3f}",
+         "-i", str(video), "-map", "0:v:0", "-an",
+         "-vf", scale_filter(width),
+         *await clip_codec(), "-f", "mp4",
+         "-movflags", "frag_keyframe+empty_moov", "-"],
     )
 
 
 async def motion_profile(video: Path, base_fps: float = 1.0) -> list[MotionSample]:
-    raw = await _run(
-        "ffmpeg", "-v", "error", "-i", str(video),
-        "-vf", f"fps={base_fps},scale={GRAY_W}:{GRAY_H}",
-        "-pix_fmt", "gray", "-f", "rawvideo", "-",
+    raw = await _run_decode(
+        ["ffmpeg", "-v", "error"],
+        ["-i", str(video),
+         "-vf", f"fps={base_fps},scale={GRAY_W}:{GRAY_H}",
+         "-pix_fmt", "gray", "-f", "rawvideo", "-"],
     )
     profile: list[MotionSample] = []
     prev: bytes | None = None
@@ -157,6 +224,54 @@ async def _grab_frame_ffmpeg(video: Path, t: float, width: int) -> bytes:
         except FFmpegError as exc:
             last_err = exc
     raise last_err or FFmpegError(f"kare alınamadı: t={t:.3f} {video.name}")
+
+
+JPEG_SOI = b"\xff\xd8"
+JPEG_EOI = b"\xff\xd9"
+
+
+def _split_jpegs(blob: bytes) -> list[bytes]:
+    frames: list[bytes] = []
+    start = blob.find(JPEG_SOI)
+    while start != -1:
+        end = blob.find(JPEG_EOI, start + 2)
+        if end == -1:
+            break
+        frames.append(blob[start:end + 2])
+        start = blob.find(JPEG_SOI, end + 2)
+    return frames
+
+
+async def grab_frames(video: Path, timestamps: list[float],
+                      width: int = 512) -> dict[float, bytes]:
+    """İstenen kareleri TEK ffmpeg süreciyle çıkarır.
+
+    Kare başına ayrı süreç açmak pahalıdır: ölçüm (2026-08-27, 15 sn 720p klip)
+    dört kare için ayrı süreçlerle 0.734 sn CPU, tek süreçle 0.025 sn verdi.
+
+    `select` istenen anın etrafındaki pencereden birden çok kare döndürebilir.
+    Bu yüzden sayı tutmazsa sonuç kullanılmaz; çağıran eski kare-başına yola
+    düşer. Hız için doğruluktan ödün verilmez.
+    """
+    wanted = sorted({round(float(t), 3) for t in timestamps if t >= 0})
+    if not wanted:
+        return {}
+    eps = 0.04
+    expr = "+".join(
+        f"between(t\\,{max(0.0, t - eps):.3f}\\,{t + eps:.3f})" for t in wanted)
+    try:
+        blob = await _run_decode(
+            ["ffmpeg", "-nostdin", "-v", "error"],
+            ["-i", str(video),
+             "-vf", f"select='{expr}',{scale_filter(width)}",
+             "-fps_mode", "passthrough", "-f", "image2pipe", "-c:v", "mjpeg", "-"],
+        )
+    except FFmpegError:
+        return {}
+    frames = _split_jpegs(blob)
+    if len(frames) != len(wanted):
+        return {}
+    return dict(zip(wanted, frames))
 
 
 _frame_tasks: dict[tuple[str, float, int], asyncio.Task] = {}

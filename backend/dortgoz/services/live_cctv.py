@@ -106,6 +106,8 @@ class LiveFeedWorker:
         self.preview_frame: bytes | None = None
         self.preview_seq = 0
         self._preview_event = asyncio.Event()
+        # None = henüz bakılmadı. Donanım çözümleme erken düşerse kalıcı kapanır.
+        self._hw_enabled: bool | None = None
 
 
     def start(self) -> None:
@@ -133,17 +135,31 @@ class LiveFeedWorker:
                 await t
 
 
-    def _ffmpeg_cmd(self) -> list[str]:
-        cmd = ["ffmpeg", "-nostdin", "-loglevel", "error",
+    def _ffmpeg_cmd(self, hw: bool = False) -> list[str]:
+        # Önizleme dalı akışın TAMAMINI çözer; segmentleme (`-c:v copy`) bedavadır.
+        # Ölçüm (2026-08-27, 1080p): yazılım çözümle %14 çekirdek, VAAPI ile %3.
+        # ⚠ Önizleme fps'ini düşürmek İŞE YARAMAZ: 1 fps de 4 fps de aynı maliyet,
+        # çünkü her kare yine çözülüyor. Maliyet çözümlemede, JPEG kodlamada değil.
+        pre = ["ffmpeg", "-nostdin", "-loglevel", "error"]
+        if hw:
+            pre += ["-hwaccel", "vaapi",
+                    "-hwaccel_device", settings.hwaccel_device,
+                    "-hwaccel_output_format", "vaapi"]
+        cmd = [*pre,
                "-i", self.status.url, "-an",
                "-map", "0:v:0", "-c:v", "copy",
                "-f", "segment", "-segment_time", str(settings.live_segment_seconds),
                "-reset_timestamps", "1", "-strftime", "1",
                str(self.dir / "seg_%s.mp4")]
         if settings.live_preview:
-            cmd += ["-map", "0:v:0", "-c:v", "mjpeg",
-                    "-vf", f"fps={settings.live_preview_fps},"
-                           f"scale={settings.live_preview_width}:-2",
+            if hw:
+                vf = (f"fps={settings.live_preview_fps},"
+                      f"scale_vaapi=w={settings.live_preview_width}:h=-2:format=nv12,"
+                      "hwdownload,format=nv12")
+            else:
+                vf = (f"fps={settings.live_preview_fps},"
+                      f"scale={settings.live_preview_width}:-2")
+            cmd += ["-map", "0:v:0", "-vf", vf, "-c:v", "mjpeg",
                     "-q:v", str(settings.live_preview_quality),
                     "-f", "image2pipe", "-"]
         return cmd
@@ -196,8 +212,11 @@ class LiveFeedWorker:
         try:
             while self.running:
                 try:
+                    if self._hw_enabled is None:
+                        from ..pipeline.ingest import hwaccel_args
+                        self._hw_enabled = bool(await hwaccel_args())
                     self._proc = await asyncio.create_subprocess_exec(
-                        *self._ffmpeg_cmd(),
+                        *self._ffmpeg_cmd(hw=self._hw_enabled),
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE)
                     self.status.state = "akiyor"
@@ -221,6 +240,14 @@ class LiveFeedWorker:
                     self.status.state = "hata"
                     self.status.last_error = tail or f"ffmpeg çıktı ({self._proc.returncode})"
                     log.warning("canlı %s: çekici düştü: %s", self.status.name, tail)
+                    # Donanım yolu erken düştüyse bir daha denenmez: bozuk bir VAAPI
+                    # yığınında her yeniden başlatma aynı yerde takılır.
+                    lived = time.time() - self._started_at
+                    if self._hw_enabled and lived < 20.0:
+                        self._hw_enabled = False
+                        log.warning("canlı %s: donanım çözümleme kapatıldı "
+                                    "(%.1f sn'de düştü), yazılıma dönüldü",
+                                    self.status.name, lived)
                 except FileNotFoundError:
                     self.status.state = "hata"
                     self.status.last_error = "ffmpeg bulunamadı"
