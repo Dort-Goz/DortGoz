@@ -62,7 +62,7 @@ describe("olay inceleme merkezi", () => {
     expect(app).not.toContain('layout="workspace"');
     expect(app).not.toContain("triagePending");
     expect(console_).toContain("setStatus");
-    expect(panel).toContain("Doğrulanmış video kanıtı");
+    expect(panel).toContain("Kanıt karesi");
     expect(panel).toContain("Operatör notu");
     expect(panel).toContain("Güvenli yerel taslak önerileri");
     expect(panel).toContain("if (!r.ok) throw new Error()");

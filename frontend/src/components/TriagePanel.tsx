@@ -31,6 +31,8 @@ interface TriageItem {
   evidence: string | null;
   evidence_refs: EventEvidenceRef[];
   sample: boolean;
+  /** "model" = sistem tespiti, "operator" = elle bildirilen kaçan olay. */
+  source: string;
   needs_review: boolean;
   review_reason: string;
   verdict: string;
@@ -116,7 +118,7 @@ export function humanizeReason(reason: string): string[] {
     .map((part) => (/[.!?…]$/.test(part) ? part : `${part}.`));
 }
 
-const CATEGORY_TR: Record<string, string> = {
+export const CATEGORY_TR: Record<string, string> = {
   kavga: "Kavga", saldiri: "Saldırı", hirsizlik: "Hırsızlık",
   silahli_olay: "Silahlı olay", yangin: "Yangın", patlama: "Patlama",
   arac_kazasi: "Araç kazası", vandalizm: "Vandalizm",
@@ -283,18 +285,23 @@ export function PendingCard({
               {item.title}
             </div>
           )}
-          <div className="text-zinc-400">
-            {!modal && `${feedLabel} · `}
-            video <span className="font-mono">{clock(item.t)}</span> · <span className="font-mono">{wallClock(item.wall)}</span>
-          </div>
+          {/* Kip başlığı kamerayı ve duvar saatini zaten yazıyor. */}
+          {!modal && (
+            <div className="text-zinc-400">
+              {feedLabel} · video <span className="font-mono">{clock(item.t)}</span> · <span className="font-mono">{wallClock(item.wall)}</span>
+            </div>
+          )}
           {(item.event_start ?? item.clip_start) != null
             && (item.event_end ?? item.clip_end) != null && (
             <div className="text-zinc-500">
-              olay penceresi{" "}
+              olay{" "}
               <span className="font-mono text-sky-300">
                 {clock((item.event_start ?? item.clip_start)!)}
                 –{clock((item.event_end ?? item.clip_end)!)}
               </span>
+              {modal && (
+                <> · zirve <span className="font-mono text-zinc-400">{clock(item.t)}</span></>
+              )}
             </div>
           )}
           <div className="mt-1 flex flex-wrap gap-1">
@@ -338,9 +345,7 @@ export function PendingCard({
 
   const evidenceBlock = (item.evidence_refs ?? []).length > 0 && (
         <div>
-          <div className="microlabel mb-1">
-            Doğrulanmış video kanıtı
-          </div>
+          <div className="microlabel mb-1">Kanıt karesi</div>
           {/* Sabit genişlikli döşeme: tek kare de kalan boşluğa yayılmaz. */}
           <div className="flex flex-wrap gap-1.5">
             {selectReviewEvidence(item.evidence_refs, item.event_peak ?? item.t).map((evidence) => {
@@ -398,12 +403,6 @@ export function PendingCard({
         </div>
   );
 
-  const priorityBlock = item.intervention_reasons.length > 0 && (
-        <div className="text-zinc-500" title={item.intervention_reasons.join("\n")}>
-          Öncelik: {item.intervention_reasons.join(" · ")}
-        </div>
-  );
-
   const mediaBlock = (item.clip_url || item.evidence) ? (
         <div className="space-y-1">
           <video
@@ -422,12 +421,11 @@ export function PendingCard({
           </video>
           {modal && (
             <div className="flex items-center gap-2 text-[10px] text-zinc-500">
-              <span>
-                Canlı yayından kesilmiş olay kaydı
-                {item.clip_start != null && item.clip_end != null
-                  ? ` · ${clock(item.clip_start)}–${clock(item.clip_end)}`
-                  : ""}
-              </span>
+              {item.clip_start != null && item.clip_end != null && (
+                <span className="font-mono">
+                  kayıt {clock(item.clip_start)}–{clock(item.clip_end)}
+                </span>
+              )}
               <span className="flex-1" />
               <a
                 href={item.clip_url ?? item.evidence ?? "#"}
@@ -595,7 +593,6 @@ export function PendingCard({
             {headerBlock}
             {evidenceBlock}
             {reasonBlock}
-            {priorityBlock}
           </div>
         </div>
         {decisionBlock}
@@ -631,7 +628,6 @@ export function PendingCard({
       {headerBlock}
       {evidenceBlock}
       {reasonBlock}
-      {priorityBlock}
       {mediaBlock}
       {decisionBlock}
     </div>
@@ -968,8 +964,20 @@ export default function TriagePanel({
               <span className={`chip ml-1 ${PRIORITY_CLS[i.intervention_band]}`}>
                 <span className="font-mono">{i.intervention_score}</span> · {PRIORITY_TR[i.intervention_band]}
               </span>
+              {i.source === "operator" && (
+                <span
+                  className="chip ml-1 border border-sky-900 bg-sky-950/40 text-sky-300"
+                  title="Sistemin kaçırdığı, operatörün gözle bildirdiği olay"
+                >
+                  ⚑ operatör
+                </span>
+              )}
               <span className="text-zinc-400">
-                {" "}· {feedNames[i.feed] || i.feed || "ana akış"} · <span className="font-mono">{clock(i.t)}</span>
+                {" "}· {feedNames[i.feed] || i.feed || "ana akış"}
+                {/* Segmente bağlanamayan canlı bildirimde t epoch'tır; mm:ss yalan olur. */}
+                {!(i.live && i.source === "operator") && (
+                  <> · <span className="font-mono">{clock(i.t)}</span></>
+                )}
                 {i.decided_wall && <span className="font-mono"> · {wallClock(i.decided_wall)}</span>}
               </span>
               <div className="truncate text-zinc-300">{i.title}</div>
