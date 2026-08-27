@@ -139,4 +139,22 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(detail).toContain("presentation.technicalType");
     expect(detail).not.toContain("Kayma gözcüsü");
   });
+
+  test("olay ayrıntısını tek karar ve tek onay akışına indirir", () => {
+    const detail = readFileSync(
+      new URL("../src/components/TrainingReviewPanel.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(detail).toContain("Bu olay doğru mu?");
+    expect(detail).toContain("Evet, doğru");
+    expect(detail).toContain("Hayır, sorun yok");
+    expect(detail).toContain("Sistem bu olaydan öğrensin mi?");
+    expect(detail).toContain("Onay ver ve kapat");
+    expect(detail).toContain("approved_uses: recommendedApprovalUses");
+    expect(detail).toContain("Diğer bilgiler");
+    expect(detail).toContain("Geçmiş kararlar ve geliştirme ekibi araçları bu alandadır.");
+    expect(detail).not.toContain("Olay İnceleme ve Geliştirme Hazırlığı");
+    expect(detail).not.toContain("Sol taraftaki adımları tamamlayın");
+  });
 });

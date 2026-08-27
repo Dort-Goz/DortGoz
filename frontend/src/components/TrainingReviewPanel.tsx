@@ -309,7 +309,7 @@ export default function TrainingReviewPanel({
           .filter((route) => route.recommended && route.use !== "camera_rule")
           .map((route) => route.use),
     );
-    setReviewOpen(latest === null);
+    setReviewOpen(false);
     setReviewVerdict(latest?.decision === "reject" ? "sorun_degil" : "anomali");
     const eventType = latest?.event_type ?? eventResult.event_type;
     setReviewEventType(
@@ -373,8 +373,14 @@ export default function TrainingReviewPanel({
     : null;
   const approvalNeedsRenewal = latestApproval?.status === "approved"
     && latestApproval.review_id !== latestReview?.review_id;
+  const recommendedApprovalUses = (learningPlan?.routes ?? [])
+    .filter((route) => route.recommended && route.use !== "camera_rule")
+    .map((route) => route.use);
 
-  const run = async (operation: () => Promise<unknown>, success: string) => {
+  const run = async (
+    operation: () => Promise<unknown>,
+    success: string,
+  ): Promise<boolean> => {
     setBusy(true);
     setError("");
     setNotice("");
@@ -382,8 +388,10 @@ export default function TrainingReviewPanel({
       await operation();
       await load();
       setNotice(success);
+      return true;
     } catch (reason) {
       setError(messageOf(reason));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -399,50 +407,142 @@ export default function TrainingReviewPanel({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 shadow-2xl">
-        <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-zinc-800 px-4 py-2.5">
+        <header className="flex shrink-0 items-center gap-3 border-b border-zinc-800 px-4 py-3">
           <div>
-            <h2 className="text-sm font-semibold text-zinc-200">Olay İnceleme ve Geliştirme Hazırlığı</h2>
-            <p className="font-mono text-[10px] text-zinc-500">{eventId}</p>
+            <h2 className="text-sm font-semibold text-zinc-100">Olayı İncele</h2>
+            <p className="mt-0.5 text-[10px] text-zinc-500">
+              Görüntüyü kontrol edin. Kararınızı verin.
+            </p>
           </div>
-          <div className="ml-auto flex items-center gap-2 text-xs">
-            <label className="microlabel">İnceleyen</label>
-            <input
-              value={reviewer}
-              onChange={(event) => setReviewer(event.target.value)}
-              className="field w-36"
-            />
+          <div className="ml-auto">
             <button onClick={onClose} className="btn btn-ghost">
               Kapat ×
             </button>
           </div>
         </header>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[21rem_minmax(0,1fr)] lg:overflow-hidden">
-          <aside className="border-b border-zinc-800 p-2.5 text-xs lg:overflow-y-auto lg:border-b-0 lg:border-r">
-            <div className="mb-2.5 space-y-1 rounded-md border border-zinc-800 bg-zinc-900 p-2.5">
-              <div className="flex items-center gap-1.5 font-medium text-zinc-200">
-                <span className="chip border border-zinc-700 text-zinc-300 font-mono">1</span>
-                Olay incelemesi
-              </div>
-              <div className={latestReview ? "text-emerald-400" : "text-amber-400"}>
-                {latestReview ? `Hazır · revizyon ${latestReview.revision}` : "İnsan kararı gerekli"}
-              </div>
+        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[23rem_minmax(0,1fr)] lg:overflow-hidden">
+          <aside className="border-b border-zinc-800 p-3 text-xs lg:overflow-y-auto lg:border-b-0 lg:border-r">
+            <section className="mb-3 rounded-md bg-zinc-900 p-3">
+              <h3 className="font-medium text-zinc-100">Olay sonucu</h3>
               {canonicalEvent && (
-                <div className="text-zinc-500">
+                <p className="mt-1 text-zinc-400">
                   {CANONICAL_TYPE_TR[canonicalEvent.event_type as CanonicalEventType] ?? canonicalEvent.event_type}
-                  {latestReview?.risk_level ? ` · ${RISK_TR[latestReview.risk_level as Risk] ?? latestReview.risk_level}` : ""}
+                  {latestReview?.risk_level ? ` · ${RISK_TR[latestReview.risk_level as Risk] ?? latestReview.risk_level} önem` : ""}
+                </p>
+              )}
+              {latestReview ? (
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <span className="font-medium text-emerald-400">✓ İnceleme tamamlandı</span>
+                  {!reviewOpen && (
+                    <button
+                      type="button"
+                      onClick={() => setReviewOpen(true)}
+                      className="text-zinc-400 underline decoration-zinc-700 underline-offset-2 hover:text-zinc-200"
+                    >
+                      Kararı değiştir
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  <p className="font-medium text-zinc-200">Bu olay doğru mu?</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      disabled={busy || !reviewerName}
+                      onClick={() => run(
+                        () => saveEventReview(eventId, {
+                          decision: "confirm",
+                          reviewer: reviewerName,
+                          note: "Operatör sistem sonucunu doğru olarak onayladı.",
+                        }),
+                        "Olay doğru olarak onaylandı.",
+                      )}
+                      className="btn btn-primary h-9"
+                    >
+                      Evet, doğru
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy || !reviewerName}
+                      onClick={() => run(
+                        () => saveEventReview(eventId, {
+                          decision: "reject",
+                          reviewer: reviewerName,
+                          note: "Operatör kaydı sorun değil olarak işaretledi.",
+                          false_alarm_reason: "other",
+                          intervention_required: false,
+                        }),
+                        "Kayıt sorun değil olarak işaretlendi.",
+                      )}
+                      className="btn btn-outline h-9"
+                    >
+                      Hayır, sorun yok
+                    </button>
+                  </div>
+                  {!reviewOpen && (
+                    <button
+                      type="button"
+                      onClick={() => setReviewOpen(true)}
+                      className="w-full py-1 text-center text-zinc-500 underline decoration-zinc-800 underline-offset-2 hover:text-zinc-300"
+                    >
+                      Ayrıntılı karar gir
+                    </button>
+                  )}
                 </div>
               )}
-              {latestReview && !reviewOpen && (
-                <button
-                  type="button"
-                  onClick={() => setReviewOpen(true)}
-                  className="btn btn-outline-warn mt-1.5 w-full"
-                >
-                  Kararı düzelt
-                </button>
-              )}
-            </div>
+            </section>
+
+            {latestReview && recommendedApprovalUses.length > 0 && (
+              <section className={`mb-3 rounded-md p-3 ${
+                activeDevelopmentApproval
+                  ? "border border-emerald-900 bg-emerald-950/30"
+                  : "border border-sky-900 bg-sky-950/20"
+              }`}>
+                <h3 className="text-sm font-semibold text-zinc-100">
+                  {activeDevelopmentApproval
+                    ? "Onay verildi"
+                    : approvalNeedsRenewal
+                      ? "Yeniden onay verilsin mi?"
+                      : "Sistem bu olaydan öğrensin mi?"}
+                </h3>
+                <p className="mt-1.5 leading-relaxed text-zinc-400">
+                  {activeDevelopmentApproval
+                    ? "Bu kayıt geliştirme hazırlığına alındı."
+                    : "Onay verirseniz bu kayıt, sistemi geliştirmek için hazırlanır."}
+                </p>
+                <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">
+                  Canlı sistem otomatik değişmez. Otomatik eğitim başlamaz.
+                </p>
+                {activeDevelopmentApproval ? (
+                  <button type="button" onClick={onClose} className="btn btn-primary mt-3 h-9 w-full">
+                    Tamam, kapat
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busy || !reviewerName}
+                    onClick={async () => {
+                      const completed = await run(
+                        () => approveEventForLearning(eventId, {
+                          review_id: latestReview.review_id,
+                          approved_uses: recommendedApprovalUses,
+                          reviewer: reviewerName,
+                          note: "Operatör bu olayın sistem geliştirme hazırlığında kullanılmasını onayladı.",
+                          ...(latestApproval ? { supersedes_approval_id: latestApproval.approval_id } : {}),
+                        }),
+                        "Geliştirme onayı kaydedildi.",
+                      );
+                      if (completed) onClose();
+                    }}
+                    className="btn btn-accent mt-3 h-9 w-full text-sm"
+                  >
+                    Onay ver ve kapat
+                  </button>
+                )}
+              </section>
+            )}
 
             {reviewOpen && canonicalEvent && (
               <div className="mb-2.5 space-y-2 rounded-md border border-amber-900 bg-amber-950 p-2.5">
@@ -450,15 +550,13 @@ export default function TrainingReviewPanel({
                   <p className="text-amber-200">
                     {latestReview ? "Yeni bir karar revizyonu ekleyin." : "Model sonucunu doğrulayın."}
                   </p>
-                  {latestReview && (
-                    <button
-                      type="button"
-                      onClick={() => setReviewOpen(false)}
-                      className="text-zinc-500 transition-colors hover:text-zinc-200"
-                    >
-                      Vazgeç ×
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setReviewOpen(false)}
+                    className="text-zinc-500 transition-colors hover:text-zinc-200"
+                  >
+                    Vazgeç ×
+                  </button>
                 </div>
                 <label className="block text-zinc-400">
                   Karar
@@ -586,6 +684,24 @@ export default function TrainingReviewPanel({
                 )}
               </div>
             )}
+
+            <details className="rounded-md border border-zinc-800 bg-zinc-950 p-2.5">
+              <summary className="cursor-pointer select-none font-medium text-zinc-400 hover:text-zinc-200">
+                Diğer bilgiler
+              </summary>
+              <div className="mt-3 space-y-2.5">
+                <p className="text-[10px] leading-relaxed text-zinc-600">
+                  Geçmiş kararlar ve geliştirme ekibi araçları bu alandadır.
+                </p>
+                <label className="block text-zinc-500">
+                  İşlemi yapan
+                  <input
+                    value={reviewer}
+                    onChange={(event) => setReviewer(event.target.value)}
+                    className="field mt-1 w-full"
+                  />
+                </label>
+                <p className="break-all font-mono text-[9px] text-zinc-700">Olay kimliği: {eventId}</p>
 
             {reviews.length > 0 && (
               <details className="mb-2.5 rounded-md border border-zinc-800 bg-zinc-950 p-2">
@@ -874,6 +990,8 @@ export default function TrainingReviewPanel({
                 ))}
               </div>
             </div>
+              </div>
+            </details>
           </aside>
 
           <main className="min-h-0 overflow-y-auto p-4">
@@ -905,11 +1023,6 @@ export default function TrainingReviewPanel({
                   Tarayıcınız olay klibini oynatamıyor.
                 </video>
               </section>
-            )}
-            {!selected && (
-              <div className="flex h-full min-h-72 items-center justify-center text-sm text-zinc-600">
-                Sol taraftaki adımları tamamlayın. Hazırlanan kare burada açılır.
-              </div>
             )}
             {selected && (
               <div className="mx-auto max-w-4xl space-y-3">
