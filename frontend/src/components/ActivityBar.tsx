@@ -107,7 +107,7 @@ function ActivityBar({ strips, height = "h-2.5" }: {
 
   return (
     <div
-      className={`flex w-full ${height} overflow-hidden rounded-[2px] bg-zinc-950`}
+      className={`flex w-full ${height} overflow-hidden bg-zinc-950`}
       title={`Son ${ACTIVITY_WINDOW_SECONDS / 60} dakika · eşiği geçen ${moving} kare`
         + (pending > 0 ? ` · ${pending} sn çözümlenmeyi bekliyor` : "")}
     >

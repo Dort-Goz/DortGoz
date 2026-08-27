@@ -61,7 +61,7 @@ function ChatPanel({
   };
 
   return (
-    <div className="panel h-full">
+    <div className="panel panel-accent h-full">
       <div className="panel-title flex items-center gap-2">
         <span>Operatör Sohbeti</span>
         {questionSet && (
@@ -76,7 +76,7 @@ function ChatPanel({
                 : "border-zinc-700 text-zinc-300 hover:border-sky-800 hover:text-sky-200"
             }`}
           >
-            ✦ Olayı aydınlat
+            Olayı aydınlat
           </button>
         )}
         {contextLabel && (
@@ -94,10 +94,10 @@ function ChatPanel({
         {messages.map((m, i) => (
           <div
             key={i}
-            className={`max-w-[85%] rounded-md px-2.5 py-1.5 text-xs leading-relaxed ${
+            className={`border-l-2 px-2.5 py-1.5 text-xs leading-relaxed ${
               m.role === "operator"
-                ? "ml-auto whitespace-pre-wrap bg-sky-950 text-sky-100"
-                : "bg-zinc-800 text-zinc-200"
+                ? "whitespace-pre-wrap border-sky-600 bg-sky-950/50 text-sky-100"
+                : "border-zinc-600 bg-zinc-900/70 text-zinc-200"
             }`}
           >
             {m.role === "agent" ? <ChatText text={m.text} /> : m.text}

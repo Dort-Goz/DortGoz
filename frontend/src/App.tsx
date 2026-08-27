@@ -389,7 +389,7 @@ export default function App() {
                 history.replaceState(null, "",
                   value === "live" ? "#canli" : value === "review" ? "#inceleme" : "#");
               }}
-              className={`h-full rounded-[3px] px-2.5 transition-colors ${
+              className={`h-full px-2.5 transition-colors ${
                 workspace === value
                   ? "bg-zinc-800 font-medium text-zinc-100"
                   : "text-zinc-500 hover:text-zinc-200"
@@ -644,7 +644,7 @@ export default function App() {
       {workspace === "analysis" && (
       <div className="flex min-h-0 flex-1 gap-1.5 p-1.5">
       <FeedStrip feeds={analysisFeeds} active={analysisActive} onSelect={selectFeed} />
-      <div className="grid min-h-0 flex-1 grid-cols-6 grid-rows-[minmax(0,3fr)_minmax(0,2fr)] gap-1.5">
+      <div className="grid min-h-0 flex-1 grid-cols-12 grid-rows-[minmax(0,3fr)_minmax(0,2fr)] gap-1.5">
         <div className="col-span-4 min-h-0">
           <VideoPanel
             highlight={feed.highlight}
@@ -654,20 +654,14 @@ export default function App() {
             feed={Object.keys(analysisFeeds).length >= 2 ? analysisActive : null}
           />
         </div>
-        <div className="col-span-2 min-h-0">
-          <Timeline
-            incidents={feed.incidents}
-            reports={feed.reports}
-            highlightId={feed.highlight?.incident_id}
-            reportsPulse={feed.reportsPulse}
-            decided={decided}
-            onSelect={selectIncident}
+        <div className="col-span-4 min-h-0">
+          <ActionLog
+            requests={state.actuatorRequests}
+            results={state.actuatorResults}
+            onRespond={send.actuator}
           />
         </div>
-        <div className="col-span-2 min-h-0">
-          <AgentTrace entries={feed.trace} />
-        </div>
-        <div className="col-span-2 min-h-0">
+        <div className="col-span-4 row-span-2 min-h-0">
           <ChatPanel
             messages={state.chat}
             onSend={send.chat}
@@ -677,11 +671,17 @@ export default function App() {
             }`}
           />
         </div>
-        <div className="col-span-2 min-h-0">
-          <ActionLog
-            requests={state.actuatorRequests}
-            results={state.actuatorResults}
-            onRespond={send.actuator}
+        <div className="col-span-4 min-h-0">
+          <AgentTrace entries={feed.trace} />
+        </div>
+        <div className="col-span-4 min-h-0">
+          <Timeline
+            incidents={feed.incidents}
+            reports={feed.reports}
+            highlightId={feed.highlight?.incident_id}
+            reportsPulse={feed.reportsPulse}
+            decided={decided}
+            onSelect={selectIncident}
           />
         </div>
       </div>
@@ -702,7 +702,7 @@ export default function App() {
                 key={value}
                 type="button"
                 onClick={() => setReviewTab(value)}
-                className={`h-full rounded-[3px] px-2.5 transition-colors ${
+                className={`h-full px-2.5 transition-colors ${
                   reviewTab === value
                     ? "bg-zinc-800 font-medium text-zinc-100"
                     : "text-zinc-500 hover:text-zinc-200"
