@@ -30,6 +30,7 @@ from ..events import (
     WindowSignals,
 )
 from ..services import escalation_policy, exemplar_bank
+from ..services.live_clip import segment_start_epoch
 from ..services.runtime_metrics import CanonicalRunMetrics
 from ..services.runtime_policy import decide_runtime_policy
 from ..services.runtime_postprocess import RuntimeEvidenceScope, postprocess_finalized_report
@@ -475,6 +476,7 @@ async def run_video(
     try:
         _raise_if_stop_requested(stop_probe)
         path = resolve_source(video, source_path)
+        segment_epoch = segment_start_epoch(path) if live else None
 
         custom = " · özel istem" if (system_prompt or task_prompt) else ""
         await rec.emit(RunStatus(run_id=run_id, state="processing", video=video,
@@ -655,6 +657,7 @@ async def run_video(
                           else "aday-aralık dışı (screening)")
                 await rec.emit(ActivityStrip(
                     window_start=start, window_end=end, gate=gate, peak=peak,
+                    content_start=(segment_epoch + start) if segment_epoch else 0.0,
                     status="sakin" if gated else "eleme",
                     levels=windowing.activity_levels(profile, start, end, gate),
                 ))
@@ -930,6 +933,7 @@ async def run_video(
                 )
                 await rec.emit(ActivityStrip(
                     window_start=start, window_end=end, gate=gate, peak=peak,
+                    content_start=(segment_epoch + start) if segment_epoch else 0.0,
                     status=(
                         "anomali"
                         if worst is not None and RISK_ORDER.index(worst) >= RISK_ORDER.index("orta")

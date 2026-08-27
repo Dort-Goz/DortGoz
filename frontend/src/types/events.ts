@@ -48,6 +48,7 @@ export interface ActivityStrip {
   window_start: number;
   window_end: number;
   wall_end: number;
+  content_start?: number;
   gate: number;
   peak: number;
   status: ActivityStatus;
