@@ -87,6 +87,47 @@ describe("7/24 dayanıklılık: state sınırları", () => {
     expect(state.feeds["KAM-1"].reports).toEqual([]);
   });
 
+  test("canlı segment değişimi etkinlik şeridini sıfırlamaz", () => {
+    const strip = (i: number): Event => ({
+      seq: i, ts: i, feed: "KAM-1", live: true,
+      payload: {
+        type: "activity_strip",
+        window_start: i, window_end: i + 1,
+        wall_end: Date.now() / 1000,
+        content_start: 0,
+        status: "hareket",
+        levels: [1],
+      },
+    } as unknown as Event);
+    const segment = (i: number, runId: string): Event => ({
+      seq: i, ts: i, feed: "KAM-1", live: true,
+      payload: {
+        type: "run_status", run_id: runId, state: "processing",
+        progress: 0, detail: "segment", video: "",
+      },
+    } as Event);
+
+    let state = consoleReducer(initialState, { kind: "event", event: segment(1, "canli-KAM-1-0001") });
+    state = consoleReducer(state, { kind: "event", event: strip(2) });
+    state = consoleReducer(state, { kind: "event", event: strip(3) });
+    expect(state.feeds["KAM-1"].activity.length).toBe(2);
+
+    // Sonraki segment yeni bir run_id taşır; şerit yine de birikmeye devam eder.
+    state = consoleReducer(state, { kind: "event", event: segment(4, "canli-KAM-1-0002") });
+    expect(state.feeds["KAM-1"].activity.length).toBe(2);
+    state = consoleReducer(state, { kind: "event", event: strip(5) });
+    expect(state.feeds["KAM-1"].activity.length).toBe(3);
+
+    // Dosya analizinde yeni koşu hâlâ tertemiz başlar.
+    const fileStrip = { ...strip(6), live: false } as Event;
+    let file = consoleReducer(initialState, { kind: "event", event: fileStrip });
+    file = consoleReducer(file, {
+      kind: "event",
+      event: { ...segment(7, "run-2"), live: false } as Event,
+    });
+    expect(file.feeds["KAM-1"].activity).toEqual([]);
+  });
+
   test("yeni analiz koşusu eski video sohbetini temizler", () => {
     let state = consoleReducer(initialState, {
       kind: "event",

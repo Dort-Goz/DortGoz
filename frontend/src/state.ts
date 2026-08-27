@@ -290,7 +290,15 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
       const next = withFeed(state, feed, live, (f) => {
         const newRun = p.run_id !== "-" && p.run_id !== f.runStatus?.run_id;
         if (newRun) {
-          return { ...emptyFeed, live, video: p.video || null, runStatus: p };
+          // Canlıda her segment ayrı bir koşudur. Etkinlik şeridi akışın
+          // sürekli geçmişidir; segment sınırında sıfırlanmaz.
+          return {
+            ...emptyFeed,
+            live,
+            video: p.video || null,
+            runStatus: p,
+            activity: live ? f.activity : [],
+          };
         }
         return { ...f, runStatus: p, video: f.video ?? (p.video || null) };
       });
