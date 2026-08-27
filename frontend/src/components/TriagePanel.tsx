@@ -225,6 +225,8 @@ export function PendingCard({
   /** Sunucudan gelmeyen kanıt karesi kocaman siyah bir kutu bırakmasın. */
   const [brokenFrames, setBrokenFrames] = useState<string[]>([]);
   const modal = layout === "modal";
+  /** Ayrıntı kipi varsa kart yalnız özettir; her şey kipte açılır. */
+  const summary = Boolean(onOpen) && !modal;
 
   const validTimes = start >= 0 && start <= peak && peak <= end;
   const canSubmit = intervention !== ""
@@ -269,12 +271,7 @@ export function PendingCard({
     }
   };
 
-  return (
-    <div
-      className={modal
-        ? "space-y-2 text-xs"
-        : "space-y-1.5 rounded-md border border-zinc-800 bg-zinc-950 p-2 text-xs"}
-    >
+  const headerBlock = (
       <div className="flex items-center gap-2">
         {item.thumbnail && !modal && (
           <img src={item.thumbnail} alt="" className="h-10 w-14 rounded-sm object-cover" />
@@ -327,16 +324,7 @@ export function PendingCard({
             )}
           </div>
         </div>
-        {onOpen && layout === "card" && (
-          <button
-            onClick={(clicked) => { clicked.stopPropagation(); onOpen(item); }}
-            className="btn btn-primary ml-auto h-6 shrink-0 px-2 text-[10px]"
-            title="Olay klibini ve raporunu büyük ekranda aç"
-          >
-            ▶ İncele
-          </button>
-        )}
-        {onSeek && item.video && !item.live && layout === "card" && !onOpen && (
+        {onSeek && item.video && !item.live && !modal && !onOpen && (
           <button
             onClick={() => onSeek(item.feed, item.t, item.video, item.live)}
             className="btn btn-outline-accent ml-auto h-6 shrink-0 px-1.5 text-[10px]"
@@ -346,7 +334,9 @@ export function PendingCard({
           </button>
         )}
       </div>
-      {(item.evidence_refs ?? []).length > 0 && (
+  );
+
+  const evidenceBlock = (item.evidence_refs ?? []).length > 0 && (
         <div>
           <div className="microlabel mb-1">
             Doğrulanmış video kanıtı
@@ -395,8 +385,9 @@ export function PendingCard({
             })}
           </div>
         </div>
-      )}
-      {item.needs_review && item.review_reason && (
+  );
+
+  const reasonBlock = item.needs_review && item.review_reason && (
         <div className="text-amber-300" title={item.review_reason}>
           <div className="microlabel text-amber-400">İnceleme gerekçesi</div>
           <ul className="list-disc space-y-0.5 pl-4">
@@ -405,13 +396,15 @@ export function PendingCard({
             ))}
           </ul>
         </div>
-      )}
-      {item.intervention_reasons.length > 0 && (
+  );
+
+  const priorityBlock = item.intervention_reasons.length > 0 && (
         <div className="text-zinc-500" title={item.intervention_reasons.join("\n")}>
           Öncelik: {item.intervention_reasons.join(" · ")}
         </div>
-      )}
-      {(item.clip_url || item.evidence) ? (
+  );
+
+  const mediaBlock = (item.clip_url || item.evidence) ? (
         <div className="space-y-1">
           <video
             controls
@@ -451,8 +444,9 @@ export function PendingCard({
         <div className="flex h-40 items-center justify-center rounded-sm border border-dashed border-zinc-800 bg-black text-xs text-zinc-500">
           Olay kaydı henüz hazır değil — segment kapanınca kesilir.
         </div>
-      )}
-      {!verdict ? (
+  );
+
+  const decisionBlock = !verdict ? (
         <div className={`flex gap-1 ${modal ? "mx-auto max-w-md" : ""}`}>
           <button
             onClick={() => setVerdict("anomali")}
@@ -589,7 +583,57 @@ export function PendingCard({
               : blockReason}
           </p>
         </div>
-      )}
+  );
+
+  // Kip geniştir: kayıt solda büyük durur, künye ve kanıt sağ sütunda toplanır.
+  if (modal) {
+    return (
+      <div className="space-y-2 text-xs">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(17rem,2fr)]">
+          <div className="space-y-2">{mediaBlock}</div>
+          <div className="space-y-2">
+            {headerBlock}
+            {evidenceBlock}
+            {reasonBlock}
+            {priorityBlock}
+          </div>
+        </div>
+        {decisionBlock}
+      </div>
+    );
+  }
+
+  // Kenar çubuğu özeti: ayrıntı kipte açılır, kartın tamamı tıklanır.
+  if (summary) {
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => onOpen?.(item)}
+        onKeyDown={(pressed) => {
+          if (pressed.key !== "Enter" && pressed.key !== " ") return;
+          pressed.preventDefault();
+          onOpen?.(item);
+        }}
+        title="Olay klibini ve raporunu büyük ekranda aç"
+        className="relative cursor-pointer space-y-1.5 rounded-md border border-zinc-800 bg-zinc-950 p-2 pb-4 text-xs transition-colors hover:border-sky-700 hover:bg-zinc-900"
+      >
+        {headerBlock}
+        <span aria-hidden className="absolute bottom-1 right-1.5 text-[11px] leading-none text-zinc-600">
+          ↗
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5 rounded-md border border-zinc-800 bg-zinc-950 p-2 text-xs">
+      {headerBlock}
+      {evidenceBlock}
+      {reasonBlock}
+      {priorityBlock}
+      {mediaBlock}
+      {decisionBlock}
     </div>
   );
 }
