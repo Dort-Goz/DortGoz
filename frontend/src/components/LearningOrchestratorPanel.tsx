@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getLearningOrchestratorOverview } from "../lib/api";
+import { getIncidentMedia, getLearningOrchestratorOverview } from "../lib/api";
 import { CANONICAL_TYPE_TR } from "../lib/labels";
 import {
   approvalWaitingCount,
-  candidateReviewReason,
+  candidateActionTitle,
   candidateStatus,
   presentationForUse,
-  primaryPresentationForCandidate,
   systemBehaviorLabel,
   visibleDevelopmentSuggestions,
 } from "../lib/learningPresentation";
-import type { LearningOrchestratorOverview } from "../types/domain";
+import type { IncidentMedia, LearningOrchestratorOverview } from "../types/domain";
 import type { CanonicalEventType } from "../types/events";
 
 const BAND_TR = {
@@ -24,6 +23,13 @@ function shortIdentifier(value: string): string {
   return value.length > 18 ? value.slice(0, 8) : value;
 }
 
+function shortClock(seconds: number): string {
+  const wholeSeconds = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(wholeSeconds / 60);
+  const remainingSeconds = wholeSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
 export default function LearningOrchestratorPanel({
   onClose,
   onOpenEvent,
@@ -32,6 +38,7 @@ export default function LearningOrchestratorPanel({
   onOpenEvent: (eventId: string) => void;
 }) {
   const [overview, setOverview] = useState<LearningOrchestratorOverview | null>(null);
+  const [candidateMedia, setCandidateMedia] = useState<Record<string, IncidentMedia | null>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -39,7 +46,15 @@ export default function LearningOrchestratorPanel({
     setLoading(true);
     setError("");
     try {
-      setOverview(await getLearningOrchestratorOverview());
+      const nextOverview = await getLearningOrchestratorOverview();
+      const mediaEntries = await Promise.all(
+        nextOverview.priority_candidates.map(async (candidate) => [
+          candidate.event_id,
+          await getIncidentMedia(candidate.event_id).catch(() => null),
+        ] as const),
+      );
+      setOverview(nextOverview);
+      setCandidateMedia(Object.fromEntries(mediaEntries));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Öğrenme Merkezi durumu alınamadı.");
     } finally {
@@ -111,16 +126,11 @@ export default function LearningOrchestratorPanel({
                 ))}
               </div>
 
-              <section aria-labelledby="review-queue-title">
-                <div className="mb-2 flex items-end justify-between gap-3">
-                  <div>
-                    <h3 id="review-queue-title" className="text-sm font-semibold text-zinc-100">
-                      İnceleme kuyruğu
-                    </h3>
-                    <p className="mt-0.5 text-[10px] text-zinc-500">
-                      İnsan kararı veya onayı gereken olaylar öncelik sırasıyla gösterilir.
-                    </p>
-                  </div>
+              <section aria-labelledby="pending-events-title">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <h3 id="pending-events-title" className="text-sm font-semibold text-zinc-100">
+                    İşlem bekleyen olaylar
+                  </h3>
                   {overview.priority_candidates.length > 0 && (
                     <span className="text-[10px] text-zinc-600">
                       {overview.priority_candidates.length} kayıt
@@ -130,60 +140,65 @@ export default function LearningOrchestratorPanel({
 
                 {overview.priority_candidates.length === 0 ? (
                   <div className="rounded-md bg-zinc-900/60 px-4 py-8 text-center">
-                    <p className="font-medium text-zinc-200">İncelenecek olay yok.</p>
-                    <p className="mt-1 text-zinc-500">
-                      Yeni bir inceleme gerektiğinde burada görünecek.
-                    </p>
+                    <p className="font-medium text-zinc-200">Şu anda işlem bekleyen olay yok.</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
                     {overview.priority_candidates.map((candidate) => {
-                      const presentation = primaryPresentationForCandidate(candidate);
                       const eventLabel = CANONICAL_TYPE_TR[
                         candidate.event_type as CanonicalEventType
                       ] ?? candidate.event_type;
+                      const media = candidateMedia[candidate.event_id];
                       return (
                         <article
                           key={candidate.event_id}
-                          className="rounded-md border border-zinc-800 bg-zinc-900 p-3 transition-colors hover:border-zinc-700"
+                          className="overflow-hidden rounded-md border border-zinc-800 bg-zinc-900 transition-colors hover:border-zinc-700"
                         >
-                          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_10rem] md:items-center">
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="chip border border-zinc-700 bg-zinc-950 text-zinc-400">
-                                  {presentation.category}
-                                </span>
+                          <div className="grid grid-cols-[7rem_minmax(0,1fr)] sm:grid-cols-[11rem_minmax(0,1fr)_8rem] sm:items-stretch">
+                            <div className="row-span-2 min-h-32 overflow-hidden bg-zinc-950 sm:row-span-1 sm:min-h-28">
+                              {media ? (
+                                <img
+                                  src={media.thumbnail_url}
+                                  alt={`${eventLabel} kanıt görüntüsü`}
+                                  loading="lazy"
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <div className="flex h-full min-h-24 items-center justify-center bg-gradient-to-br from-zinc-900 to-zinc-950 text-[10px] text-zinc-600">
+                                  Görsel yok
+                                </div>
+                              )}
+                            </div>
+                            <div className="min-w-0 p-3">
+                              <h4 className="text-sm font-medium text-zinc-100">
+                                {candidateActionTitle(candidate, eventLabel)}
+                              </h4>
+                              <div className="mt-3 flex flex-wrap items-center gap-1.5">
                                 <span className="chip border border-amber-900 bg-amber-950/30 text-amber-200">
                                   {candidateStatus(candidate)}
                                 </span>
-                                <span className="ml-auto text-[10px] text-zinc-500 md:ml-0">
+                                <span className="chip border border-zinc-700 bg-zinc-950 text-zinc-400">
                                   Önem: {BAND_TR[candidate.learning_band]}
                                 </span>
+                                {media && (
+                                  <span className="chip border border-zinc-700 bg-zinc-950 font-mono text-zinc-400">
+                                    Kanıt {shortClock(media.clip_start)}–{shortClock(media.clip_end)}
+                                  </span>
+                                )}
+                                <span className="chip border border-zinc-700 bg-zinc-950 font-mono text-zinc-500">
+                                  Kayıt {shortIdentifier(candidate.video_id)}
+                                </span>
                               </div>
-                              <h4 className="mt-2 text-sm font-medium text-zinc-100">
-                                {presentation.title}
-                              </h4>
-                              <p className="mt-1 leading-relaxed text-zinc-400">
-                                {presentation.description}
-                              </p>
-                              <p className="mt-1.5 text-[10px] text-zinc-500">
-                                {eventLabel} · Kamera kaydı {shortIdentifier(candidate.video_id)} · Olay {shortIdentifier(candidate.event_id)}
-                              </p>
-                              <p className="mt-2 leading-relaxed text-zinc-300">
-                                {candidateReviewReason(candidate)}
-                              </p>
-                              <p className="mt-1 leading-relaxed text-sky-200">
-                                <span className="font-medium">Önerilen işlem:</span>{" "}
-                                {presentation.action}
-                              </p>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => onOpenEvent(candidate.event_id)}
-                              className="btn btn-accent w-full"
-                            >
-                              İncele
-                            </button>
+                            <div className="col-start-2 flex items-center p-3 pt-0 sm:col-auto sm:pt-3 sm:pl-0">
+                              <button
+                                type="button"
+                                onClick={() => onOpenEvent(candidate.event_id)}
+                                className="btn btn-accent w-full"
+                              >
+                                İncele
+                              </button>
+                            </div>
                           </div>
                         </article>
                       );

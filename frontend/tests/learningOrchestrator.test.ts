@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
   approvalWaitingCount,
+  candidateActionTitle,
   candidateReviewReason,
   candidateStatus,
   operatorApprovalState,
@@ -90,6 +91,23 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(operatorApprovalState(route)).toBe("Yeniden onay gerekiyor");
   });
 
+  test("işlem başlığını olay türü ve sıradaki adımdan üretir", () => {
+    expect(candidateActionTitle(candidate(), "olası hırsızlık")).toBe(
+      "Olası hırsızlık kaydı inceleme bekliyor",
+    );
+    expect(candidateActionTitle(candidate({
+      recommended_uses: ["camera_rule"],
+      blockers: ["İnsan onayı gerekli"],
+    }), "Olası hırsızlık")).toBe(
+      "Olası hırsızlık kaydı kamera ayarı için onay bekliyor",
+    );
+    expect(candidateActionTitle(candidate({
+      recommended_uses: ["evaluation"],
+      ready_uses: ["evaluation"],
+      blockers: [],
+    }), "Olası hırsızlık")).toBe("Olası hırsızlık kaydı işleme hazır");
+  });
+
   test("sıfır değerli önerileri ve ikincil KPI'ları sunumda gizler", () => {
     const visible = visibleDevelopmentSuggestions([
       summary(),
@@ -109,8 +127,17 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     for (const label of ["Toplam olay", "İnceleme bekleyen", "Onay bekleyen", "Hazır işlemler"]) {
       expect(source).toContain(label);
     }
-    expect(source).toContain("İnceleme kuyruğu");
-    expect(source).toContain("İncelenecek olay yok.");
+    expect(source).toContain("İşlem bekleyen olaylar");
+    expect(source).toContain("Şu anda işlem bekleyen olay yok.");
+    expect(source).toContain("getIncidentMedia");
+    expect(source).toContain("media.thumbnail_url");
+    const queueSource = source
+      .split('<section aria-labelledby="pending-events-title">')[1]
+      .split('<section aria-labelledby="development-suggestions-title">')[0];
+    expect(queueSource).toContain("candidateActionTitle(candidate, eventLabel)");
+    expect(queueSource).toContain("Kanıt {shortClock(media.clip_start)}");
+    expect(queueSource).not.toContain("presentation.description");
+    expect(queueSource).not.toContain("candidateReviewReason");
     expect(source).toContain("Şu anda işlem gerektiren bir geliştirme önerisi yok.");
     expect(source).toContain("visibleDevelopmentSuggestions");
     expect(source).toContain(

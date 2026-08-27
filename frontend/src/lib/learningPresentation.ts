@@ -113,6 +113,28 @@ export function candidateStatus(candidate: LearningCandidateSummary): string {
   return "Onay gerekiyor";
 }
 
+export function candidateActionTitle(
+  candidate: LearningCandidateSummary,
+  eventLabel: string,
+): string {
+  const titleLabel = eventLabel
+    ? eventLabel.charAt(0).toLocaleUpperCase("tr-TR") + eventLabel.slice(1)
+    : eventLabel;
+  if (candidate.recommended_uses.length === 0) {
+    return `${titleLabel} kaydı inceleme bekliyor`;
+  }
+  if (candidateNeedsRenewedApproval(candidate)) {
+    return `${titleLabel} kaydı yeniden onay bekliyor`;
+  }
+  if (candidate.ready_uses.length === candidate.recommended_uses.length) {
+    return `${titleLabel} kaydı işleme hazır`;
+  }
+  if (candidate.recommended_uses.includes("camera_rule")) {
+    return `${titleLabel} kaydı kamera ayarı için onay bekliyor`;
+  }
+  return `${titleLabel} kaydı sistem iyileştirmesi için onay bekliyor`;
+}
+
 export function candidateReviewReason(candidate: LearningCandidateSummary): string {
   if (candidate.recommended_uses.length === 0) {
     return "Sistem bu olay için henüz insan kararı bulunmadığı için inceleme istiyor.";
