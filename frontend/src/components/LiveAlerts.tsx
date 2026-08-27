@@ -52,19 +52,10 @@ export default function LiveAlerts({
   if (alerts.length === 0) return null;
   return (
     <div
-      className={`pointer-events-none fixed top-12 z-50 flex w-72 flex-col gap-1.5 ${
-        clearQueue ? "right-[21rem]" : "right-3"
+      className={`pointer-events-none fixed z-50 flex w-72 flex-col gap-1.5 ${
+        clearQueue ? "right-[21rem] top-32" : "right-3 top-12"
       }`}
     >
-      <div className="pointer-events-auto flex items-center gap-1.5 self-end">
-        <button
-          onClick={onMuteToggle}
-          title={muted ? "Kritik olayda sesli uyarıyı aç" : "Sesli uyarıyı kapat"}
-          className="btn btn-ghost h-6 px-1.5 text-[10px] text-zinc-400"
-        >
-          {muted ? "🔇 ses kapalı" : "🔔 ses açık"}
-        </button>
-      </div>
       {alerts.map((alert) => {
         const rank = severityRank(alert);
         return (
@@ -105,6 +96,13 @@ export default function LiveAlerts({
           </div>
         );
       })}
+      <button
+        onClick={onMuteToggle}
+        title={muted ? "Kritik olayda sesli uyarıyı aç" : "Sesli uyarıyı kapat"}
+        className="pointer-events-auto self-end rounded-sm bg-zinc-900/90 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:text-zinc-200"
+      >
+        {muted ? "🔇 ses kapalı" : "🔔 ses açık"}
+      </button>
     </div>
   );
 }

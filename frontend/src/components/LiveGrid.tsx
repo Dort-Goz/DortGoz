@@ -70,7 +70,19 @@ function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
     setZoom(null);
   }, []);
 
-  const zoomed = zoom ? feeds.find((f) => f.name === zoom) : null;
+  const zoomed = zoom ? feeds.find((f) => f.name === zoom) ?? null : null;
+
+  useEffect(() => {
+    if (feeds.length === 0) {
+      if (zoom !== null) setZoom(null);
+      return;
+    }
+    if (zoom === null || !feeds.some((f) => f.name === zoom)) {
+      setZoom(feeds[0].name);
+      onSelectFeed(feeds[0].name);
+    }
+  }, [feeds, zoom, onSelectFeed]);
+
   const labels = useMemo(
     () => Object.fromEntries(feeds.filter((f) => f.desc).map((f) => [f.name, f.desc])),
     [feeds],
@@ -131,40 +143,12 @@ function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
         </label>
       </div>
 
-      {zoomed && (
-        <div className="flex shrink-0 items-start gap-3 rounded-md border border-zinc-700 bg-zinc-900 p-2">
-          <img
-            src={`${zoomed.snapshot}?v=${zoomed.segments_done}`}
-            alt={zoomed.name}
-            className="max-h-64 rounded-sm"
-          />
-          <div className="min-w-0 space-y-1 text-xs">
-            <div className="text-sm font-bold text-zinc-100">{zoomed.desc || zoomed.name}</div>
-            <div className={`chip ${lagBadge(zoomed).cls}`}>
-              {lagBadge(zoomed).text}
-            </div>
-            <div className="font-mono text-zinc-400">
-              {zoomed.segments_done} segment · {zoomed.state}
-              {zoomed.dropped_s > 0 && ` · ${Math.round(zoomed.dropped_s)} sn atlandı`}
-            </div>
-            {zoomed.last_error && <div className="truncate text-red-400">{zoomed.last_error}</div>}
-            {(incidents[zoomed.name] ?? []).slice(-3).map((i) => (
-              <div key={i.incident_id} className="truncate text-amber-300">
-                ⚠ {i.title} · risk {i.risk}
-              </div>
-            ))}
-            <button onClick={() => setZoom(null)} className="btn btn-ghost h-6 px-1.5">
-              kapat ✕
-            </button>
-          </div>
-        </div>
-      )}
-
       <div className="flex min-h-0 flex-1 gap-1.5">
       {view === "kayitlar" ? <LiveArchive feedNames={labels} /> : (
-      <div className="panel flex-1">
+      <>
+      <div className="panel w-52 shrink-0">
       <div className="panel-title">
-        <span>Akış Duvarı</span>
+        <span>Akışlar</span>
         <span className="flex-1" />
         {feeds.length > 0 && (
           <span className="chip border border-zinc-700 font-mono normal-case tracking-normal text-zinc-300">
@@ -172,12 +156,7 @@ function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
           </span>
         )}
       </div>
-      <div
-        className="panel-body grid content-start gap-1 p-1.5"
-        style={{
-          gridTemplateColumns: `repeat(${Math.max(1, Math.ceil(Math.sqrt(feeds.length)))}, minmax(0, 1fr))`,
-        }}
-      >
+      <div className="panel-body flex flex-col gap-1 p-1.5">
         {feeds.map((f) => {
           const badge = lagBadge(f);
           const inc = incidents[f.name]?.length ?? 0;
@@ -185,8 +164,10 @@ function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
             <button
               key={f.name}
               onClick={() => { setZoom(f.name); onSelectFeed(f.name); }}
-              className={`relative aspect-video overflow-hidden rounded-sm border bg-black text-left transition-colors ${
-                inc > 0 ? "border-amber-700" : "border-zinc-800"
+              className={`relative aspect-video shrink-0 overflow-hidden rounded-sm border bg-black text-left transition-colors ${
+                zoom === f.name
+                  ? "border-sky-600 ring-1 ring-sky-800"
+                  : inc > 0 ? "border-amber-700" : "border-zinc-800"
               } hover:border-zinc-500`}
               title={`${f.name} · ${f.state}`}
             >
@@ -229,13 +210,74 @@ function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
           );
         })}
         {!active && feeds.length === 0 && (
-          <div className="col-span-full flex flex-col items-center gap-2 py-20 text-zinc-500">
-            <span className="text-3xl text-zinc-800">▦</span>
-            <span className="text-xs">Canlı kip kapalı — config/live_feeds.json'daki akışlarla başlatın.</span>
+          <div className="px-1 py-6 text-center text-[11px] text-zinc-500">
+            Canlı kip kapalı.
           </div>
         )}
       </div>
       </div>
+
+      <div className="panel flex-1">
+        <div className="panel-title">
+          <span className="truncate">{zoomed ? (zoomed.desc || zoomed.name) : "Kamera"}</span>
+          <span className="flex-1" />
+          {zoomed && (
+            <>
+              <span className={`chip normal-case tracking-normal ${lagBadge(zoomed).cls}`}>
+                {lagBadge(zoomed).text}
+              </span>
+              <span className="chip border border-zinc-700 font-mono normal-case tracking-normal text-zinc-400">
+                {zoomed.segments_done} segment · {zoomed.state}
+                {zoomed.dropped_s > 0 && ` · ⏭ ${Math.round(zoomed.dropped_s)}s`}
+              </span>
+            </>
+          )}
+        </div>
+        <div className="panel-body flex min-h-0 flex-col p-1.5">
+          {!zoomed ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-2 text-zinc-500">
+              <span className="text-3xl text-zinc-800">▦</span>
+              <span className="text-xs">
+                {active
+                  ? "Soldaki listeden bir kamera seçin."
+                  : "Canlı kip kapalı — config/live_feeds.json'daki akışlarla başlatın."}
+              </span>
+            </div>
+          ) : (
+            <>
+              <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-sm bg-black">
+                {zoomed.snapshot ? (
+                  <img
+                    src={`${zoomed.snapshot}?v=${zoomed.segments_done}`}
+                    alt={zoomed.name}
+                    className="max-h-full max-w-full object-contain"
+                  />
+                ) : (
+                  <span className="text-xs text-zinc-600">
+                    {zoomed.state === "hata" ? "bağlantı yok" : "bağlanıyor…"}
+                  </span>
+                )}
+              </div>
+              {zoomed.last_error && (
+                <div className="mt-1 shrink-0 truncate text-[11px] text-red-400"
+                     title={zoomed.last_error}>
+                  {zoomed.last_error}
+                </div>
+              )}
+              {(incidents[zoomed.name] ?? []).length > 0 && (
+                <div className="mt-1 shrink-0 space-y-0.5">
+                  {(incidents[zoomed.name] ?? []).slice(-3).map((i) => (
+                    <div key={i.incident_id} className="truncate text-[11px] text-amber-300">
+                      ⚠ {i.title} · risk {i.risk}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+      </>
       )}
       <TriagePanel
         onSelectFeed={onSelectFeed}

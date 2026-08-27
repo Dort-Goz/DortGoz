@@ -229,7 +229,7 @@ class MockLiveService:
                 desc=spec.get("desc", ""),
                 state="bekliyor",
             )
-            for spec in specs[:6]
+            for spec in specs[: settings.max_feeds]
         ]
         for index, status in enumerate(self._statuses):
             self._write_snapshot(status, index)
