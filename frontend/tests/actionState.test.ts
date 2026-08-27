@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { actionBelongsToMode, consoleReducer, initialState } from "../src/state";
+import {
+  actionBelongsToMode, analysisRunIds, consoleReducer, initialState,
+} from "../src/state";
 import type { ActuatorRequest, ActuatorResult, Event } from "../src/types/events";
 
 const request: ActuatorRequest = {
@@ -90,6 +92,20 @@ describe("aksiyon günlüğü", () => {
     expect(hydrated.liveActuatorResults.map((item) => item.request_id)).toEqual(["req-live"]);
   });
 
+  test("günlük yalnız açık analiz koşularını tanır", () => {
+    const runStatus = (run_id: string, seq: number): Event => ({
+      seq, ts: seq, feed: "KAM-1",
+      payload: {
+        type: "run_status", run_id, state: "done", progress: 1, detail: "", video: "a.mp4",
+      },
+    });
+    const first = consoleReducer(initialState, { kind: "event", event: runStatus("run-1", 1) });
+    const second = consoleReducer(first, { kind: "event", event: runStatus("run-2", 2) });
+
+    expect([...analysisRunIds(first)]).toEqual(["run-1"]);
+    expect([...analysisRunIds(second)]).toEqual(["run-2"]);
+  });
+
   test("fixture aksiyonu yalnız mock kipte görünür", () => {
     const fixture = { ...request, run_id: "fixture-ui-crime-1" };
 
@@ -109,6 +125,7 @@ describe("aksiyon günlüğü", () => {
     expect(appSource).toContain(
       "ARAYÜZ TEST AKIŞI · “BAŞLAT” KAYITLI BİR ÖRNEK AKIŞI OYNATIR");
     expect(appSource).toContain("actionBelongsToMode(request, fixtureMode)");
+    expect(appSource).toContain("analysisRuns.has(result.run_id)");
     expect(appSource).not.toContain("readOnly={fixtureMode}");
   });
 });

@@ -156,6 +156,30 @@ describe("7/24 dayanıklılık: state sınırları", () => {
     expect(consoleReducer(withChat, { kind: "clear_chat" }).chat).toEqual([]);
   });
 
+  test("temizle düğmesi analizi boşaltır, canlı izlemeye dokunmaz", () => {
+    const status = (seq: number, feed: string, live: boolean, runId: string): Event => ({
+      seq, ts: seq, feed, live,
+      payload: {
+        type: "run_status", run_id: runId, state: "done",
+        progress: 1, detail: "", video: "a.mp4",
+      },
+    } as Event);
+
+    let state = consoleReducer(initialState, {
+      kind: "event", event: status(1, "KAM-1", true, "canli-KAM-1-0001"),
+    });
+    state = consoleReducer(state, {
+      kind: "event", event: status(2, "KAM-9", false, "run-1"),
+    });
+
+    const cleared = consoleReducer(state, { kind: "clear_analysis" });
+
+    expect(Object.keys(cleared.feeds)).toEqual(["KAM-1"]);
+    expect(cleared.actuatorRequests).toEqual([]);
+    expect(cleared.chat).toEqual([]);
+    expect(cleared.activeLive).toBe(state.activeLive);
+  });
+
   test("sync reset tüm karışmış istemci state'ini temizler", () => {
     const state = consoleReducer(
       consoleReducer(initialState, { kind: "event", event: reportEvent(1) }),

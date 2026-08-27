@@ -326,7 +326,16 @@ class ActionDispatcher:
     ) -> dict[str, list[dict]]:
         with self._lock:
             self._ensure_loaded()
-            records = list(self._records.values())
+            # Kapanmış koşunun sonuçlanmış aksiyonu geçmiştir; konsola yalnız
+            # açık koşuların kayıtları ve karar bekleyen istekler taşınır.
+            active = {ctx.run_id for ctx in session.all_contexts()}
+            records = [
+                record
+                for record in self._records.values()
+                if record.result is None
+                or record.request.run_id in active
+                or record.request.run_id.startswith("fixture-ui-")
+            ]
             if fixture_only is not None:
                 records = [
                     record

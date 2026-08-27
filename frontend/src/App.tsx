@@ -23,6 +23,7 @@ import {
 import { includeUploadedVideo, startCanonicalRun } from "./lib/canonicalRun";
 import {
   actionBelongsToMode,
+  analysisRunIds,
   consoleReducer,
   emptyFeed,
   feedNames,
@@ -320,13 +321,22 @@ export default function App() {
       feedNames(state, true).map((name) => [name, state.feeds[name].activity])),
     [state],
   );
+  const analysisRuns = useMemo(() => analysisRunIds(state), [state]);
+  const resolvedActionIds = useMemo(
+    () => new Set(state.actuatorResults.map((result) => result.request_id)),
+    [state.actuatorResults],
+  );
+  // Karar bekleyen istek koşu değişse de operatörde durur; sonuçlanmış kart
+  // yalnız kendi koşusu açıkken görünür.
   const analysisActionRequests = useMemo(
-    () => state.actuatorRequests.filter((request) => actionBelongsToMode(request, fixtureMode)),
-    [state.actuatorRequests, fixtureMode],
+    () => state.actuatorRequests.filter((request) => actionBelongsToMode(request, fixtureMode)
+      && (analysisRuns.has(request.run_id) || !resolvedActionIds.has(request.request_id))),
+    [state.actuatorRequests, fixtureMode, analysisRuns, resolvedActionIds],
   );
   const analysisActionResults = useMemo(
-    () => state.actuatorResults.filter((result) => actionBelongsToMode(result, fixtureMode)),
-    [state.actuatorResults, fixtureMode],
+    () => state.actuatorResults.filter((result) => actionBelongsToMode(result, fixtureMode)
+      && analysisRuns.has(result.run_id)),
+    [state.actuatorResults, fixtureMode, analysisRuns],
   );
 
   const overrides = useCallback(() => ({
@@ -373,6 +383,12 @@ export default function App() {
   }, [busy, videos, overrides, resetDialogue]);
 
   const stopRun = useCallback(() => socketRef.current?.send({ kind: "stop_run" }), []);
+
+  const clearAnalysis = useCallback(() => {
+    resetDialogue();
+    dispatch({ kind: "clear_analysis" });
+    setImportNote("");
+  }, [resetDialogue]);
 
   const importPackage = useCallback(async (file: File) => {
     setImportNote("içe alınıyor…");
@@ -555,6 +571,17 @@ export default function App() {
               </span>
             </div>
           )}
+
+          <button
+            onClick={clearAnalysis}
+            disabled={busy}
+            title={busy
+              ? "Önce çalışan analizi durdurun"
+              : "Ekrandaki analiz sonuçlarını temizler — sunucudaki kayıtlar silinmez"}
+            className="btn btn-outline"
+          >
+            ✕ temizle
+          </button>
 
           <div className="min-w-0 flex-1">
             {importNote && (

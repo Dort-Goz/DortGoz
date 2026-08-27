@@ -205,6 +205,29 @@ def test_resolution_is_restart_safe_and_conflicts_are_rejected(tmp_path):
         restarted.resolve(request.request_id, True, "Operatör 1")
 
 
+def test_closed_run_history_leaves_snapshot_but_pending_stays(tmp_path):
+    incident_context()
+    service = ActionDispatcher(tmp_path)
+    done, _ = service.request(
+        "emniyet_bildirimi_hazirla", "inc-1", "KAM-1", "gerçek"
+    )
+    service.resolve(done.request_id, True, "Operatör 1")
+    pending, _ = service.request(
+        "guvenlik_uyarisi_hazirla", "inc-1", "KAM-1", "gerçek"
+    )
+
+    assert {r["request_id"] for r in service.snapshot()["requests"]} == {
+        done.request_id,
+        pending.request_id,
+    }
+
+    session.start("run-2", "other.mp4", feed="KAM-1")
+    snapshot = service.snapshot()
+
+    assert [r["request_id"] for r in snapshot["requests"]] == [pending.request_id]
+    assert snapshot["results"] == []
+
+
 def test_legacy_live_record_is_migrated_from_run_id(tmp_path):
     root = tmp_path / "aksiyonlar"
     root.mkdir(parents=True)

@@ -102,6 +102,17 @@ export function actionBelongsToMode(
   return action.run_id.startsWith("fixture-ui-") === fixtureMode;
 }
 
+// Analiz çalışma alanında açık olan koşular. Aksiyon günlüğü bu kümeye
+// dayanır: biten koşunun kartı yeni koşunun günlüğünde kalmaz.
+export function analysisRunIds(state: ConsoleState): Set<string> {
+  const ids = new Set<string>();
+  for (const feed of Object.values(state.feeds)) {
+    const runId = feed.live ? "" : feed.runStatus?.run_id ?? "";
+    if (runId && runId !== "-") ids.add(runId);
+  }
+  return ids;
+}
+
 function cap<T>(arr: T[], n: number): T[] {
   return arr.length > n ? arr.slice(arr.length - n) : arr;
 }
@@ -110,6 +121,7 @@ export type Action =
   | { kind: "event"; event: Event }
   | { kind: "sync_reset" }
   | { kind: "clear_chat" }
+  | { kind: "clear_analysis" }
   | { kind: "hydrate_actions"; requests: ActuatorRequest[]; results: ActuatorResult[] }
   | { kind: "run_started"; video: string; feed: string }
   | { kind: "select_incident"; incident: IncidentUpdate }
@@ -133,6 +145,20 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
   }
   if (action.kind === "clear_chat") {
     return { ...state, chat: [] };
+  }
+  // Operatörün "temizle" düğmesi: analiz çalışma alanı boşaltılır, canlı izleme
+  // el değmeden kalır. Sunucudaki kayıtlar silinmez.
+  if (action.kind === "clear_analysis") {
+    return {
+      ...state,
+      feeds: Object.fromEntries(
+        Object.entries(state.feeds).filter(([, feed]) => feed.live),
+      ),
+      active: "",
+      chat: [],
+      actuatorRequests: [],
+      actuatorResults: [],
+    };
   }
   if (action.kind === "hydrate_actions") {
     return {
