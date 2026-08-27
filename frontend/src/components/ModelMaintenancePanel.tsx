@@ -39,9 +39,19 @@ const BAND_TR = {
   priority: "Öncelikli",
 } as const;
 
+/** Aşamanın bakım mühendisi için ne anlama geldiği; sekme başlığında durur. */
+const STAGE_NOTE: Record<PipelineStage, string> = {
+  review: "eğitim verisi bu kararlardan üretilir",
+  approval: "adı kayda geçen ayrı geliştirme izni",
+  queue: "izinli kareler COCO'ya aktarılmayı bekliyor",
+  training: "münhasır iş; aynı anda tek eğitim çalışır",
+  measurement: "değişmez dış test kümesi ister",
+  promotion: "kapı, adayı yürürlükteki modelle karşılaştırır",
+};
+
 const POLL_MS = 5000;
-/** Bir bölümde en çok bu kadar olay kartı çizilir; kalanı sayı olarak yazılır. */
-const LIST_LIMIT = 8;
+/** Kanıt görüntüsü yalnız ekrandaki ilk satırlar için çekilir. */
+const THUMBNAIL_LIMIT = 12;
 
 function eventLabel(type: string): string {
   return CANONICAL_TYPE_TR[type as CanonicalEventType] ?? type;
@@ -84,6 +94,7 @@ export default function ModelMaintenancePanel({
 }) {
   const [view, setView] = useState<LearningPipelineView | null>(null);
   const [media, setMedia] = useState<Record<string, IncidentMedia | null>>({});
+  const [stage, setStage] = useState<PipelineStage | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const [engineer, setEngineer] = useState("");
@@ -119,18 +130,18 @@ export default function ModelMaintenancePanel({
     return () => clearInterval(id);
   }, [jobRunning, load]);
 
-  const shownEvents = useMemo(
-    () => (view
-      ? [
-        ...view.review_items.slice(0, LIST_LIMIT),
-        ...view.approval_items.slice(0, LIST_LIMIT),
-      ]
-      : []),
-    [view],
-  );
+  const active: PipelineStage = stage
+    ?? (view ? firstActionableStage(view.stages) : "review");
+
+  const visibleEvents = useMemo(() => {
+    if (!view) return [];
+    if (active === "review") return view.review_items.slice(0, THUMBNAIL_LIMIT);
+    if (active === "approval") return view.approval_items.slice(0, THUMBNAIL_LIMIT);
+    return [];
+  }, [view, active]);
 
   useEffect(() => {
-    const missing = shownEvents
+    const missing = visibleEvents
       .map((item) => item.event_id)
       .filter((eventId) => !(eventId in media));
     if (missing.length === 0) return;
@@ -146,7 +157,7 @@ export default function ModelMaintenancePanel({
     return () => {
       cancelled = true;
     };
-  }, [shownEvents, media]);
+  }, [visibleEvents, media]);
 
   const act = async (label: string, run: () => Promise<unknown>) => {
     setBusy(label);
@@ -176,134 +187,124 @@ export default function ModelMaintenancePanel({
     );
   }
 
-  const attention = firstActionableStage(view.stages);
   /** Aşama sayısı gerçek birikimi verir; liste uçları sunucuda kırpılıdır. */
   const stageCount = (name: PipelineStage) =>
     view.stages.find((item) => item.stage === name)?.count ?? 0;
-  const measuring = view.candidates.filter((item) => !item.measured);
-  const promotable = view.candidates.filter((item) => item.measured);
+  const champion = view.champion;
   const signed = engineer.trim();
 
   return (
-    <div className="flex h-full min-h-0 flex-col text-xs">
-      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-zinc-800 px-1 pb-2">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-zinc-100">Dedektör bakım hattı</h2>
-          <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-500 sm:text-xs">
-            Bakım mühendisi ekranı: veri, eğitim, ölçüm ve terfi adımlarını buradan yürütürsünüz.
-          </p>
-        </div>
-        <div className="ml-auto flex shrink-0 flex-wrap items-center gap-2">
-          <label
-            className="flex items-center gap-1.5"
-            title="Onay, eğitim ve terfi kayıtlarına bu ad yazılır"
+    <div className="flex h-full min-h-0 flex-col gap-1.5 text-xs">
+      <div className="panel shrink-0">
+        <div className="panel-title">
+          <span>◇ Dedektör Bakım Hattı</span>
+          <span className="microlabel normal-case tracking-normal">
+            bakım mühendisi ekranı
+          </span>
+          <span className="flex-1" />
+          <span
+            title="Canlı çalışan dedektör sürümü"
+            className={`chip border normal-case tracking-normal ${
+              champion
+                ? "border-emerald-900 bg-emerald-950/30 text-emerald-200"
+                : "border-zinc-700 bg-zinc-950 text-zinc-400"
+            }`}
           >
-            <span className="microlabel">mühendis</span>
-            <input
-              value={engineer}
-              onChange={(e) => setEngineer(e.target.value)}
-              placeholder="ad soyad"
-              className="field w-36"
-            />
-          </label>
-          <button
-            type="button"
-            disabled={busy !== ""}
-            onClick={() => void act("yenile", async () => {})}
-            className="btn btn-outline"
-          >
-            {busy === "yenile" ? "Yenileniyor…" : "Yenile"}
-          </button>
+            {champion
+              ? `yürürlükte ${champion.version.architecture} ·`
+                + ` mAP ${ratio(champion.version.evaluation?.map_50_95)}`
+              : "yürürlükte terfi etmiş aday yok"}
+          </span>
         </div>
-      </header>
 
-      {error && (
-        <div className="mt-2 shrink-0 border border-red-900 bg-red-950/40 px-3 py-2 text-red-200">
-          {error}
-        </div>
-      )}
+        <div className="space-y-2 p-2">
+          <div className="flex flex-wrap items-end gap-2">
+            <label
+              className="space-y-0.5"
+              title="Onay, eğitim ve terfi kayıtlarına bu ad yazılır"
+            >
+              <span className="microlabel block">mühendis</span>
+              <input
+                value={engineer}
+                onChange={(e) => setEngineer(e.target.value)}
+                placeholder="ad soyad"
+                className="field w-44"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={busy !== ""}
+              onClick={() => void act("yenile", async () => {})}
+              className="btn btn-outline"
+            >
+              {busy === "yenile" ? "Yenileniyor…" : "Yenile"}
+            </button>
+          </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-1 py-3">
-        <div className="mx-auto w-full max-w-6xl space-y-5">
-          <div className="grid grid-cols-3 gap-2 lg:grid-cols-6">
+          <nav aria-label="Bakım aşamaları" className="grid grid-cols-3 gap-2 lg:grid-cols-6">
             {STAGE_ORDER.map((name) => {
               const summary = view.stages.find((item) => item.stage === name);
               const count = summary?.count ?? 0;
               const blocked = summary?.blocked_count ?? 0;
+              const isActive = active === name;
               return (
-                <div
+                <button
                   key={name}
+                  type="button"
+                  onClick={() => setStage(name)}
                   title={summary?.detail}
-                  className={`border px-3 py-3 ${
-                    blocked > 0
-                      ? "border-amber-900/70 bg-amber-950/20"
-                      : name === attention && count > 0
-                        ? "border-sky-900/70 bg-zinc-900"
-                        : "border-transparent bg-zinc-900"
+                  aria-current={isActive ? "page" : undefined}
+                  className={`border px-3 py-2 text-left transition-colors ${
+                    isActive
+                      ? "border-sky-700 bg-zinc-800"
+                      : blocked > 0
+                        ? "border-amber-900/70 bg-amber-950/20 hover:border-amber-700"
+                        : "border-zinc-800 bg-zinc-900 hover:border-zinc-600"
                   }`}
                 >
-                  <div className="microlabel">{STAGE_TR[name]}</div>
-                  <div className="mt-1 font-mono text-xl font-semibold text-zinc-100">
+                  <div className={`microlabel ${isActive ? "text-zinc-300" : ""}`}>
+                    {STAGE_TR[name]}
+                  </div>
+                  <div className="font-mono text-lg font-semibold leading-6 text-zinc-100">
                     {count}
                   </div>
-                  <div className="h-4 text-[10px] text-amber-300">
+                  <div className="h-3.5 text-[10px] leading-3.5 text-amber-300">
                     {blocked > 0 ? `${blocked} engelli` : ""}
                   </div>
-                </div>
+                </button>
               );
             })}
-          </div>
+          </nav>
+        </div>
+      </div>
 
-          <Section title="Yürürlükteki model">
-            {view.champion ? (
-              <div className="border border-emerald-900 bg-emerald-950/20 p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-zinc-200">
-                    {shortId(view.champion.version.model_version_id)}
-                  </span>
-                  <span className="chip border border-zinc-700 bg-zinc-950 text-zinc-400">
-                    {view.champion.version.architecture}
-                  </span>
-                  <span className="ml-auto text-[10px] text-zinc-500">
-                    terfi eden: {view.champion.version.approved_by ?? "—"}
-                  </span>
-                </div>
-                <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-zinc-400 sm:grid-cols-4">
-                  <Detail
-                    label="mAP50-95"
-                    value={ratio(view.champion.version.evaluation?.map_50_95)}
-                  />
-                  <Detail
-                    label="kritik recall"
-                    value={ratio(view.champion.version.evaluation?.critical_recall)}
-                  />
-                  <Detail
-                    label="yanlış alarm/saat"
-                    value={`${view.champion.version.evaluation?.false_alarms_per_hour ?? "—"}`}
-                  />
-                  <Detail
-                    label="p95 gecikme"
-                    value={`${view.champion.version.evaluation?.p95_latency_ms ?? "—"} ms`}
-                  />
-                </dl>
-              </div>
-            ) : (
-              <Empty>
-                Terfi etmiş aday yok. Dedektör başlangıç ağırlıklarıyla çalışıyor.
-              </Empty>
-            )}
-          </Section>
+      {error && (
+        <div className="shrink-0 border border-red-900 bg-red-950/40 px-3 py-2 text-red-200">
+          {error}
+        </div>
+      )}
 
-          <Section
-            title="İnsan kararı bekleyen olaylar"
-            note="Eğitim verisi bu kararlardan üretilir; karar verilmeyen olay hiçbir bileşene gitmez."
-            count={stageCount("review")}
-          >
-            {view.review_items.length === 0 ? (
+      <div className="panel min-h-0 flex-1">
+        <div className="panel-title">
+          <span>{STAGE_TR[active]}</span>
+          <span className="microlabel normal-case tracking-normal">
+            {STAGE_NOTE[active]}
+          </span>
+          <span className="flex-1" />
+          {stageCount(active) > 0 && (
+            <span className="chip border border-zinc-700 font-mono normal-case tracking-normal text-zinc-300">
+              {stageCount(active)}
+            </span>
+          )}
+        </div>
+
+        <div className="panel-body space-y-2 p-2">
+          {active === "review" && (
+            view.review_items.length === 0 ? (
               <Empty>İnceleme bekleyen olay yok.</Empty>
             ) : (
-              <List rest={stageCount("review") - LIST_LIMIT}>
-                {view.review_items.slice(0, LIST_LIMIT).map((item) => (
+              <>
+                {view.review_items.map((item) => (
                   <EventCard
                     key={item.event_id}
                     item={item}
@@ -311,22 +312,19 @@ export default function ModelMaintenancePanel({
                     onOpen={onOpenEvent}
                   />
                 ))}
-              </List>
-            )}
-          </Section>
+                <Truncated shown={view.review_items.length} total={stageCount("review")} />
+              </>
+            )
+          )}
 
-          <Section
-            title="Geliştirme izni bekleyen olaylar"
-            note="İnsan kararı var, geliştirme kullanımı için ayrı ve adı kayda geçen bir izin bekliyor."
-            count={stageCount("approval")}
-          >
-            {view.approval_items.length === 0 ? (
+          {active === "approval" && (
+            view.approval_items.length === 0 ? (
               <Empty>Onay bekleyen olay yok.</Empty>
             ) : (
               <>
-                <div className="mb-2 flex flex-wrap items-end gap-2 bg-zinc-900 p-3">
-                  <label className="flex min-w-48 flex-1 flex-col gap-1">
-                    <span className="microlabel">gerekçe</span>
+                <div className="flex flex-wrap items-end gap-2 bg-zinc-900 p-2">
+                  <label className="min-w-48 flex-1 space-y-0.5">
+                    <span className="microlabel block">gerekçe</span>
                     <input
                       value={note}
                       onChange={(e) => setNote(e.target.value)}
@@ -367,81 +365,82 @@ export default function ModelMaintenancePanel({
                       : `Seçilenleri onayla (${selected.length})`}
                   </button>
                 </div>
-                <List rest={stageCount("approval") - LIST_LIMIT}>
-                  {view.approval_items.slice(0, LIST_LIMIT).map((item) => (
-                    <EventCard
-                      key={item.event_id}
-                      item={item}
-                      media={media[item.event_id]}
-                      onOpen={onOpenEvent}
-                      checked={selected.includes(item.event_id)}
-                      onToggle={() => toggle(item.event_id)}
-                    />
-                  ))}
-                </List>
+                {view.approval_items.map((item) => (
+                  <EventCard
+                    key={item.event_id}
+                    item={item}
+                    media={media[item.event_id]}
+                    onOpen={onOpenEvent}
+                    checked={selected.includes(item.event_id)}
+                    onToggle={() => toggle(item.event_id)}
+                  />
+                ))}
+                <Truncated shown={view.approval_items.length} total={stageCount("approval")} />
               </>
-            )}
-          </Section>
+            )
+          )}
 
-          <Section
-            title="Eğitim paketi"
-            note="İzinli ve insan doğrulamalı kareler COCO'ya aktarılır, iş kuyruğa girer. Eğitim kendiliğinden başlamaz."
-          >
-            <div className="bg-zinc-900 p-3">
-              <div className="flex flex-wrap items-end gap-2">
-                <label className="flex flex-col gap-1">
-                  <span className="microlabel">mimari</span>
-                  <select
-                    value={architecture}
-                    onChange={(e) => setArchitecture(e.target.value as DfineArchitecture)}
-                    className="field w-28"
+          {active === "queue" && (
+            <>
+              <section className="bg-zinc-900 p-3">
+                <h3 className="font-semibold text-zinc-100">Eğitim paketi oluştur</h3>
+                <p className="mt-1 text-zinc-400">
+                  İzinli ve insan doğrulamalı kareler COCO'ya aktarılır, iş kuyruğa alınır.
+                  Eğitim kendiliğinden başlamaz.
+                </p>
+                <div className="mt-3 flex flex-wrap items-end gap-2">
+                  <label className="space-y-0.5">
+                    <span className="microlabel block">mimari</span>
+                    <select
+                      value={architecture}
+                      onChange={(e) => setArchitecture(e.target.value as DfineArchitecture)}
+                      className="field w-28"
+                    >
+                      <option value="dfine_n">dfine_n</option>
+                      <option value="dfine_s">dfine_s</option>
+                    </select>
+                  </label>
+                  <NumberField label="epok" value={epochs} onChange={setEpochs} />
+                  <NumberField label="yığın" value={batchSize} onChange={setBatchSize} />
+                  <NumberField label="gpu dk" value={gpuMinutes} onChange={setGpuMinutes} />
+                  <button
+                    type="button"
+                    disabled={!view.readiness.can_plan || !signed || busy !== ""}
+                    title={
+                      view.readiness.can_plan
+                        ? (signed ? undefined : "Önce üst satıra mühendis adını yazın")
+                        : view.readiness.blockers.join("; ")
+                    }
+                    onClick={() => void act("plan", () => planTrainingJob({
+                      architecture,
+                      requested_by: signed,
+                      epochs,
+                      batch_size: batchSize,
+                      max_gpu_minutes: gpuMinutes,
+                    }))}
+                    className="btn btn-accent"
                   >
-                    <option value="dfine_n">dfine_n</option>
-                    <option value="dfine_s">dfine_s</option>
-                  </select>
-                </label>
-                <NumberField label="epok" value={epochs} onChange={setEpochs} />
-                <NumberField label="yığın" value={batchSize} onChange={setBatchSize} />
-                <NumberField label="gpu dk" value={gpuMinutes} onChange={setGpuMinutes} />
-                <button
-                  type="button"
-                  disabled={!view.readiness.can_plan || !signed || busy !== ""}
-                  title={
-                    view.readiness.can_plan
-                      ? (signed ? undefined : "Önce üst satıra mühendis adını yazın")
-                      : view.readiness.blockers.join("; ")
-                  }
-                  onClick={() => void act("plan", () => planTrainingJob({
-                    architecture,
-                    requested_by: signed,
-                    epochs,
-                    batch_size: batchSize,
-                    max_gpu_minutes: gpuMinutes,
-                  }))}
-                  className="btn btn-accent"
-                >
-                  {busy === "plan" ? "Oluşturuluyor…" : "Paket oluştur"}
-                </button>
-              </div>
-              {!view.readiness.can_plan && (
-                <ul className="mt-2 space-y-0.5 text-amber-200">
-                  {view.readiness.blockers.map((blocker) => (
-                    <li key={blocker}>• {blocker}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
+                    {busy === "plan" ? "Oluşturuluyor…" : "Paket oluştur"}
+                  </button>
+                </div>
+                {!view.readiness.can_plan && (
+                  <ul className="mt-2 space-y-0.5 text-amber-200">
+                    {view.readiness.blockers.map((blocker) => (
+                      <li key={blocker}>• {blocker}</li>
+                    ))}
+                  </ul>
+                )}
+              </section>
 
-            {view.queue.filter((group) => group.count > 0).length === 0 ? (
-              <Empty>Paketlenmeye hazır izinli örnek yok.</Empty>
-            ) : (
-              <div className="mt-2 space-y-2">
-                {view.queue.filter((group) => group.count > 0).map((group) => (
-                  <article key={group.use} className="bg-zinc-900 p-3">
+              {view.queue.filter((group) => group.count > 0).length === 0 ? (
+                <Empty>Paketlenmeye hazır izinli örnek yok.</Empty>
+              ) : (
+                view.queue.filter((group) => group.count > 0).map((group) => (
+                  <section key={group.use} className="bg-zinc-900 p-3">
                     <div className="flex items-center justify-between gap-3">
-                      <h4 className="font-medium text-zinc-100">
+                      <h3 className="font-semibold text-zinc-100">
                         {presentationForUse(group.use).technicalComponent}
-                      </h4>
+                      </h3>
                       <span className="text-[10px] text-zinc-600">{group.count} olay</span>
                     </div>
                     <p className="mt-0.5 text-zinc-400">Hedef havuz: {group.downstream}</p>
@@ -465,149 +464,174 @@ export default function ModelMaintenancePanel({
                         </button>
                       ))}
                     </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </Section>
+                  </section>
+                ))
+              )}
+            </>
+          )}
 
-          <Section
-            title="Eğitim işleri"
-            note="D-FINE işleri münhasırdır: aynı anda tek iş çalışır ve GPU bütçesi dakikayla sınırlıdır."
-            count={view.jobs.length}
-          >
-            {view.jobs.length === 0 ? (
+          {active === "training" && (
+            view.jobs.length === 0 ? (
               <Empty>Kayıtlı eğitim işi yok.</Empty>
             ) : (
-              <div className="space-y-2">
-                {view.jobs.map((job: TrainingJob) => (
-                  <article key={job.job_id} className="bg-zinc-900 p-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-zinc-300">{shortId(job.job_id)}</span>
-                      <span className={`chip border ${jobStatusClass(job.status)}`}>
-                        {jobStatusLabel(job.status)}
-                      </span>
-                      <span className="chip border border-zinc-700 bg-zinc-950 text-zinc-400">
-                        {job.architecture}
-                      </span>
-                      <span className="ml-auto font-mono text-zinc-500">
-                        {formatElapsed(job.elapsed_seconds)}
-                      </span>
-                      {job.status === "queued" && (
-                        <button
-                          type="button"
-                          disabled={!view.readiness.can_run || busy !== ""}
-                          title={
-                            view.readiness.can_run
-                              ? undefined
-                              : readinessSummary(view.readiness)
-                          }
-                          onClick={() => void act(job.job_id, () => runTrainingJob(job.job_id))}
-                          className="btn btn-accent"
-                        >
-                          {busy === job.job_id ? "Başlatılıyor…" : "Eğitimi başlat"}
-                        </button>
-                      )}
-                    </div>
-                    <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-zinc-400 sm:grid-cols-4">
-                      <Detail label="kare" value={`${job.verified_frame_count}`} />
-                      <Detail
-                        label="eğitim/doğrulama"
-                        value={`${job.train_frame_count}/${job.validation_frame_count}`}
-                      />
-                      <Detail label="kaynak video" value={`${job.source_video_count}`} />
-                      <Detail label="kutu" value={`${job.box_count}`} />
-                      <Detail label="epok" value={`${job.epochs}`} />
-                      <Detail label="yığın" value={`${job.batch_size}`} />
-                      <Detail label="isteyen" value={job.requested_by} />
-                      <Detail label="sınıf" value={job.category_names.join(", ")} />
-                    </dl>
-                    {job.error_message && (
-                      <p className="mt-2 bg-red-950/40 px-2 py-1 text-red-200">
-                        {job.error_code}: {job.error_message}
-                      </p>
+              view.jobs.map((job: TrainingJob) => (
+                <article key={job.job_id} className="bg-zinc-900 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-zinc-300">{shortId(job.job_id)}</span>
+                    <span className={`chip border ${jobStatusClass(job.status)}`}>
+                      {jobStatusLabel(job.status)}
+                    </span>
+                    <span className="chip border border-zinc-700 bg-zinc-950 text-zinc-400">
+                      {job.architecture}
+                    </span>
+                    <span className="ml-auto font-mono text-zinc-500">
+                      {formatElapsed(job.elapsed_seconds)}
+                    </span>
+                    {job.status === "queued" && (
+                      <button
+                        type="button"
+                        disabled={!view.readiness.can_run || busy !== ""}
+                        title={
+                          view.readiness.can_run
+                            ? undefined
+                            : readinessSummary(view.readiness)
+                        }
+                        onClick={() => void act(job.job_id, () => runTrainingJob(job.job_id))}
+                        className="btn btn-accent"
+                      >
+                        {busy === job.job_id ? "Başlatılıyor…" : "Eğitimi başlat"}
+                      </button>
                     )}
-                  </article>
-                ))}
-              </div>
-            )}
-          </Section>
+                  </div>
+                  <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-zinc-400 sm:grid-cols-4">
+                    <Detail label="kare" value={`${job.verified_frame_count}`} />
+                    <Detail
+                      label="eğitim/doğrulama"
+                      value={`${job.train_frame_count}/${job.validation_frame_count}`}
+                    />
+                    <Detail label="kaynak video" value={`${job.source_video_count}`} />
+                    <Detail label="kutu" value={`${job.box_count}`} />
+                    <Detail label="epok" value={`${job.epochs}`} />
+                    <Detail label="yığın" value={`${job.batch_size}`} />
+                    <Detail label="isteyen" value={job.requested_by} />
+                    <Detail label="sınıf" value={job.category_names.join(", ")} />
+                  </dl>
+                  {job.error_message && (
+                    <p className="mt-2 bg-red-950/40 px-2 py-1 text-red-200">
+                      {job.error_code}: {job.error_message}
+                    </p>
+                  )}
+                </article>
+              ))
+            )
+          )}
 
-          <Section
-            title="Ölçüm bekleyen adaylar"
-            note="Ölçüm değişmez bir dış test kümesi ister; son iki adım konsoldan yürür."
-            count={measuring.length}
-          >
-            {measuring.length === 0 ? (
-              <Empty>Ölçüm bekleyen aday model yok.</Empty>
-            ) : (
-              <div className="space-y-2">
-                {measuring.map((item: PipelineModelItem) => (
-                  <article key={item.version.model_version_id} className="bg-zinc-900 p-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-zinc-300">
-                        {shortId(item.version.model_version_id)}
-                      </span>
-                      <span className="chip border border-zinc-700 bg-zinc-950 text-zinc-400">
-                        {item.version.architecture}
-                      </span>
-                      {!item.onnx_exported && (
-                        <button
-                          type="button"
-                          disabled={busy !== ""}
-                          onClick={() => void act(
-                            item.version.model_version_id,
-                            () => exportCandidateOnnx(item.version.model_version_id),
-                          )}
-                          className="btn btn-accent ml-auto"
-                        >
-                          {busy === item.version.model_version_id
-                            ? "Aktarılıyor…"
-                            : "ONNX'e aktar"}
-                        </button>
+          {active === "measurement" && (() => {
+            const measuring = view.candidates.filter((item) => !item.measured);
+            if (measuring.length === 0) {
+              return <Empty>Ölçüm bekleyen aday model yok.</Empty>;
+            }
+            return measuring.map((item: PipelineModelItem) => (
+              <article key={item.version.model_version_id} className="bg-zinc-900 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-zinc-300">
+                    {shortId(item.version.model_version_id)}
+                  </span>
+                  <span className="chip border border-zinc-700 bg-zinc-950 text-zinc-400">
+                    {item.version.architecture}
+                  </span>
+                  {!item.onnx_exported && (
+                    <button
+                      type="button"
+                      disabled={busy !== ""}
+                      onClick={() => void act(
+                        item.version.model_version_id,
+                        () => exportCandidateOnnx(item.version.model_version_id),
                       )}
-                    </div>
-                    <ol className="mt-3 flex flex-wrap gap-3">
-                      {measurementSteps(item).map((step) => (
-                        <li
-                          key={step.label}
-                          className={step.done ? "text-emerald-300" : "text-zinc-500"}
-                        >
-                          {step.done ? "✓" : "○"} {step.label}
-                        </li>
-                      ))}
-                    </ol>
-                    {item.onnx_exported && (
-                      <pre className="mt-2 overflow-x-auto bg-zinc-950 p-2 font-mono text-[10px] text-zinc-400">
-                        {measurementCommand(item.version.model_version_id)}
-                      </pre>
-                    )}
-                  </article>
-                ))}
-              </div>
-            )}
-          </Section>
+                      className="btn btn-accent ml-auto"
+                    >
+                      {busy === item.version.model_version_id
+                        ? "Aktarılıyor…"
+                        : "ONNX'e aktar"}
+                    </button>
+                  )}
+                </div>
+                <ol className="mt-3 flex flex-wrap gap-3">
+                  {measurementSteps(item).map((step) => (
+                    <li
+                      key={step.label}
+                      className={step.done ? "text-emerald-300" : "text-zinc-500"}
+                    >
+                      {step.done ? "✓" : "○"} {step.label}
+                    </li>
+                  ))}
+                </ol>
+                {item.onnx_exported && (
+                  <>
+                    <p className="mt-3 text-zinc-400">
+                      Kalan adımlar değişmez bir test kümesi ister; konsoldan çalıştırın:
+                    </p>
+                    <pre className="mt-1 overflow-x-auto bg-zinc-950 p-2 font-mono text-[10px] text-zinc-400">
+                      {measurementCommand(item.version.model_version_id)}
+                    </pre>
+                  </>
+                )}
+              </article>
+            ));
+          })()}
 
-          <Section
-            title="Terfi kapısındaki adaylar"
-            note="Kapı yürürlükteki modelle karşılaştırır; geçemeyen aday terfi ettirilemez."
-            count={promotable.length}
-          >
-            {promotable.length === 0 ? (
-              <Empty>Ölçümü tamamlanmış aday yok.</Empty>
-            ) : (
-              <>
-                <label className="mb-2 flex flex-col gap-1 bg-zinc-900 p-3">
-                  <span className="microlabel">terfi gerekçesi</span>
-                  <input
-                    value={promotionReason}
-                    onChange={(e) => setPromotionReason(e.target.value)}
-                    placeholder="ölçüm kapısı geçildi"
-                    className="field w-full"
-                  />
-                </label>
-                <div className="space-y-2">
-                  {promotable.map((item: PipelineModelItem) => (
+          {active === "promotion" && (
+            <>
+              {champion && (
+                <section className="border border-emerald-900 bg-emerald-950/20 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-semibold text-emerald-100">Yürürlükteki model</h3>
+                    <span className="font-mono text-zinc-300">
+                      {shortId(champion.version.model_version_id)}
+                    </span>
+                    <span className="chip border border-zinc-700 bg-zinc-950 text-zinc-400">
+                      {champion.version.architecture}
+                    </span>
+                    <span className="ml-auto text-[10px] text-zinc-500">
+                      terfi eden: {champion.version.approved_by ?? "—"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-zinc-400">Aday bu değerleri geçmek zorundadır.</p>
+                  <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-zinc-400 sm:grid-cols-4">
+                    <Detail
+                      label="mAP50-95"
+                      value={ratio(champion.version.evaluation?.map_50_95)}
+                    />
+                    <Detail
+                      label="kritik recall"
+                      value={ratio(champion.version.evaluation?.critical_recall)}
+                    />
+                    <Detail
+                      label="yanlış alarm/saat"
+                      value={`${champion.version.evaluation?.false_alarms_per_hour ?? "—"}`}
+                    />
+                    <Detail
+                      label="p95 gecikme"
+                      value={`${champion.version.evaluation?.p95_latency_ms ?? "—"} ms`}
+                    />
+                  </dl>
+                </section>
+              )}
+
+              {view.candidates.filter((item) => item.measured).length === 0 ? (
+                <Empty>Ölçümü tamamlanmış aday yok.</Empty>
+              ) : (
+                <>
+                  <label className="block space-y-0.5 bg-zinc-900 p-2">
+                    <span className="microlabel block">terfi gerekçesi</span>
+                    <input
+                      value={promotionReason}
+                      onChange={(e) => setPromotionReason(e.target.value)}
+                      placeholder="ölçüm kapısı geçildi"
+                      className="field w-full"
+                    />
+                  </label>
+                  {view.candidates.filter((item) => item.measured).map((item) => (
                     <article key={item.version.model_version_id} className="bg-zinc-900 p-3">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-mono text-zinc-300">
@@ -671,14 +695,14 @@ export default function ModelMaintenancePanel({
                       )}
                     </article>
                   ))}
-                </div>
-              </>
-            )}
-          </Section>
+                </>
+              )}
+            </>
+          )}
         </div>
       </div>
 
-      <footer className="shrink-0 border-t border-zinc-800 pt-1.5 text-[10px] leading-relaxed text-zinc-500">
+      <footer className="shrink-0 text-[10px] leading-relaxed text-zinc-500">
         {readinessSummary(view.readiness)} · eğitim politikası{" "}
         {view.readiness.training_policy_version ?? "—"} · terfi politikası{" "}
         {view.readiness.promotion_policy_version ?? "—"} · otomatik eğitim ve otomatik
@@ -688,47 +712,19 @@ export default function ModelMaintenancePanel({
   );
 }
 
-function Section({
-  title,
-  note,
-  count,
-  children,
-}: {
-  title: string;
-  note?: string;
-  count?: number;
-  children: ReactNode;
-}) {
-  return (
-    <section>
-      <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-sm font-semibold text-zinc-100">{title}</h3>
-        {count !== undefined && count > 0 && (
-          <span className="text-[10px] text-zinc-600">{count} kayıt</span>
-        )}
-      </div>
-      {note && <p className="mt-0.5 leading-relaxed text-zinc-500">{note}</p>}
-      <div className="mt-2">{children}</div>
-    </section>
-  );
-}
-
 function Empty({ children }: { children: ReactNode }) {
   return (
     <p className="bg-zinc-900/60 px-4 py-8 text-center text-zinc-400">{children}</p>
   );
 }
 
-function List({ rest, children }: { rest: number; children: ReactNode }) {
+/** Sunucu liste uçlarını kırpar; sayaçla listenin farkını açıkça yazarız. */
+function Truncated({ shown, total }: { shown: number; total: number }) {
+  if (total <= shown) return null;
   return (
-    <div className="space-y-2">
-      {children}
-      {rest > 0 && (
-        <p className="px-1 text-[10px] text-zinc-600">
-          …ve {rest} kayıt daha. Listeyi kısaltmak için bekleyenleri işleyin.
-        </p>
-      )}
-    </div>
+    <p className="px-1 text-[10px] text-zinc-600">
+      Sunucu ilk {shown} kaydı gönderdi; bu aşamada toplam {total} olay bekliyor.
+    </p>
   );
 }
 
@@ -832,8 +828,8 @@ function NumberField({
   onChange: (value: number) => void;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="microlabel">{label}</span>
+    <label className="space-y-0.5">
+      <span className="microlabel block">{label}</span>
       <input
         type="number"
         min={1}
