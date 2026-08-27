@@ -166,6 +166,18 @@ async def motion_profile(video: Path, base_fps: float = 1.0) -> list[MotionSampl
          "-vf", f"fps={base_fps},scale={GRAY_W}:{GRAY_H}",
          "-pix_fmt", "gray", "-f", "rawvideo", "-"],
     )
+    return _motion_samples(raw, base_fps)
+
+
+def _motion_samples(raw: bytes, base_fps: float) -> list[MotionSample]:
+    """Piksel matematiği. Saf Python — bilerek.
+
+    ⚠ numpy ile vektörleştirmeyi denemeyin: ölçüldü ve İKİ KAT YAVAŞ çıktı
+    (2026-08-27, arcpcl, 33 kare: saf Python 14.7 ms, numpy 31.5 ms). Kare
+    64x48 = 3072 pikseldir; bu boyutta numpy'ın çağrı başına masrafı kazancı
+    yer. Zaten darboğaz burada değildir: aynı klipte ffmpeg çözümlemesi 480 ms,
+    bu döngü 15 ms'dir (%3).
+    """
     profile: list[MotionSample] = []
     prev: bytes | None = None
     background: list[float] | None = None
