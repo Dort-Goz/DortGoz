@@ -59,6 +59,20 @@ def window_motion(profile: list[MotionSample], start: float, end: float) -> floa
     return max(scores) if scores else 0.0
 
 
+def activity_levels(profile: list[MotionSample], start: float, end: float,
+                    gate: float, cap: int = 3) -> list[int]:
+    levels: list[int] = []
+    for sample in profile:
+        if not start <= sample.t < end:
+            continue
+        if sample.activity < gate or gate <= 0:
+            levels.append(0)
+            continue
+        excess = (sample.activity - gate) / gate
+        levels.append(min(cap, 1 + int(excess)))
+    return levels
+
+
 def select_keyframes(
     profile: list[MotionSample],
     start: float,

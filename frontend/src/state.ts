@@ -1,7 +1,9 @@
 import type {
-  ActuatorRequest, ActuatorResult, AgentStep, ChatMessage, Event,
+  ActivityStrip, ActuatorRequest, ActuatorResult, AgentStep, ChatMessage, Event,
   IncidentUpdate, RunStatus, ToolCall, WindowReport,
 } from "./types/events";
+
+export const ACTIVITY_WINDOW_SECONDS = 120;
 
 export interface TraceEntry {
   seq: number;
@@ -26,6 +28,7 @@ export interface FeedState {
   reportsPulse: number;
   video: string | null;
   live: boolean;
+  activity: ActivityStrip[];
 }
 
 export const emptyFeed: FeedState = {
@@ -40,7 +43,16 @@ export const emptyFeed: FeedState = {
   reportsPulse: 0,
   video: null,
   live: false,
+  activity: [],
 };
+
+export function pruneActivity(
+  strips: ActivityStrip[], now = Date.now() / 1000,
+): ActivityStrip[] {
+  const cutoff = now - ACTIVITY_WINDOW_SECONDS;
+  const kept = strips.filter((strip) => strip.wall_end >= cutoff);
+  return kept.length > CAPS.activity ? kept.slice(kept.length - CAPS.activity) : kept;
+}
 
 export interface ConsoleState {
   feeds: Record<string, FeedState>;
@@ -76,6 +88,7 @@ export const CAPS = {
   incidents: 200,
   chat: 200,
   actuators: 100,
+  activity: 40,
 } as const;
 
 function cap<T>(arr: T[], n: number): T[] {
@@ -152,6 +165,10 @@ export function consoleReducer(state: ConsoleState, action: Action): ConsoleStat
     case "window_report":
       return withFeed(state, feed, live, (f) => ({
         ...f, reports: cap([...f.reports, p], CAPS.reports),
+      }));
+    case "activity_strip":
+      return withFeed(state, feed, live, (f) => ({
+        ...f, activity: pruneActivity([...f.activity, p]),
       }));
     case "incident_update":
       return withFeed(state, feed, live, (f) => {

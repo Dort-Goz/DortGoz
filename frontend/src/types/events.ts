@@ -41,6 +41,20 @@ export interface WindowReport {
   uncertainties: string[];
 }
 
+export type ActivityStatus = "sakin" | "eleme" | "hareket" | "dikkat" | "anomali";
+
+export interface ActivityStrip {
+  type: "activity_strip";
+  window_start: number;
+  window_end: number;
+  wall_end: number;
+  gate: number;
+  peak: number;
+  status: ActivityStatus;
+  risk?: Risk | null;
+  levels: number[];
+}
+
 export interface AgentStep {
   type: "agent_step";
   node: string;
@@ -166,7 +180,7 @@ export interface ReviewSample {
 }
 
 export type Payload =
-  | WindowReport | AgentStep | ToolCall | IncidentUpdate | ReviewSample
+  | WindowReport | ActivityStrip | AgentStep | ToolCall | IncidentUpdate | ReviewSample
   | ActuatorRequest | ActuatorResult | ChatMessage | UICommand | RunStatus;
 
 export interface Event {

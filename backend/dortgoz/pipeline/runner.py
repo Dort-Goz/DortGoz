@@ -20,6 +20,7 @@ from ..domain.taxonomy import (
     legacy_ws_label_from_canonical,
 )
 from ..events import (
+    ActivityStrip,
     AgentStep,
     Event,
     ReviewSample,
@@ -652,6 +653,11 @@ async def run_video(
                 metrics.windows_skipped_before_vlm += 1
                 reason = (f"etkinlik {peak:.4f} < {gate:.4f}" if gated
                           else "aday-aralık dışı (screening)")
+                await rec.emit(ActivityStrip(
+                    window_start=start, window_end=end, gate=gate, peak=peak,
+                    status="sakin" if gated else "eleme",
+                    levels=windowing.activity_levels(profile, start, end, gate),
+                ))
                 await rec.emit(AgentStep(
                     node="interpret", status="end",
                     detail=f"{start:.0f}-{end:.0f} sn atlandı ({reason}"
@@ -917,6 +923,22 @@ async def run_video(
                 policy = decide_runtime_policy(report, validation)
                 ctx.add_report(report)
                 await rec.emit(report)
+                worst = max(
+                    (event.severity_hint for event in report.events),
+                    key=lambda level: RISK_ORDER.index(level),
+                    default=None,
+                )
+                await rec.emit(ActivityStrip(
+                    window_start=start, window_end=end, gate=gate, peak=peak,
+                    status=(
+                        "anomali"
+                        if worst is not None and RISK_ORDER.index(worst) >= RISK_ORDER.index("orta")
+                        else "dikkat" if report.anomaly_type != "normal"
+                        else "hareket"
+                    ),
+                    risk=worst,
+                    levels=windowing.activity_levels(profile, start, end, gate),
+                ))
                 sev = ",".join(sorted({e.severity_hint for e in report.events})) or "—"
                 await rec.emit(AgentStep(
                     node="interpret", status="end",

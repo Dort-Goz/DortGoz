@@ -67,6 +67,22 @@ class WindowReport(BaseModel):
         return canonical_event_type_from_ws_label(self.anomaly_type)
 
 
+ActivityStatus = Literal["sakin", "eleme", "hareket", "dikkat", "anomali"]
+
+
+class ActivityStrip(BaseModel):
+
+    type: Literal["activity_strip"] = "activity_strip"
+    window_start: float
+    window_end: float
+    wall_end: float = Field(default_factory=time.time)
+    gate: float = 0.0
+    peak: float = 0.0
+    status: ActivityStatus = "sakin"
+    risk: Risk | None = None
+    levels: list[int] = Field(default_factory=list, max_length=600)
+
+
 class AgentStep(BaseModel):
 
     type: Literal["agent_step"] = "agent_step"
@@ -206,6 +222,7 @@ class ReviewSample(BaseModel):
 
 Payload = (
     WindowReport
+    | ActivityStrip
     | AgentStep
     | ToolCall
     | IncidentUpdate

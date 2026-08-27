@@ -113,3 +113,36 @@ def test_two_segments_become_one_continuous_clip(tmp_path: Path) -> None:
     assert target.is_file()
     assert _duration(target) == pytest.approx(8.0, abs=0.5)
     assert not list(tmp_path.glob("*.concat.txt"))
+
+
+def test_activity_levels_mark_only_frames_over_the_motion_gate() -> None:
+    from dortgoz.pipeline.ingest import MotionSample
+    from dortgoz.pipeline.windowing import activity_levels
+
+    gate = 0.010
+    profile = [
+        MotionSample(t=0.0, changed=0.002, fg=0.001, mad=0.0),
+        MotionSample(t=1.0, changed=0.011, fg=0.0, mad=0.0),
+        MotionSample(t=2.0, changed=0.025, fg=0.0, mad=0.0),
+        MotionSample(t=3.0, changed=0.090, fg=0.0, mad=0.0),
+        MotionSample(t=40.0, changed=0.500, fg=0.0, mad=0.0),
+    ]
+
+    levels = activity_levels(profile, 0.0, 30.0, gate)
+
+    assert levels == [0, 1, 2, 3]
+
+
+def test_activity_levels_are_empty_without_samples_in_the_window() -> None:
+    from dortgoz.pipeline.windowing import activity_levels
+
+    assert activity_levels([], 0.0, 30.0, 0.01) == []
+
+
+def test_a_zero_gate_never_reports_a_passing_frame() -> None:
+    from dortgoz.pipeline.ingest import MotionSample
+    from dortgoz.pipeline.windowing import activity_levels
+
+    profile = [MotionSample(t=0.0, changed=0.5, fg=0.5, mad=0.0)]
+
+    assert activity_levels(profile, 0.0, 30.0, 0.0) == [0]

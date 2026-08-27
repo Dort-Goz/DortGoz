@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import type { IncidentUpdate } from "../types/events";
+import type { ActivityStrip, IncidentUpdate } from "../types/events";
+import ActivityBar from "./ActivityBar";
 import LiveArchive from "./LiveArchive";
 import TriagePanel from "./TriagePanel";
 
@@ -24,8 +25,9 @@ function lagBadge(f: LiveFeed): { text: string; cls: string } {
   return { text: `−${Math.round(s / 60)}dk geride`, cls: "bg-red-800 text-red-100" };
 }
 
-function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
+function LiveGrid({ incidents, activity, onSelectFeed, onOpenTraining }: {
   incidents: Record<string, IncidentUpdate[]>;
+  activity: Record<string, ActivityStrip[]>;
   onSelectFeed: (feed: string) => void;
   onOpenTraining: (eventId: string) => void;
 }) {
@@ -182,8 +184,8 @@ function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
           const badge = lagBadge(f);
           const inc = incidents[f.name]?.length ?? 0;
           return (
+            <div key={f.name} className="flex flex-col gap-px">
             <button
-              key={f.name}
               onClick={() => { setZoom(f.name); onSelectFeed(f.name); }}
               className={`relative aspect-video overflow-hidden rounded-sm border bg-black text-left transition-colors ${
                 inc > 0 ? "border-amber-700" : "border-zinc-800"
@@ -226,6 +228,8 @@ function LiveGrid({ incidents, onSelectFeed, onOpenTraining }: {
                 </div>
               )}
             </button>
+            <ActivityBar strips={activity[f.name] ?? []} />
+            </div>
           );
         })}
         {!active && feeds.length === 0 && (

@@ -8,6 +8,7 @@ import time
 
 from ..config import settings
 from ..events import (
+    ActivityStrip,
     AgentStep,
     BoundingBox,
     ChatMessage,
@@ -212,6 +213,7 @@ class MockLiveService:
         self._task: asyncio.Task[None] | None = None
         self._seq = 0
         self._clip = mock_event_clip()
+        self._activity_end: dict[str, float] = {}
 
     async def start(self, mode: str = "", feeds: list[dict] | None = None) -> list[FeedStatus]:
         if self.active:
@@ -270,6 +272,41 @@ class MockLiveService:
         (root / "latest.svg").write_text(svg, encoding="utf-8")
         status.snapshot = f"/media/canli-mock/{status.name}/latest.svg"
 
+    async def _emit_activity(
+        self, status: FeedStatus, rng: random.Random, *,
+        quiet: bool = False, status_name: str = "", risk: str | None = None,
+    ) -> None:
+        gate = 0.006
+        span = float(settings.window_seconds)
+        levels = []
+        for _ in range(int(span)):
+            if quiet and rng.random() < 0.8:
+                levels.append(0)
+            elif rng.random() < 0.25:
+                levels.append(0)
+            else:
+                levels.append(rng.randint(1, 3))
+        resolved = status_name or (
+            "sakin" if all(level == 0 for level in levels) else
+            "eleme" if rng.random() < 0.25 else "hareket"
+        )
+        self._activity_end[status.name] = self._activity_end.get(status.name, 0.0) + span
+        await self.manager.broadcast(
+            Event.wrap(
+                ActivityStrip(
+                    window_start=self._activity_end[status.name] - span,
+                    window_end=self._activity_end[status.name],
+                    gate=gate,
+                    peak=gate * (1 + max(levels)),
+                    status=resolved,
+                    risk=risk,
+                    levels=levels,
+                ),
+                feed=status.name,
+                live=True,
+            )
+        )
+
     async def _emit_incident(self, status: FeedStatus, rng: random.Random) -> None:
         self._seq += 1
         run_id = f"canli-{status.name}-{self._seq:04d}"
@@ -284,6 +321,11 @@ class MockLiveService:
                 feed=status.name,
                 live=True,
             )
+        )
+        await self._emit_activity(
+            status, rng,
+            status_name="anomali" if risk in {"yuksek", "kritik"} else "dikkat",
+            risk=risk,
         )
         await _nap(0.4)
         await self.manager.broadcast(
@@ -370,6 +412,7 @@ class MockLiveService:
                 if (tick + index) % 2 == 0:
                     status.segments_done += 1
                     self._write_snapshot(status, tick + index)
+                    await self._emit_activity(status, rng, quiet=index % 3 == 0)
             if tick >= next_incident:
                 next_incident = tick + rng.randint(6, 14)
                 healthy = [s for s in self._statuses if s.state != "hata"]

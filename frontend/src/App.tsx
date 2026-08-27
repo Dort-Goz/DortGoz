@@ -260,6 +260,11 @@ export default function App() {
       feedNames(state, true).map((name) => [name, state.feeds[name].incidents])),
     [state],
   );
+  const liveActivity = useMemo(
+    () => Object.fromEntries(
+      feedNames(state, true).map((name) => [name, state.feeds[name].activity])),
+    [state],
+  );
 
   const overrides = useCallback(() => ({
     model: interpretCfg && model !== interpretCfg.default_model ? model : "",
@@ -629,6 +634,7 @@ export default function App() {
         <div className="flex min-h-0 flex-1 flex-col p-1.5">
           <LiveGrid
             incidents={liveIncidents}
+            activity={liveActivity}
             onSelectFeed={selectLiveFeed}
             onOpenTraining={setTrainingEventId}
           />
