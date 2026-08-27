@@ -107,7 +107,12 @@ class Settings(BaseSettings):
     adjudicate_confusable: str = "hirsizlik,kavga,saldiri,bilinmeyen,arac_kazasi"
     # Hakem sınıfı ancak bu güvenin üzerinde değiştirir; 0.0 iken 0.29 güvenli
     # "düzeltmeler" geçiyor ve uydurma iddia üretiyordu (canlı kayıt, 2026-08-27).
-    adjudicate_min_conf: float = 0.60
+    # 30 dakikalık canlı ölçümde doğru kararların hepsi >= 0.86 geldi; tek yanlış
+    # karar 0.66 idi (kamera açı değişimi -> arac_kazasi). Eşik bu boşluğa kurulur.
+    # ⚠ Örneklem 10 karardır. Retraction'lar bu eşiğin altında kalmaya başlarsa
+    # eşiği tek değer yerine yöne göre ayırın (anomaliye yükseltme sıkı, `normal`e
+    # geri çekme gevşek).
+    adjudicate_min_conf: float = 0.75
     adjudicate_frame_width: int = 512
     detector_enabled: bool = True
     dfine_onnx: str = ""
