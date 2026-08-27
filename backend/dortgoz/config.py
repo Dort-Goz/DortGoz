@@ -182,7 +182,14 @@ class Settings(BaseSettings):
     incident_clip_timeout_seconds: float = Field(default=90.0, gt=0, le=600)
     max_feeds: int = 25
     live_feeds_path: Path = Path(__file__).resolve().parents[2] / "config" / "live_feeds.json"
-    live_segment_seconds: int = 30
+    # Gecikme bütçesinin en büyük kalemi segmentin dolmasını beklemektir; çıkarım
+    # pahalı yolda yalnız 4-8 sn sürer. Ölçüm (20 dk canlı, 9 akış, 2026-08-27):
+    # 30 sn -> 15 sn segment ile uyarı gecikmesi ortanca 47.2'den 25.5 sn'ye,
+    # p90 68.2'den 40.4 sn'ye indi. Düşen segment 0 kaldı, yanlış alarm artmadı.
+    # ⚠ ffmpeg yalnız anahtar karede keser; gerçek segment bundan uzun olur.
+    # ⚠ Kısa pencere, eleme kapısının daha çok sessiz pencere atmasına yol açar.
+    # Daha temkinli istiyorsanız 20 sn de ölçüldü (çıkarım 5.35 sn).
+    live_segment_seconds: int = 15
     live_max_backlog: int = 2
     live_preview: bool = True
     live_preview_fps: float = Field(default=4.0, gt=0, le=30)

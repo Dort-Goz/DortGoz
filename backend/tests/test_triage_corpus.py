@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from dortgoz.config import settings
 from dortgoz.events import Event, IncidentUpdate, ReviewSample, RunStatus, WindowSignals
 from dortgoz.services import triage
 
@@ -376,7 +377,10 @@ def live_incident(iid: str, start: float, end: float, risk: str = "orta",
     )
 
 
-def test_segment_boundary_event_stays_one_card(tmp_path):
+def test_segment_boundary_event_stays_one_card(tmp_path, monkeypatch):
+    # Senaryo 30 sn'lik segmente göre kurulur; varsayılan segment uzunluğu
+    # değiştiğinde bu test dikiş mantığını değil ayarı ölçmesin diye sabitlenir.
+    monkeypatch.setattr(settings, "live_segment_seconds", 30)
     triage.store.observe(run_started())
     triage.store.observe(live_incident("INC-A", 24.0, 30.0))
     triage.store.observe(live_incident("INC-B", 0.0, 7.0, risk="yuksek"))
