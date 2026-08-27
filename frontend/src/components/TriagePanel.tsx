@@ -736,9 +736,7 @@ export default function TriagePanel({
       intervention_band: item.intervention_band,
       intervention_score: item.intervention_score,
       wall: item.wall,
-      title: item.title,
       feedLabel: feedNames[item.feed] || item.feed || "ana akış",
-      category: CATEGORY_TR[item.model_category] ?? item.model_category,
       outranksWatched: openItem ? outranks(item, openItem) : false,
     }));
   }, [scopeLive, scopedPending, dismissed, openKey, openItem, feedNames]);
@@ -773,7 +771,6 @@ export default function TriagePanel({
     <LiveAlerts
       alerts={alerts}
       muted={muted}
-      clearQueue={!openItem && layout === "sidebar"}
       onMuteToggle={() => setMuted((current) => !current)}
       onOpen={openEvent}
       onDismiss={(key) => setDismissed((current) => [...current, key])}
@@ -952,7 +949,6 @@ export default function TriagePanel({
           } · ${wallClock(openItem.wall)}`}
           onClose={() => setOpenKey("")}
           alerts={alertStack}
-          alertsPresent={alerts.length > 0}
         >
           <PendingCard
             item={openItem}

@@ -1,14 +1,13 @@
 import { useEffect } from "react";
 
 export default function LiveEventModal({
-  title, subtitle, onClose, children, alerts, alertsPresent = false,
+  title, subtitle, onClose, children, alerts,
 }: {
   title: string;
   subtitle: string;
   onClose: () => void;
   children: React.ReactNode;
   alerts?: React.ReactNode;
-  alertsPresent?: boolean;
 }) {
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
@@ -29,11 +28,7 @@ export default function LiveEventModal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`fixed top-8 z-40 flex max-h-[88vh] flex-col overflow-hidden rounded-md border border-zinc-700 bg-zinc-950 shadow-2xl ${
-          alertsPresent
-            ? "left-3 right-[19.5rem]"
-            : "inset-x-0 mx-auto w-[min(56rem,94vw)]"
-        }`}
+        className="fixed inset-x-0 top-8 z-40 mx-auto flex max-h-[88vh] w-[min(56rem,94vw)] flex-col overflow-hidden rounded-md border border-zinc-700 bg-zinc-950 shadow-2xl"
       >
         <div className="flex h-11 shrink-0 items-center gap-2 border-b border-zinc-800 bg-zinc-900 px-3">
           <span className="truncate text-sm font-bold text-zinc-100">{title}</span>

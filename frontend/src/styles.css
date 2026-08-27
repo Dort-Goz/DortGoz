@@ -113,8 +113,8 @@ body {
 }
 
 @keyframes alert-in {
-  0% { opacity: 0; transform: translateX(1rem); }
-  100% { opacity: 1; transform: translateX(0); }
+  0% { opacity: 0; transform: translateY(-0.5rem); }
+  100% { opacity: 1; transform: translateY(0); }
 }
 .alert-in {
   animation: alert-in 0.2s ease-out 1;

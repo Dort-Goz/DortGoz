@@ -13,6 +13,7 @@ import LearningPipelinePanel from "./components/LearningPipelinePanel";
 import UploadPanel from "./components/UploadPanel";
 import TrainingReviewPanel from "./components/TrainingReviewPanel";
 import ReviewConsole from "./components/ReviewConsole";
+import { ALERT_ANCHOR_ID } from "./components/LiveAlerts";
 import {
   buildChatMessage,
   eventBelongsToDialogue,
@@ -405,7 +406,8 @@ export default function App() {
             ["live", "Canlı"],
             ["review", "Olay inceleme"],
             ["learning", "Öğrenme"],
-          ] as const).map(([value, label]) => (
+          ] as const).map(([value, label]) => {
+            const tab = (
             <button
               key={value}
               type="button"
@@ -438,7 +440,16 @@ export default function App() {
                 </span>
               )}
             </button>
-          ))}
+            );
+            if (value !== "live") return tab;
+            return (
+              <span key={value} className="relative flex h-full">
+                {tab}
+                {/* canlı bildirimler bu yuvaya, sekmenin altına düşer */}
+                <div id={ALERT_ANCHOR_ID} className="absolute left-0 top-full z-50 pt-1.5" />
+              </span>
+            );
+          })}
         </nav>
 
         <div className="flex-1" />
