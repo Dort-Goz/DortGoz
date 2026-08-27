@@ -47,13 +47,27 @@ async def probe_duration(video: Path) -> float:
     )
     return float(out.decode().strip())
 
+def scale_filter(width: int) -> str:
+    """Kaynaktan BÜYÜTME yapmayan tek ölçekleme süzgeci.
+
+    Eski süzgeç her klibi `width` piksele zorluyordu. 320x240 bir kaynak 540
+    piksele büyütülüyordu: yeni bilgi gelmez, yalnız bant genişliği ve çözümleme
+    süresi artar. `min(width,iw)` klibi kendi çözünürlüğünde bırakır.
+    `force_original_aspect_ratio` burada etkisizdi; yükseklik zaten `-2` ile
+    en-boy oranından gelir. `lanczos` küçültmede uzak ve küçük nesneleri
+    varsayılan bikübikten daha iyi korur; her çağrı aynı süzgeci kullanır.
+    Tırnaklar zorunludur: min() içindeki virgül aksi halde süzgeç ayracı sanılır.
+    """
+    return f"scale='min({width},iw)':-2:flags=lanczos"
+
+
 async def grab_clip(video: Path, start: float, end: float, width: int = 720) -> bytes:
     if start < 0 or end <= start:
         raise ValueError("video aralığı geçersiz")
     return await _run(
         "ffmpeg", "-nostdin", "-v", "error", "-ss", f"{start:.3f}", "-to", f"{end:.3f}",
         "-i", str(video), "-map", "0:v:0", "-an",
-        "-vf", f"scale={width}:-2:force_original_aspect_ratio=decrease",
+        "-vf", scale_filter(width),
         "-c:v", "mpeg4", "-q:v", "5", "-f", "mp4",
         "-movflags", "frag_keyframe+empty_moov", "-",
     )
@@ -115,7 +129,7 @@ async def _grab_frame_ffmpeg(video: Path, t: float, width: int) -> bytes:
         try:
             out = await _run(
                 "ffmpeg", "-v", "error", "-ss", f"{attempt_t:.3f}", "-i", str(video),
-                "-frames:v", "1", "-vf", f"scale={width}:-2",
+                "-frames:v", "1", "-vf", scale_filter(width),
                 "-f", "image2", "-c:v", "mjpeg", "-",
             )
             if out:
