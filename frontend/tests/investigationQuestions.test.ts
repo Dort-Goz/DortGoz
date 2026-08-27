@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { investigationQuestionsFor } from "../src/lib/investigationQuestions";
+import {
+  investigationQuestionsFor,
+  investigationRequestText,
+  investigationVisibleText,
+} from "../src/lib/investigationQuestions";
 import type { AnomalyType, IncidentUpdate } from "../src/types/events";
 
 function incident(anomalyType: AnomalyType, title: string): IncidentUpdate {
@@ -24,6 +28,23 @@ describe("olay aydınlatma soruları", () => {
     expect(result.questions).toHaveLength(5);
     expect(result.questions.filter((question) => question.scope === "general")).toHaveLength(3);
     expect(result.questions.filter((question) => question.scope === "category")).toHaveLength(2);
+  });
+
+  test("beş sorunun ayrıntılı istemini gönderir, operatöre kısa soruyu gösterir", () => {
+    const questions = investigationQuestionsFor(incident("arac_kazasi", "Araç kazası"))
+      .questions;
+
+    expect(questions).toHaveLength(5);
+    for (const question of questions) {
+      const requestText = investigationRequestText(question);
+      expect(requestText).toBe(`Olayı aydınlat: ${question.prompt}`);
+      expect(investigationVisibleText(requestText)).toBe(`Olayı aydınlat: ${question.label}`);
+    }
+  });
+
+  test("serbest operatör mesajlarını değiştirmez", () => {
+    const text = "Bu olaydaki en güçlü kanıt nedir?";
+    expect(investigationVisibleText(text)).toBe(text);
   });
 
   test("birleşik hırsızlık sınıfında belirgin alt odağı seçer", () => {

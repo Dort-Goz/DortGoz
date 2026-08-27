@@ -1,5 +1,9 @@
 import { memo, useEffect, useState, type ReactNode } from "react";
-import { investigationQuestionsFor } from "../lib/investigationQuestions";
+import {
+  investigationQuestionsFor,
+  investigationRequestText,
+  investigationVisibleText,
+} from "../lib/investigationQuestions";
 import type { StoredIncident } from "../state";
 import type { ChatMessage } from "../types/events";
 import { useStickyScroll } from "../lib/useStickyScroll";
@@ -100,7 +104,7 @@ function ChatPanel({
                 : "bg-zinc-800 text-zinc-200"
             }`}
           >
-            {m.role === "agent" ? <ChatText text={m.text} /> : m.text}
+            {m.role === "agent" ? <ChatText text={m.text} /> : investigationVisibleText(m.text)}
             {m.streaming && <span className="animate-pulse text-sky-400">▍</span>}
           </div>
         ))}
@@ -126,9 +130,9 @@ function ChatPanel({
               <button
                 key={question.id}
                 type="button"
-                title={question.prompt}
+                title={question.label}
                 onClick={() => {
-                  onSend(`Olayı aydınlat: ${question.prompt}`);
+                  onSend(investigationRequestText(question));
                   setShowQuestions(false);
                 }}
                 className={`min-h-8 rounded-sm border px-2 py-1 text-left text-[11px] leading-tight transition-colors ${

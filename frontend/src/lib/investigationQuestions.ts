@@ -385,6 +385,28 @@ const PROFILES: Record<string, Profile> = {
   },
 };
 
+const INVESTIGATION_PREFIX = "Olayı aydınlat: ";
+
+const QUESTION_LABEL_BY_PROMPT = new Map(
+  [
+    ...GENERAL_QUESTIONS,
+    ...Object.values(PROFILES).flatMap((profile) => profile.questions),
+  ].map((question) => [question.prompt, question.label]),
+);
+
+export function investigationRequestText(
+  question: Pick<InvestigationQuestion, "prompt">,
+): string {
+  return `${INVESTIGATION_PREFIX}${question.prompt}`;
+}
+
+export function investigationVisibleText(text: string): string {
+  if (!text.startsWith(INVESTIGATION_PREFIX)) return text;
+  const prompt = text.slice(INVESTIGATION_PREFIX.length);
+  const label = QUESTION_LABEL_BY_PROMPT.get(prompt);
+  return label ? `${INVESTIGATION_PREFIX}${label}` : text;
+}
+
 const PROFILE_CANDIDATES: Record<AnomalyType, string[]> = {
   kavga: ["abuse", "fighting"],
   saldiri: ["abuse", "assault"],
