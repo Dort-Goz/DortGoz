@@ -31,10 +31,10 @@ export interface LiveAlert extends AlertCandidate {
 }
 
 const TONE = [
-  "border-sky-500 bg-sky-950/90 text-sky-100 shadow-[0_0_16px_-2px_rgb(56,189,248)]",
-  "border-amber-400 bg-amber-950/90 text-amber-100 shadow-[0_0_18px_-2px_rgb(251,191,36)]",
-  "border-orange-400 bg-orange-950/90 text-orange-50 shadow-[0_0_22px_-2px_rgb(251,146,60)]",
-  "border-red-400 bg-red-950/95 text-red-50 shadow-[0_0_28px_-1px_rgb(248,113,113)]",
+  { edge: "border-l-sky-400", text: "text-sky-300" },
+  { edge: "border-l-amber-400", text: "text-amber-300" },
+  { edge: "border-l-orange-400", text: "text-orange-300" },
+  { edge: "border-l-red-400", text: "text-red-300" },
 ] as const;
 
 const LEVEL_TR = ["Düşük", "Orta", "Yüksek", "Kritik"] as const;
@@ -61,37 +61,34 @@ export default function LiveAlerts({
         return (
           <div
             key={alert.key}
-            className={`pointer-events-auto alert-neon rounded-md border-2 p-2 ${TONE[rank]}`}
+            className={`pointer-events-auto alert-in border border-zinc-700 border-l-2 bg-zinc-900/95 p-2 shadow-lg shadow-black/60 ${TONE[rank].edge}`}
           >
             <div className="flex items-start gap-1.5">
-              <span className="text-sm leading-none">⚡</span>
               <div className="min-w-0 flex-1">
-                <div className="text-[10px] font-bold uppercase tracking-widest">
-                  yeni anomali · {LEVEL_TR[rank]}
+                <div className="microlabel">
+                  <span className={TONE[rank].text}>{LEVEL_TR[rank]}</span> · yeni anomali
                   {alert.outranksWatched && " · izlenenden ağır"}
                 </div>
-                <div className="truncate text-xs font-medium">{alert.title}</div>
-                <div className="truncate text-[10px] opacity-80">
+                <div className="truncate text-xs font-medium text-zinc-100">{alert.title}</div>
+                <div className="truncate text-[10px] text-zinc-500">
                   {alert.feedLabel} · {alert.category}
                 </div>
               </div>
               <button
                 onClick={() => onDismiss(alert.key)}
                 title="Bu bildirimi gizle"
-                className="shrink-0 px-1 text-xs opacity-60 hover:opacity-100"
+                className="shrink-0 px-1 text-xs text-zinc-500 hover:text-zinc-200"
               >
                 ✕
               </button>
             </div>
             <button
               onClick={() => onOpen(alert.key)}
-              className={`mt-1.5 w-full rounded-sm border px-2 py-1 text-xs font-bold transition-colors ${
-                alert.outranksWatched
-                  ? "border-current bg-white/15 hover:bg-white/25"
-                  : "border-current/50 hover:bg-white/10"
+              className={`btn mt-1.5 h-6 w-full ${
+                alert.outranksWatched ? "btn-outline-warn" : "btn-outline"
               }`}
             >
-              {alert.outranksWatched ? "BU OLAYA GEÇ →" : "Olayı aç →"}
+              {alert.outranksWatched ? "Bu olaya geç" : "Olayı aç"}
             </button>
           </div>
         );
@@ -99,9 +96,9 @@ export default function LiveAlerts({
       <button
         onClick={onMuteToggle}
         title={muted ? "Kritik olayda sesli uyarıyı aç" : "Sesli uyarıyı kapat"}
-        className="pointer-events-auto self-end rounded-sm bg-zinc-900/90 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:text-zinc-200"
+        className="pointer-events-auto self-end border border-zinc-800 bg-zinc-900/90 px-1.5 py-0.5 text-[10px] text-zinc-500 hover:text-zinc-200"
       >
-        {muted ? "🔇 ses kapalı" : "🔔 ses açık"}
+        {muted ? "ses kapalı" : "ses açık"}
       </button>
     </div>
   );

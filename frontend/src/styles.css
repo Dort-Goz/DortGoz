@@ -113,19 +113,11 @@ body {
 }
 
 @keyframes alert-in {
-  0% { opacity: 0; transform: translateX(1.5rem) scale(0.96); }
-  60% { opacity: 1; transform: translateX(-0.15rem) scale(1.01); }
-  100% { opacity: 1; transform: translateX(0) scale(1); }
+  0% { opacity: 0; transform: translateX(1rem); }
+  100% { opacity: 1; transform: translateX(0); }
 }
-@keyframes alert-breathe {
-  0%, 100% { filter: brightness(1); }
-  50% { filter: brightness(1.35); }
-}
-.alert-neon {
-  animation: alert-in 0.28s ease-out 1, alert-breathe 1.8s ease-in-out infinite 0.28s;
-}
-@media (prefers-reduced-motion: reduce) {
-  .alert-neon { animation: alert-in 0.28s ease-out 1; }
+.alert-in {
+  animation: alert-in 0.2s ease-out 1;
 }
 
 .risk-dusuk { color: var(--risk-dusuk); border-color: var(--risk-dusuk); }
