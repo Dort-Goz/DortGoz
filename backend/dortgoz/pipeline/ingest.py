@@ -61,6 +61,26 @@ def scale_filter(width: int) -> str:
     return f"scale='min({width},iw)':-2:flags=lanczos"
 
 
+# H.264 her yerde çözülür ve ölçümde mpeg4'ü her eksende yener. Kodlayıcı yoksa
+# eski mpeg4 yolu durur; klip üretimi hiçbir kurulumda kesilmez.
+# Ölçüm (bench/klip_kodek.py, 2026-08-27, 720p canlı segment): mpeg4 -q:v 5
+# 0.70 sn / 2075 KB / SSIM 0.9247; libx264 veryfast crf23 0.40 sn / 1222 KB /
+# SSIM 0.9499. Daha hızlı, daha küçük ve daha ayrıntılıdır.
+_KODEK = {
+    "libx264": ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                "-pix_fmt", "yuv420p"],
+    # libopenh264 `-preset`/`-crf` desteklemez; bit hızı ile sürülür.
+    "libopenh264": ["-c:v", "libopenh264", "-b:v", "1200k", "-pix_fmt", "yuv420p"],
+    "mpeg4": ["-c:v", "mpeg4", "-q:v", "5"],
+}
+
+
+async def clip_codec() -> list[str]:
+    from ..tools.context_clip import browser_video_encoder
+
+    return _KODEK[await browser_video_encoder()]
+
+
 async def grab_clip(video: Path, start: float, end: float, width: int = 720) -> bytes:
     if start < 0 or end <= start:
         raise ValueError("video aralığı geçersiz")
@@ -68,7 +88,7 @@ async def grab_clip(video: Path, start: float, end: float, width: int = 720) -> 
         "ffmpeg", "-nostdin", "-v", "error", "-ss", f"{start:.3f}", "-to", f"{end:.3f}",
         "-i", str(video), "-map", "0:v:0", "-an",
         "-vf", scale_filter(width),
-        "-c:v", "mpeg4", "-q:v", "5", "-f", "mp4",
+        *await clip_codec(), "-f", "mp4",
         "-movflags", "frag_keyframe+empty_moov", "-",
     )
 
