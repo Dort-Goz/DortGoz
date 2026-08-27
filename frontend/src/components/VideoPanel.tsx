@@ -23,7 +23,7 @@ function boxTag(box: BoundingBox): string {
 }
 
 export default function VideoPanel({
-  highlight, seekTo, seekNonce, video, feed, progress, progressError,
+  highlight, seekTo, seekNonce, video, feed, progress, progressError, onReport,
 }: {
   highlight: StoredIncident | null;
   seekTo: number | null;
@@ -32,6 +32,7 @@ export default function VideoPanel({
   feed?: string | null;
   progress?: number | null;
   progressError?: boolean;
+  onReport?: (t: number) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -128,13 +129,24 @@ export default function VideoPanel({
             {feed}
           </span>
         )}
-        {highlight && (
+        {highlight ? (
           <span
             className={`min-w-0 flex-1 truncate text-right font-medium normal-case tracking-normal risk-${highlight.risk}`}
             title={`${highlight.title} — kutular olay anının (${clock(highlight.boxT ?? highlight.t)}) çevresinde görünür`}
           >
             ▸ {highlight.title} · {clock(highlight.t)}
           </span>
+        ) : (
+          <span className="flex-1" />
+        )}
+        {onReport && video && (
+          <button
+            onClick={() => onReport(videoRef.current?.currentTime ?? 0)}
+            className="btn btn-outline-warn h-6 shrink-0 px-1.5 normal-case tracking-normal"
+            title="Sistemin kaçırdığı bir olayı bildir — pencere oynatıcının durduğu kareye göre önerilir"
+          >
+            ⚑ bildir
+          </button>
         )}
       </div>
       <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black">

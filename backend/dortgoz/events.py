@@ -102,6 +102,9 @@ class ToolCall(BaseModel):
     dialogue_id: str = Field(default="", max_length=128)
 
 
+OPERATOR_INCIDENT_PREFIX = "op-"
+
+
 class WindowSignals(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

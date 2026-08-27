@@ -46,6 +46,20 @@ def feed_from_media_path(media_path: str) -> str:
     return Path(media_path).parts[1] if is_live_segment(media_path) else ""
 
 
+def segment_for_epoch(
+    directory: Path, epoch_time: float, segment_seconds: float
+) -> Path | None:
+    if segment_seconds <= 0:
+        return None
+    for candidate in directory.glob("seg_*.mp4"):
+        epoch = segment_start_epoch(candidate)
+        if epoch is None or candidate.is_symlink() or not candidate.is_file():
+            continue
+        if epoch <= epoch_time < epoch + segment_seconds:
+            return candidate
+    return None
+
+
 def segments_covering(
     directory: Path,
     start_epoch: float,
@@ -117,6 +131,7 @@ __all__ = [
     "feed_from_media_path",
     "feed_from_run_id",
     "is_live_segment",
+    "segment_for_epoch",
     "segment_start_epoch",
     "segments_covering",
 ]

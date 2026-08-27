@@ -10,6 +10,7 @@ import ExperimentPanel, { type InterpretConfig } from "./components/ExperimentPa
 import FeedStrip from "./components/FeedStrip";
 import LiveGrid from "./components/LiveGrid";
 import ModelMaintenancePanel from "./components/ModelMaintenancePanel";
+import OperatorReportDialog from "./components/OperatorReport";
 import UploadPanel from "./components/UploadPanel";
 import TrainingReviewPanel from "./components/TrainingReviewPanel";
 import ReviewConsole from "./components/ReviewConsole";
@@ -120,6 +121,7 @@ export default function App() {
     () => localStorage.getItem("dortgoz.reviewer") ?? "operator",
   );
   const [trainingEventId, setTrainingEventId] = useState("");
+  const [reportT, setReportT] = useState<number | null>(null);
   const [openedFromMaintenance, setOpenedFromMaintenance] = useState(false);
   const [fixtureMode, setFixtureMode] = useState(false);
   const [livePending, setLivePending] = useState(0);
@@ -656,6 +658,7 @@ export default function App() {
             feed={Object.keys(analysisFeeds).length >= 2 ? analysisActive : null}
             progress={run ? progressPct : null}
             progressError={runState === "error"}
+            onReport={run?.run_id && run.run_id !== "-" ? setReportT : undefined}
           />
         </div>
         <div className="col-span-4 min-h-0">
@@ -698,6 +701,19 @@ export default function App() {
         <div className="flex min-h-0 flex-1 flex-col">
           <ModelMaintenancePanel user={user} onOpenEvent={openMaintenanceEvent} />
         </div>
+      )}
+
+      {reportT !== null && (
+        <OperatorReportDialog
+          live={false}
+          feeds={{}}
+          initialFeed={analysisActive}
+          runId={run?.run_id}
+          video={feed.video ?? ""}
+          initialT={reportT}
+          user={user}
+          onClose={() => setReportT(null)}
+        />
       )}
 
       {trainingEventId && (

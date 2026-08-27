@@ -31,7 +31,6 @@ interface TriageItem {
   evidence: string | null;
   evidence_refs: EventEvidenceRef[];
   sample: boolean;
-  /** "model" = sistem tespiti, "operator" = elle bildirilen kaçan olay. */
   source: string;
   needs_review: boolean;
   review_reason: string;
@@ -974,7 +973,6 @@ export default function TriagePanel({
               )}
               <span className="text-zinc-400">
                 {" "}· {feedNames[i.feed] || i.feed || "ana akış"}
-                {/* Segmente bağlanamayan canlı bildirimde t epoch'tır; mm:ss yalan olur. */}
                 {!(i.live && i.source === "operator") && (
                   <> · <span className="font-mono">{clock(i.t)}</span></>
                 )}

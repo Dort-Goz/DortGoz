@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from .api.contracts import TriageDecisionInput
+from .api.contracts import OperatorReportInput, TriageDecisionInput
 from .api.errors import (
     domain_exception_handler,
     http_exception_handler,
@@ -35,7 +35,15 @@ from .errors import (
     RepositoryError,
     RepositoryNotFoundError,
 )
-from .events import ActuatorRequest, ChatMessage, Event, OperatorMessage, RunStatus
+from .events import (
+    OPERATOR_INCIDENT_PREFIX,
+    ActuatorRequest,
+    ChatMessage,
+    Event,
+    IncidentUpdate,
+    OperatorMessage,
+    RunStatus,
+)
 from .services.action_dispatcher import dispatcher as action_dispatcher
 from .services.analysis_job import (
     AnalysisJobExecutionDisabled,
@@ -503,6 +511,83 @@ async def triage_decide(body: TriageDecisionInput) -> dict:
         raise HTTPException(status_code=422, detail=str(exc))
     except (triage.TriagePersistenceError, RepositoryError) as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    from dataclasses import asdict
+    return asdict(item)
+
+
+_report_media_tasks: set[asyncio.Task] = set()
+
+
+async def _prepare_report_media(event_id: str, delay: float) -> None:
+    if delay > 0:
+        await asyncio.sleep(delay)
+    try:
+        await api_runtime.incident_media.prepare(event_id)
+    except Exception:
+        LOGGER.warning(
+            "operatör bildirimi için kanıt klibi üretilemedi: %s", event_id, exc_info=True
+        )
+
+
+@app.post("/api/triage/report")
+async def triage_report(body: OperatorReportInput) -> dict:
+    from .services.live_clip import segment_for_epoch, segment_start_epoch
+
+    if body.live and body.end > time.time() + 60:
+        raise HTTPException(status_code=422, detail="bildirim penceresi gelecekte olamaz")
+    incident_id = f"{OPERATOR_INCIDENT_PREFIX}{uuid4().hex[:10]}"
+    start, end = body.start, body.end
+    run_id, video = body.run_id, body.video
+    if body.live:
+        run_id, video = "", ""
+        segment = segment_for_epoch(
+            settings.media_dir / "canli" / body.feed,
+            body.start,
+            float(settings.live_segment_seconds),
+        )
+        if segment is not None:
+            epoch = segment_start_epoch(segment)
+            candidate_run = f"canli-{body.feed}-{segment.stem.removeprefix('seg_')}"
+            if (
+                epoch is not None
+                and api_runtime.repository.get_analysis(candidate_run) is not None
+            ):
+                run_id = candidate_run
+                video = segment.relative_to(settings.media_dir).as_posix()
+                start, end = body.start - epoch, body.end - epoch
+    payload = IncidentUpdate(
+        incident_id=incident_id,
+        t=(start + end) / 2,
+        phase="sonuclandi",
+        title="Operatör bildirimi",
+        anomaly_type=body.category,
+        risk=body.risk,
+        detail=body.note.strip(),
+        olay_baslangic=start,
+        olay_bitis=end,
+    )
+    event_id = None
+    if run_id and api_runtime.repository.get_analysis(run_id) is not None:
+        event_id = runtime_projection.persist_operator_incident(body.feed, run_id, payload)
+    try:
+        item = triage.store.report_missed(
+            feed=body.feed,
+            live=body.live,
+            payload=payload,
+            event_id=event_id,
+            run_id=run_id,
+            video=video,
+            reviewer=body.reviewer,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    if not body.live or event_id is not None:
+        await manager.broadcast(Event.wrap(payload, feed=body.feed, live=body.live))
+    if event_id is not None:
+        delay = float(settings.live_segment_seconds) * 2 if body.live else 0.0
+        task = asyncio.create_task(_prepare_report_media(event_id, delay))
+        _report_media_tasks.add(task)
+        task.add_done_callback(_report_media_tasks.discard)
     from dataclasses import asdict
     return asdict(item)
 

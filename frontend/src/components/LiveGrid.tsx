@@ -5,6 +5,7 @@ import type {
 import ActionLog from "./ActionLog";
 import ActivityBar from "./ActivityBar";
 import LiveArchive from "./LiveArchive";
+import OperatorReportDialog from "./OperatorReport";
 import TriagePanel from "./TriagePanel";
 import { startPreviewStream } from "../lib/livePreview";
 
@@ -62,6 +63,7 @@ function LiveGrid({
   const [error, setError] = useState("");
   const [zoom, setZoom] = useState<string | null>(null);
   const [view, setView] = useState<"duvar" | "kayitlar" | "aksiyonlar">("duvar");
+  const [reportFeed, setReportFeed] = useState<string | null>(null);
   const [preview, setPreview] = useState<Record<string, string>>({});
   const previewRef = useRef<Record<string, string>>({});
   const [rate, setRate] = useState<number>(() =>
@@ -137,6 +139,10 @@ function LiveGrid({
     () => Object.fromEntries(feeds.filter((f) => f.desc).map((f) => [f.name, f.desc])),
     [feeds],
   );
+  const allLabels = useMemo(
+    () => Object.fromEntries(feeds.map((f) => [f.name, f.desc || f.name])),
+    [feeds],
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -192,6 +198,16 @@ function LiveGrid({
           </select>
         </label>
 
+        {feeds.length > 0 && (
+          <button
+            onClick={() => setReportFeed(zoom ?? feeds[0].name)}
+            className="btn btn-outline-warn"
+            title="Duvarın bildirmediği bir olay gördüyseniz elle kayda geçirin"
+          >
+            ⚑ Kaçan olayı bildir
+          </button>
+        )}
+
         <span className="flex-1" />
         {active && (
           <span className="truncate font-mono text-zinc-400">
@@ -227,9 +243,18 @@ function LiveGrid({
                 ⚠ {i.title} · risk {i.risk}
               </div>
             ))}
-            <button onClick={() => setZoom(null)} className="btn btn-ghost h-6 px-1.5">
-              kapat ✕
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setReportFeed(zoomed.name)}
+                className="btn btn-outline-warn h-6 px-1.5"
+                title="Bu kamerada sistemin kaçırdığı bir olayı bildir"
+              >
+                ⚑ bildir
+              </button>
+              <button onClick={() => setZoom(null)} className="btn btn-ghost h-6 px-1.5">
+                kapat ✕
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -330,6 +355,15 @@ function LiveGrid({
       />
       </div>
       </div>
+      {reportFeed !== null && (
+        <OperatorReportDialog
+          live
+          feeds={allLabels}
+          initialFeed={reportFeed}
+          user={user}
+          onClose={() => setReportFeed(null)}
+        />
+      )}
     </div>
   );
 }

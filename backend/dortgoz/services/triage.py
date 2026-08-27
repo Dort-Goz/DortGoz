@@ -24,7 +24,7 @@ from ..domain.feedback import (
 from ..domain.priority import intervention_band_for_score
 from ..domain.provenance import HumanReview, ReviewDecision
 from ..domain.taxonomy import canonical_event_type_from_ws_label
-from ..events import Event, IncidentUpdate
+from ..events import OPERATOR_INCIDENT_PREFIX, Event, IncidentUpdate
 from ..repositories.bundles import FeedbackWriteBundle
 from ..repositories.protocols import EventRepository
 from . import exemplar_bank
@@ -123,6 +123,7 @@ class TriageItem:
     model_start: float | None = None
     model_end: float | None = None
     signals: dict[str, Any] = field(default_factory=dict)
+    source: str = "model"
     verdict: str = ""
     operator_category: str = ""
     operator_start: float | None = None
@@ -261,6 +262,8 @@ class TriageStore:
             self._observe_sample(event, payload)
             return
         if kind != "incident_update":
+            return
+        if payload.incident_id.startswith(OPERATOR_INCIDENT_PREFIX):
             return
         key = f"{event.feed}:{payload.incident_id}"
         event_id = self._resolve_event_id(event.feed, payload.incident_id)
@@ -613,6 +616,73 @@ class TriageStore:
         item.operator_start = corrected_times[0]
         item.operator_end = corrected_times[2]
         item.decided_wall = time.time()
+        self._append_resolved(item)
+        self._stamp_and_log(item)
+        return item
+
+    def report_missed(
+        self,
+        *,
+        feed: str,
+        live: bool,
+        payload: IncidentUpdate,
+        event_id: str | None,
+        run_id: str = "",
+        video: str = "",
+        reviewer: str = "operator-console",
+    ) -> TriageItem:
+        if payload.anomaly_type not in CATEGORIES:
+            raise ValueError(f"geçersiz kategori: {payload.anomaly_type}")
+        if not reviewer.strip():
+            raise ValueError("reviewer boş olamaz")
+        note = payload.detail.strip()
+        if not note:
+            raise ValueError("bildirim gözlem notu gerektirir")
+        priority = self._priority_values(payload, event_id)
+        now = time.time()
+        item = TriageItem(
+            key=f"{feed}:{payload.incident_id}",
+            feed=feed,
+            incident_id=payload.incident_id,
+            event_id=event_id,
+            t=payload.t,
+            wall=now,
+            title=payload.title,
+            model_category="normal",
+            risk=payload.risk,
+            phase="sonuclandi",
+            live=live,
+            run_id=run_id,
+            video=video,
+            source="operator",
+            verdict="anomali",
+            operator_category=payload.anomaly_type,
+            operator_risk=payload.risk,
+            reviewer=reviewer.strip()[:120],
+            note=note[:500],
+            operator_start=payload.olay_baslangic,
+            operator_end=payload.olay_bitis,
+            review_start=payload.olay_baslangic,
+            review_peak=payload.t,
+            review_end=payload.olay_bitis,
+            intervention_required=True,
+            decided_wall=now,
+        )
+        self._apply_priority(item, priority)
+        if event_id is not None:
+            review = self._save_review(
+                event_id,
+                ReviewDecision.EDIT,
+                reviewer=item.reviewer,
+                note=item.note,
+                event_type=canonical_event_type_from_ws_label(payload.anomaly_type).value,
+                start_time=payload.olay_baslangic,
+                peak_time=payload.t,
+                end_time=payload.olay_bitis,
+                risk_level=payload.risk,
+                intervention_required=True,
+            )
+            item.review_ids = [review.review_id]
         self._append_resolved(item)
         self._stamp_and_log(item)
         return item

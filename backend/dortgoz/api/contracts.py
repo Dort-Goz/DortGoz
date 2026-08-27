@@ -120,6 +120,41 @@ class TriageDecisionInput(BaseModel):
         return self
 
 
+class OperatorReportInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    feed: str = Field(default="", max_length=120)
+    live: bool = False
+    category: Literal[
+        "kavga",
+        "saldiri",
+        "hirsizlik",
+        "silahli_olay",
+        "yangin",
+        "patlama",
+        "arac_kazasi",
+        "vandalizm",
+        "bilinmeyen",
+    ]
+    risk: Literal["dusuk", "orta", "yuksek", "kritik"]
+    note: str = Field(min_length=3, max_length=500)
+    reviewer: str = Field(min_length=1, max_length=120)
+    start: float = Field(ge=0)
+    end: float = Field(ge=0)
+    run_id: str = Field(default="", max_length=200)
+    video: str = Field(default="", max_length=300)
+
+    @model_validator(mode="after")
+    def window_is_valid(self) -> OperatorReportInput:
+        if self.end <= self.start:
+            raise ValueError("bildirim bitişi başlangıçtan sonra olmalıdır")
+        if self.end - self.start > 600:
+            raise ValueError("bildirim penceresi 10 dakikayı aşamaz")
+        if self.live and not self.feed:
+            raise ValueError("canlı bildirim kamera adı gerektirir")
+        return self
+
+
 class DevelopmentApprovalInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -286,6 +321,7 @@ __all__ = [
     "HumanReviewInput",
     "IncidentMediaView",
     "ModelPromotionInput",
+    "OperatorReportInput",
     "QueryRequest",
     "QueryResponse",
     "ReportResponse",

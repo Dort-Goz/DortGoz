@@ -17,7 +17,7 @@ from ..domain.memory import AnalysisStatus
 from ..domain.provenance import AnalysisProvenance, ModelRunRef
 from ..domain.taxonomy import VerifiedEventType, canonical_event_type_from_ws_label
 from ..domain.video import VideoMetadata, VideoProbe
-from ..events import Event, IncidentUpdate, RunStatus
+from ..events import OPERATOR_INCIDENT_PREFIX, Event, IncidentUpdate, RunStatus
 from ..infrastructure.ffmpeg import probe_video
 from ..repositories.protocols import EventRepository
 
@@ -55,6 +55,8 @@ class RuntimeAnalysisProjection:
             if isinstance(payload, RunStatus):
                 self._observe_run(envelope.feed or "", payload)
             elif isinstance(payload, IncidentUpdate):
+                if payload.incident_id.startswith(OPERATOR_INCIDENT_PREFIX):
+                    return
                 feed = envelope.feed or ""
                 run_id = self._run_by_feed.get(feed)
                 if run_id is not None:
@@ -141,6 +143,14 @@ class RuntimeAnalysisProjection:
         self._video_by_run[run_id] = stored.video_id
         return stored
 
+    def persist_operator_incident(
+        self, feed: str, analysis_id: str, incident: IncidentUpdate
+    ) -> str | None:
+        event_id = self._persist_incident(analysis_id, incident)
+        if event_id is not None:
+            self._event_by_incident[(feed, incident.incident_id)] = event_id
+        return event_id
+
     def event_id_for(self, feed: str, incident_id: str) -> str | None:
 
 
@@ -208,7 +218,9 @@ class RuntimeAnalysisProjection:
                 peak_score=score,
                 anomaly_score=score,
                 trigger_signals=[
-                    "runtime_incident",
+                    "operator_report"
+                    if incident.incident_id.startswith(OPERATOR_INCIDENT_PREFIX)
+                    else "runtime_incident",
                     f"event_type:{incident.anomaly_type}",
                     f"risk:{incident.risk}",
                 ],

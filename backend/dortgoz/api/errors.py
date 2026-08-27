@@ -84,7 +84,12 @@ async def validation_exception_handler(_: Request, exc: RequestValidationError) 
         "INVALID_REQUEST",
         "İstek sözleşmesi geçersiz.",
         status_code=422,
-        details={"errors": exc.errors()},
+        details={
+            "errors": [
+                {key: value for key, value in error.items() if key in {"type", "loc", "msg"}}
+                for error in exc.errors()
+            ]
+        },
     )
 
 
