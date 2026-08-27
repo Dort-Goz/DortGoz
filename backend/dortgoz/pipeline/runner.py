@@ -623,8 +623,18 @@ async def run_video(
                 prev_end = end
             peak = windowing.window_motion(profile, start, end)
 
+            gated = not settings.dynamic_windows and peak < gate
+            screened_out = bool(cand_spans is not None
+                                and not screening_covers(start, end, cand_spans))
+
+            # Dedektör yalnız sonucu kararı değiştirebildiğinde çalışır. Screening
+            # pencereyi elediğinde kurtarma zaten imkânsızdır (`rescued` altında
+            # `not screened_out` şartı var) ve pencere VLM'e gitmez, yani
+            # `meta_text` de kullanılmaz. Ölçüm (2026-08-27): 181 çağrının
+            # 0'ı kurtarma yaptı ve toplam 284 sn'nin 157 sn'si VLM'e hiç gitmeyen
+            # pencerelerde harcandı.
             percep = None
-            if det_enabled:
+            if det_enabled and not screened_out:
                 try:
                     task = percep_prefetch.pop(idx, None)
                     percep = await (task if task is not None
@@ -639,15 +649,15 @@ async def run_video(
                     await rec.emit(AgentStep(
                         node="perceive", status="error",
                         detail=f"{start:.0f}-{end:.0f} sn algı hatası: {str(exc)[:100]}"))
-            if det_enabled and idx + 1 < len(wins) and (idx + 1) not in percep_prefetch:
+            if (det_enabled and idx + 1 < len(wins)
+                    and (idx + 1) not in percep_prefetch
+                    and (cand_spans is None
+                         or screening_covers(*wins[idx + 1], cand_spans))):
                 percep_prefetch[idx + 1] = asyncio.create_task(_scan_window(idx + 1))
             if idx + 1 < len(wins):
                 nstart, nend = wins[idx + 1]
                 ingest.prefetch_clip(path, nstart, nend, settings.video_input_width)
 
-            gated = not settings.dynamic_windows and peak < gate
-            screened_out = bool(cand_spans is not None
-                                and not screening_covers(start, end, cand_spans))
             rescued = bool(gated and not screened_out
                            and percep and percep.rescue_persons)
             if rescued:

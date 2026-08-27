@@ -237,7 +237,9 @@ async def test_run_metrics_count_real_skip_rescue_and_two_qwen_calls(
     assert metrics["windows_seen"] == metrics["windows_screened"] == 3
     assert metrics["windows_skipped_before_vlm"] == 1
     assert metrics["siglip_calls"] == 1
-    assert metrics["dfine_calls"] == 3
+    # Dedektör screening'in elediği pencerede çalışmaz: orada kurtarma zaten
+    # imkânsızdır ve pencere VLM'e gitmez. Üç pencereden ikisi dedektör görür.
+    assert metrics["dfine_calls"] == 2
     assert metrics["dfine_rescue_count"] == 1
     assert metrics["keyframes_selected_total"] == 2
     assert metrics["qwen_calls"] == 2
