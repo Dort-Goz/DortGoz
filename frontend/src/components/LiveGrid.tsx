@@ -3,6 +3,7 @@ import type {
   ActivityStrip, ActuatorRequest, ActuatorResult, IncidentUpdate,
 } from "../types/events";
 import ActionLog, { pendingActionCount } from "./ActionLog";
+import ClampText from "./ClampText";
 import ActivityBar from "./ActivityBar";
 import LiveArchive from "./LiveArchive";
 import OperatorReportDialog from "./OperatorReport";
@@ -438,9 +439,11 @@ function FocusedFeed({
                   <div className="truncate font-medium text-zinc-100" title={i.title}>
                     {TYPE_TR[i.anomaly_type] ?? i.anomaly_type}
                   </div>
-                  {i.detail && (
-                    <div className="line-clamp-2 text-zinc-400">{humanizeEnums(i.detail)}</div>
-                  )}
+                  <ClampText
+                    text={humanizeEnums(i.detail ?? "")}
+                    lines={2}
+                    className="text-zinc-400"
+                  />
                   <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-zinc-500">
                     <span className={`chip border risk-${i.risk}`}>risk {RISK_TR[i.risk]}</span>
                     <span className="font-mono">{clock(i.t)}</span>

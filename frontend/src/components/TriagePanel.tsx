@@ -261,16 +261,11 @@ export function PendingCard({
             </div>
           )}
           {!modal && (
-            <div className="truncate text-zinc-400">
-              {feedLabel} · video <span className="font-mono">{clock(item.t)}</span>
+            <div className="truncate text-zinc-400" title={feedLabel}>
+              {feedLabel}
             </div>
           )}
-          <ClampText
-            text={item.title}
-            lines={1}
-            expanded={modal}
-            className={modal ? "text-zinc-300" : "text-zinc-500"}
-          />
+          {modal && <div className="text-zinc-300">{item.title}</div>}
           {(item.event_start ?? item.clip_start) != null
             && (item.event_end ?? item.clip_end) != null && (
             <div className="text-zinc-500">
@@ -352,9 +347,11 @@ export function PendingCard({
                     <div className="font-mono text-[9px] text-sky-300">
                       {clock(evidence.timestamp)}
                     </div>
-                    <div className="line-clamp-2 text-[9px] leading-tight text-zinc-400" title={evidence.claim}>
-                      {evidence.claim}
-                    </div>
+                    <ClampText
+                      text={evidence.claim}
+                      lines={2}
+                      className="text-[9px] leading-tight text-zinc-400"
+                    />
                   </div>
                 </button>
               );
