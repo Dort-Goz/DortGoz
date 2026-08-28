@@ -67,6 +67,7 @@ def main() -> int:
     parser.add_argument("--ucf", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--seed", type=int, default=20260825)
+    parser.add_argument("--scale", type=int, default=1)
     parser.add_argument("--min-seconds", type=float, default=10.0)
     parser.add_argument("--max-seconds", type=float, default=300.0)
     parser.add_argument("--skip-results", nargs="*", default=["evren_holdout_*"])
@@ -87,7 +88,8 @@ def main() -> int:
 
     rng = random.Random(args.seed)
     picked: list[tuple[str, str, float]] = []
-    for name, quota in sorted(QUOTA.items()):
+    for name, base in sorted(QUOTA.items()):
+        quota = base * args.scale
         pool = list(buckets.get(name, []))
         rng.shuffle(pool)
         taken = 0
