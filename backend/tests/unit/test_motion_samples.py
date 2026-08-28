@@ -4,9 +4,9 @@ from __future__ import annotations
 import random
 
 from dortgoz.pipeline.ingest import (
+    _FRAME_BYTES,
     BG_ALPHA,
     PIXEL_TAU,
-    _FRAME_BYTES,
     _motion_samples,
 )
 

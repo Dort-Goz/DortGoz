@@ -307,7 +307,7 @@ async def frames_rgb(video: Path, ts: list[float]) -> list[bytes] | None:
     uniq = sorted(set(wanted))
     if len(frames) != len(uniq):
         return None
-    by_time = dict(zip(uniq, frames))
+    by_time = dict(zip(uniq, frames, strict=True))
     return [by_time[t] for t in wanted]
 
 
