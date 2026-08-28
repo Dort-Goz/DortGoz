@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { BoundingBox } from "../types/events";
 import type { StoredIncident } from "../state";
 import { clock } from "../lib/labels";
@@ -37,6 +37,10 @@ export default function VideoPanel({
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pendingSeek = useRef<number | null>(null);
+  // Medya klasörü doğrudan sunulur. Veri kümesindeki kayıt orada yoktur;
+  // 404 gelince çözümleyen uç denenir. Böylece eski backend de çalışır.
+  const [resolved, setResolved] = useState(false);
+  useEffect(() => setResolved(false), [video]);
 
   useEffect(() => {
     if (seekTo === null) return;
@@ -154,7 +158,8 @@ export default function VideoPanel({
           <video
             key={video}
             ref={videoRef}
-            src={`/media/${video}`}
+            src={resolved ? `/api/video/${video}` : `/media/${video}`}
+            onError={() => setResolved(true)}
             controls
             className="h-full w-full object-contain"
           />

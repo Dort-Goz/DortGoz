@@ -187,6 +187,10 @@ class Settings(BaseSettings):
     vlm_context_after_seconds: float = 8.0
 
     media_dir: Path = Path(__file__).resolve().parents[2] / "media"
+    # UCF-Crime kökü (`DORTGOZ_UCF_DIR`). Küme salt okunur ve depo dışındadır;
+    # kaynak listesine ve analiz çözümlemesine yalnız dosya adıyla katılır.
+    # Yol makineye göre değişir (arcpcl: /mnt/data/Storage/Dort_Goz/UCF_Crimes).
+    ucf_dir: Path | None = None
     runs_dir: Path = Path(__file__).resolve().parents[2] / "runs"
     training_frame_width: int = Field(default=640, ge=320, le=1920)
     incident_pre_capture_seconds: float = Field(default=8.0, ge=0, le=120)

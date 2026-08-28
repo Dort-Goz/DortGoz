@@ -745,13 +745,21 @@ async def interpret_config() -> dict:
 
 @app.get("/api/videos")
 async def list_videos() -> list[str]:
-    if not settings.media_dir.exists():
-        return []
-    return sorted(
-        p.name
-        for p in settings.media_dir.iterdir()
-        if p.suffix.lower() in {".mp4", ".mkv", ".avi", ".mov"}
-    )
+    from .services import video_library
+
+    return await asyncio.to_thread(video_library.catalog)
+
+
+@app.get("/api/video/{video:path}")
+async def video_file(video: str) -> FileResponse:
+    """Oynatıcı kaynağı: medya klasörü ve veri kümesi aynı adresten okunur."""
+    from .pipeline.runner import resolve_media
+
+    try:
+        path = await asyncio.to_thread(resolve_media, video)
+    except (ValueError, FileNotFoundError):
+        raise HTTPException(status_code=404, detail="video bulunamadı")
+    return FileResponse(path)
 
 
 @app.get("/api/actions")

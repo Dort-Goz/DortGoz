@@ -120,13 +120,20 @@ async def save_evidence_clip(video: Path, start: float, end: float,
 
 
 def resolve_media(video: str) -> Path:
+    from ..services import video_library
+
     root = settings.media_dir.resolve()
     path = (root / video.lstrip("/")).resolve()
     if not path.is_relative_to(root):
         raise ValueError(f"medya kökü dışında: {video}")
-    if not path.is_file():
-        raise FileNotFoundError(f"video bulunamadı: {video}")
-    return path
+    if path.is_file():
+        return path
+    # Medyada yoksa veri kümesine bakılır; küme salt okunur ve dosya adıyla
+    # adreslenir, bu yüzden dizin geçişi ("..") yukarıdaki kapıda kalır.
+    dataset = video_library.dataset_path(video)
+    if dataset is not None:
+        return dataset
+    raise FileNotFoundError(f"video bulunamadı: {video}")
 
 
 def resolve_source(video: str, source_path: Path | None) -> Path:

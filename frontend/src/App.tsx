@@ -226,6 +226,19 @@ export default function App() {
     return () => { alive = false; clearInterval(id); };
   }, []);
 
+  // Veri kümesi açıksa liste binlerce kayıt olur. Adın başındaki sınıf
+  // (Burglary054_x264.mp4 → Burglary) başlık olur; yüklü kayıtlar "diğer"e düşer.
+  const videoGroups = useMemo(() => {
+    const groups = new Map<string, string[]>();
+    for (const name of videos) {
+      const key = /^([A-Za-z]+)/.exec(name)?.[1] ?? "diğer";
+      const items = groups.get(key);
+      if (items) items.push(name);
+      else groups.set(key, [name]);
+    }
+    return [...groups].sort(([a], [b]) => a.localeCompare(b, "tr"));
+  }, [videos]);
+
   const analysisFeeds = useMemo(
     () => Object.fromEntries(
       feedNames(state, false).map((name) => [name, state.feeds[name]])),
@@ -466,7 +479,11 @@ export default function App() {
                     {fixtureMode ? "sanal kayıt (media/ boş)" : "media/ boş"}
                   </option>
                 )}
-                {videos.map((v) => <option key={v} value={v}>{v}</option>)}
+                {videoGroups.map(([label, items]) => (
+                  <optgroup key={label} label={`${label} (${items.length})`}>
+                    {items.map((v) => <option key={v} value={v}>{v}</option>)}
+                  </optgroup>
+                ))}
               </select>
               <UploadPanel onUploaded={(video) => {
                 setVideos((current) => includeUploadedVideo(current, video.stored_filename));

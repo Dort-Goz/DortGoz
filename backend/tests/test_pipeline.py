@@ -141,6 +141,30 @@ def test_resolve_media_rejects_missing():
         resolve_media("yok-boyle-bir-video.mp4")
 
 
+def test_dataset_video_is_listed_and_resolved_by_name(monkeypatch, tmp_path):
+    from dortgoz.config import settings
+    from dortgoz.services import video_library
+
+    media = tmp_path / "media"
+    media.mkdir()
+    (media / "yerel.mp4").write_bytes(b"0")
+    dataset = tmp_path / "UCF_Crimes" / "Videos" / "Burglary"
+    dataset.mkdir(parents=True)
+    clip = dataset / "Burglary054_x264.mp4"
+    clip.write_bytes(b"0")
+    monkeypatch.setattr(settings, "media_dir", media)
+    monkeypatch.setattr(settings, "ucf_dir", tmp_path / "UCF_Crimes")
+    video_library.reset_cache()
+
+    try:
+        assert video_library.catalog() == ["Burglary054_x264.mp4", "yerel.mp4"]
+        assert resolve_media("Burglary054_x264.mp4") == clip.resolve()
+        with pytest.raises(ValueError):
+            resolve_media("../Burglary054_x264.mp4")
+    finally:
+        video_library.reset_cache()
+
+
 @needs_clip
 @pytest.mark.asyncio
 async def test_probe_and_motion_profile_on_real_clip():
