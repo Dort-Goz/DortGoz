@@ -229,7 +229,7 @@ function LiveGrid({
           />
         ) : (
       <>
-      <div className={`panel ${zoomed ? "w-56 shrink-0" : "flex-1"}`}>
+      <div className={`panel ${zoomed ? "w-[14vw] min-w-48 max-w-80 shrink-0" : "flex-1"}`}>
       <div className="panel-title">
         <span>{zoomed ? "Diğer akışlar" : "Akış Duvarı"}</span>
         <span className="flex-1" />
@@ -393,7 +393,7 @@ function FocusedFeed({
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black">
           {src ? (
-            <img src={src} alt={feed.name} className="max-h-full max-w-full object-contain" />
+            <img src={src} alt={feed.name} className="h-full w-full object-contain" />
           ) : (
             <span className="text-xs text-zinc-600">
               {feed.state === "hata" ? "bağlantı yok" : "bağlanıyor…"}
