@@ -99,7 +99,9 @@ export function actionBelongsToMode(
   action: Pick<ActuatorRequest | ActuatorResult, "run_id">,
   fixtureMode: boolean,
 ): boolean {
-  return action.run_id.startsWith("fixture-ui-") === fixtureMode;
+  const mockRun = action.run_id.startsWith("fixture-ui-")
+    || action.run_id.startsWith("canli-mock-");
+  return mockRun === fixtureMode;
 }
 
 // Analiz çalışma alanında açık olan koşular. Aksiyon günlüğü bu kümeye

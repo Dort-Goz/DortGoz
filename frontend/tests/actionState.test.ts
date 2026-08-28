@@ -108,9 +108,15 @@ describe("aksiyon günlüğü", () => {
 
   test("fixture aksiyonu yalnız mock kipte görünür", () => {
     const fixture = { ...request, run_id: "fixture-ui-crime-1" };
+    const mockLive = { ...request, run_id: "canli-mock-giris-0001" };
+    const realLive = { ...request, run_id: "canli-KAM-1-seg_001" };
 
     expect(actionBelongsToMode(fixture, true)).toBe(true);
     expect(actionBelongsToMode(fixture, false)).toBe(false);
+    expect(actionBelongsToMode(mockLive, true)).toBe(true);
+    expect(actionBelongsToMode(mockLive, false)).toBe(false);
+    expect(actionBelongsToMode(realLive, false)).toBe(true);
+    expect(actionBelongsToMode(realLive, true)).toBe(false);
     expect(actionBelongsToMode(request, false)).toBe(true);
     expect(actionBelongsToMode(request, true)).toBe(false);
   });

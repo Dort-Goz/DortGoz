@@ -170,8 +170,8 @@ def test_ui_fixture_uses_same_local_preview_and_stays_separate(tmp_path):
     assert result.delivered is False
     assert result.external_side_effect is False
     assert service.artifact(request.request_id).is_file()
-    assert service.snapshot(fixture_only=True)["requests"][0]["request_id"] == request.request_id
-    assert service.snapshot(fixture_only=False)["requests"] == []
+    assert service.snapshot(mock_only=True)["requests"][0]["request_id"] == request.request_id
+    assert service.snapshot(mock_only=False)["requests"] == []
 
 
 def test_ui_fixture_registration_rejects_real_run_id(tmp_path):
@@ -329,6 +329,66 @@ def test_confirmed_incident_exposes_only_eligible_local_draft_suggestions(tmp_pa
     }
     assert all(item["status"] == "available" for item in suggestions)
     assert all(item["request_id"] is None for item in suggestions)
+
+
+def observe_live_incident(*, needs_review=True):
+    triage.store.observe(Event.wrap(
+        RunStatus(run_id="canli-mock-KAM-1-0001", state="processing", video=""),
+        feed="KAM-1",
+        live=True,
+    ))
+    triage.store.observe(Event.wrap(
+        IncidentUpdate(
+            incident_id="inc-9",
+            t=15.0,
+            phase="sonuclandi",
+            title="Zorla giriş şüphesi",
+            anomaly_type="hirsizlik",
+            risk="yuksek",
+            needs_review=needs_review,
+            olay_baslangic=12.0,
+            olay_bitis=18.0,
+        ),
+        feed="KAM-1",
+        live=True,
+    ))
+
+
+def test_live_action_survives_segment_close_via_triage(tmp_path):
+    observe_live_incident()
+    triage.store.decide(
+        "KAM-1:inc-9", "anomali", category="hirsizlik", reviewer="Operatör 1"
+    )
+    service = ActionDispatcher(tmp_path)
+
+    suggestions = service.suggestions("KAM-1", "inc-9")
+    request, created = service.request(
+        "emniyet_bildirimi_hazirla", "inc-9", "KAM-1", "canlı taslak"
+    )
+
+    assert {item["action"] for item in suggestions} == {
+        "emniyet_bildirimi_hazirla",
+        "guvenlik_uyarisi_hazirla",
+        "alan_guvenligi_iste",
+    }
+    assert created is True
+    assert request.live is True
+    assert request.run_id == "canli-mock-KAM-1-0001"
+    assert request.evidence_timestamps == [12.0, 18.0]
+
+
+def test_mock_live_records_stay_out_of_real_snapshot(tmp_path):
+    observe_live_incident(needs_review=False)
+    service = ActionDispatcher(tmp_path)
+
+    request, _ = service.request(
+        "emniyet_bildirimi_hazirla", "inc-9", "KAM-1", "mock canlı"
+    )
+
+    assert [
+        r["request_id"] for r in service.snapshot(mock_only=True)["requests"]
+    ] == [request.request_id]
+    assert service.snapshot(mock_only=False)["requests"] == []
 
 
 def test_wrong_feed_and_unknown_request_are_rejected(tmp_path):

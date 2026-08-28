@@ -31,6 +31,18 @@ class ActionRecord:
     artifact_path: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class IncidentView:
+    feed: str
+    run_id: str
+    title: str
+    anomaly_type: str
+    risk: Risk
+    needs_review: bool
+    live: bool
+    evidence_ts: tuple[float, ...]
+
+
 CRIME_TYPES: frozenset[AnomalyType] = frozenset({
     "kavga", "saldiri", "hirsizlik", "silahli_olay", "vandalizm",
 })
@@ -77,6 +89,31 @@ def _clean_text(value: str, limit: int) -> str:
     return text[:limit]
 
 
+def _is_mock_run(run_id: str) -> bool:
+    return run_id.startswith("fixture-ui-") or run_id.startswith("canli-mock-")
+
+
+def _item_evidence(item: "triage.TriageItem") -> tuple[float, ...]:
+    stamps = {
+        round(float(entry["timestamp"]), 3)
+        for entry in item.evidence_refs
+        if isinstance(entry.get("timestamp"), int | float)
+    }
+    if not stamps:
+        stamps = {
+            round(float(mark), 3)
+            for mark in (
+                item.review_peak, item.review_start, item.review_end,
+                item.operator_start, item.operator_end,
+                item.model_start, item.model_end,
+            )
+            if mark is not None
+        }
+    if not stamps:
+        stamps = {round(float(item.t), 3)}
+    return tuple(sorted(stamps))
+
+
 class ActionDispatcher:
     def __init__(self, runs_dir: Path | None = None) -> None:
         self._runs_dir = runs_dir
@@ -94,28 +131,28 @@ class ActionDispatcher:
         with self._lock:
             self._ensure_loaded()
             spec = self._spec(action)
-            ctx, incident = self._incident(feed, incident_id)
-            decision = triage.store.decision_for(ctx.feed, incident_id)
+            view = self._view(feed, incident_id)
+            decision = triage.store.decision_for(view.feed, incident_id)
             if decision is not None and decision.verdict == "sorun_degil":
                 raise ValueError("operatör bu olayı sorun değil olarak işaretledi")
-            if incident.needs_review and (
+            if view.needs_review and (
                 decision is None or decision.verdict != "anomali"
             ):
                 raise ValueError("olay insan incelemesi bekliyor")
             anomaly_type = (
                 decision.operator_category
                 if decision is not None and decision.operator_category
-                else incident.anomaly_type
+                else view.anomaly_type
             )
             if anomaly_type not in spec.allowed_types:
                 raise ValueError(
                     f"{spec.label.lower()} bu olay türü için uygun değil: {anomaly_type}"
                 )
-            if RISK_ORDER.index(incident.risk) < RISK_ORDER.index(spec.min_risk):
+            if RISK_ORDER.index(view.risk) < RISK_ORDER.index(spec.min_risk):
                 raise ValueError(
                     f"{spec.label.lower()} için risk en az {spec.min_risk} olmalı"
                 )
-            evidence = sorted({round(t, 3) for t in incident.evidence_ts})
+            evidence = sorted({round(t, 3) for t in view.evidence_ts})
             if not evidence:
                 raise ValueError("olayın doğrulanmış video kanıt zamanı yok")
             for record in self._records.values():
@@ -123,29 +160,23 @@ class ActionDispatcher:
                 if (
                     record.result is None
                     and req.actuator == action
-                    and req.run_id == ctx.run_id
+                    and req.run_id == view.run_id
                     and req.incident_id == incident_id
                 ):
                     return req, False
             requested_at = time.time()
-            triage_item = triage.store.get_item(f"{ctx.feed}:{incident_id}")
-            live = (
-                triage_item.live
-                if triage_item is not None
-                else ctx.run_id.startswith("canli-")
-            )
             request = ActuatorRequest(
                 request_id=self._new_id(),
                 actuator=spec.name,
                 action_label=spec.label,
                 reason=_clean_text(reason, 500),
                 incident_id=incident_id,
-                incident_title=_clean_text(incident.title, 300),
-                run_id=ctx.run_id,
-                feed=ctx.feed,
-                live=live,
+                incident_title=_clean_text(view.title, 300),
+                run_id=view.run_id,
+                feed=view.feed,
+                live=view.live,
                 anomaly_type=anomaly_type,
-                risk=incident.risk,
+                risk=view.risk,
                 evidence_timestamps=evidence,
                 requested_at=requested_at,
             )
@@ -265,25 +296,25 @@ class ActionDispatcher:
     def suggestions(self, feed: str, incident_id: str) -> list[dict[str, str | None]]:
         with self._lock:
             self._ensure_loaded()
-            ctx, incident = self._incident(feed, incident_id)
-            decision = triage.store.decision_for(ctx.feed, incident_id)
+            view = self._view(feed, incident_id)
+            decision = triage.store.decision_for(view.feed, incident_id)
             if decision is None or decision.verdict != "anomali":
                 return []
-            anomaly_type = decision.operator_category or incident.anomaly_type
-            if not incident.evidence_ts:
+            anomaly_type = decision.operator_category or view.anomaly_type
+            if not view.evidence_ts:
                 return []
             suggestions: list[dict[str, str | None]] = []
             for spec in ACTION_SPECS.values():
                 if anomaly_type not in spec.allowed_types:
                     continue
-                if RISK_ORDER.index(incident.risk) < RISK_ORDER.index(spec.min_risk):
+                if RISK_ORDER.index(view.risk) < RISK_ORDER.index(spec.min_risk):
                     continue
                 matching = next(
                     (
                         record
                         for record in reversed(list(self._records.values()))
                         if record.request.actuator == spec.name
-                        and record.request.run_id == ctx.run_id
+                        and record.request.run_id == view.run_id
                         and record.request.incident_id == incident_id
                     ),
                     None,
@@ -322,7 +353,7 @@ class ActionDispatcher:
         self,
         limit: int = 500,
         *,
-        fixture_only: bool | None = None,
+        mock_only: bool | None = None,
     ) -> dict[str, list[dict]]:
         with self._lock:
             self._ensure_loaded()
@@ -334,13 +365,13 @@ class ActionDispatcher:
                 for record in self._records.values()
                 if record.result is None
                 or record.request.run_id in active
-                or record.request.run_id.startswith("fixture-ui-")
+                or _is_mock_run(record.request.run_id)
             ]
-            if fixture_only is not None:
+            if mock_only is not None:
                 records = [
                     record
                     for record in records
-                    if record.request.run_id.startswith("fixture-ui-") == fixture_only
+                    if _is_mock_run(record.request.run_id) == mock_only
                 ]
             records = records[-limit:]
             return {
@@ -510,6 +541,41 @@ class ActionDispatcher:
         if len(matches) > 1:
             raise ValueError("olay birden fazla kamerada bulundu; kamera adı gerekli")
         return matches[0]
+
+    @staticmethod
+    def _view(feed: str, incident_id: str) -> IncidentView:
+        try:
+            ctx, incident = ActionDispatcher._incident(feed, incident_id)
+        except ValueError:
+            item = triage.store.get_item(f"{feed}:{incident_id}")
+            if item is None:
+                raise
+            return IncidentView(
+                feed=item.feed,
+                run_id=item.run_id,
+                title=item.title,
+                anomaly_type=item.model_category,
+                risk=item.operator_risk or item.risk,
+                needs_review=item.needs_review,
+                live=item.live,
+                evidence_ts=_item_evidence(item),
+            )
+        triage_item = triage.store.get_item(f"{ctx.feed}:{incident_id}")
+        live = (
+            triage_item.live
+            if triage_item is not None
+            else ctx.run_id.startswith("canli-")
+        )
+        return IncidentView(
+            feed=ctx.feed,
+            run_id=ctx.run_id,
+            title=incident.title,
+            anomaly_type=incident.anomaly_type,
+            risk=incident.risk,
+            needs_review=incident.needs_review,
+            live=live,
+            evidence_ts=tuple(incident.evidence_ts),
+        )
 
     def _new_id(self) -> str:
         for _ in range(20):

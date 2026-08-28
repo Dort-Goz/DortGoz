@@ -791,7 +791,7 @@ async def video_file(video: str) -> FileResponse:
 
 @app.get("/api/actions")
 async def action_snapshot() -> dict:
-    return action_dispatcher.snapshot(fixture_only=settings.mock)
+    return action_dispatcher.snapshot(mock_only=settings.mock)
 
 
 @app.post("/api/actions/request")

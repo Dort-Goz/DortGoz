@@ -5,6 +5,9 @@ from fastapi.testclient import TestClient
 from dortgoz.config import settings
 from dortgoz.events import Event, IncidentUpdate
 from dortgoz.main import app
+from dortgoz.services import triage
+from dortgoz.services.action_dispatcher import dispatcher as action_dispatcher
+from dortgoz.services.live_cctv import FeedStatus
 from dortgoz.services.mock_console import MockLiveService, mock_chat, placeholder_frame
 from dortgoz.ws import ConnectionManager
 
@@ -67,6 +70,49 @@ def test_mock_live_service_cycle(tmp_path, monkeypatch):
     assert list(tmp_path.glob("canli-mock/*/latest.svg"))
     types = {event.payload.type for event in manager._history}
     assert "incident_update" in types and "run_status" in types
+
+
+def test_mock_live_incident_proposes_local_action_draft(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "mock_speed", 1000.0)
+    monkeypatch.setattr(settings, "media_dir", tmp_path / "media")
+    monkeypatch.setattr(settings, "runs_dir", tmp_path / "runs")
+    test_store = triage.TriageStore(allow_ledger_only=True)
+    monkeypatch.setattr(triage, "store", test_store)
+    action_dispatcher.reset_memory()
+    manager = ConnectionManager()
+    manager.observers.append(test_store.observe)
+    service = MockLiveService(manager)
+
+    class Rng:
+        def choice(self, seq):
+            return seq[0]
+
+        def randint(self, low, high):
+            return low
+
+        def random(self):
+            return 0.5
+
+        def uniform(self, low, high):
+            return low
+
+    status = FeedStatus(name="mock-giris", url="mock://mock-giris", desc="")
+    try:
+        asyncio.run(service._emit_incident(status, Rng()))
+    finally:
+        payloads = [event.payload for event in manager._history]
+        action_dispatcher.reset_memory()
+
+    requests = [p for p in payloads if p.type == "actuator_request"]
+    assert len(requests) == 1
+    assert requests[0].actuator == "emniyet_bildirimi_hazirla"
+    assert requests[0].live is True
+    assert requests[0].run_id.startswith("canli-mock-")
+    assert requests[0].evidence_timestamps
+    assert any(
+        p.type == "tool_call" and p.tool == "emniyet_bildirimi_hazirla"
+        for p in payloads
+    )
 
 
 def test_live_endpoints_in_mock(tmp_path, monkeypatch):

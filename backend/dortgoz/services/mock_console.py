@@ -19,6 +19,7 @@ from ..events import (
     WindowSignals,
 )
 from ..ws import ConnectionManager
+from .action_dispatcher import dispatcher as action_dispatcher
 from .live_cctv import FeedStatus, load_feeds
 
 _DISCLAIMER = "\n\n_Arayüz test yanıtı — gerçek analiz değildir._"
@@ -194,6 +195,12 @@ _LIVE_SCENARIOS = [
     ("arac_kazasi", "yuksek", "Araç çarpışması", "Park halindeki araca temas", False, ""),
 ]
 
+_AUTO_ACTIONS = {
+    "hirsizlik": "emniyet_bildirimi_hazirla",
+    "yangin": "acil_saglik_bildirimi_hazirla",
+    "arac_kazasi": "acil_saglik_bildirimi_hazirla",
+}
+
 
 def mock_event_clip() -> str | None:
     root = settings.media_dir
@@ -311,9 +318,45 @@ class MockLiveService:
             )
         )
 
+    async def _propose_action(
+        self, feed: str, incident_id: str, anomaly: str, title: str,
+    ) -> None:
+        action = _AUTO_ACTIONS.get(anomaly)
+        if action is None:
+            return
+        try:
+            request, created = action_dispatcher.request(
+                action,
+                incident_id,
+                feed,
+                f"{title} için yerel taslak operatör onayına sunuldu",
+            )
+        except (KeyError, ValueError):
+            return
+        if not created:
+            return
+        await self.manager.broadcast(
+            Event.wrap(request, feed=request.feed, live=request.live)
+        )
+        await self.manager.broadcast(
+            Event.wrap(
+                ToolCall(
+                    tool=action,
+                    args={"incident_id": incident_id},
+                    rationale="Kanıtlı yüksek riskli olay operatör onayına sunulur",
+                    result=(
+                        f"{request.action_label} operatöre sunuldu · "
+                        "dış kuruma gönderim yok"
+                    ),
+                ),
+                feed=feed,
+                live=True,
+            )
+        )
+
     async def _emit_incident(self, status: FeedStatus, rng: random.Random) -> None:
         self._seq += 1
-        run_id = f"canli-{status.name}-{self._seq:04d}"
+        run_id = f"canli-mock-{status.name}-{self._seq:04d}"
         anomaly, risk, title, detail, needs_review, reason = rng.choice(_LIVE_SCENARIOS)
         t = float(rng.randint(4, 50))
         incident_id = f"MLI-{self._seq:03d}"
@@ -382,6 +425,8 @@ class MockLiveService:
             )
         )
         await _nap(0.3)
+        if not needs_review:
+            await self._propose_action(status.name, incident_id, anomaly, title)
         await self.manager.broadcast(
             Event.wrap(
                 RunStatus(run_id=run_id, state="done", progress=1.0,
