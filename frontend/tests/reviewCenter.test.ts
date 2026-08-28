@@ -66,7 +66,10 @@ describe("olay inceleme merkezi", () => {
     expect(console_).toContain("setStatus");
     expect(panel).toContain("Kanıt karesi");
     expect(panel).toContain("Operatör notu");
-    expect(panel).toContain("Doğrulanan olay · yerel taslak başlat");
+    const actionLog = readFileSync(
+      new URL("../src/components/ActionLog.tsx", import.meta.url), "utf8",
+    );
+    expect(actionLog).toContain("Doğrulanan olay · yerel taslak başlat");
     expect(panel).toContain("if (!r.ok) throw new Error()");
     expect(panel).toContain("İnceleme kayıtları alınamadı. Bağlantıyı denetleyin.");
     expect(console_).toContain('open.verdict ? "Kararı değiştir" : "Karar ver"');
