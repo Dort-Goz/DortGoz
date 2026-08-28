@@ -10,6 +10,7 @@ tmp/
 
 node_modules/
 frontend/dist/
+frontend/.vite/
 *.tsbuildinfo
 
 media/*
@@ -33,6 +34,7 @@ local/
 .DS_Store
 
 secrets/
-config/live_feeds.json
+config/live_feeds*.json
+!config/live_feeds.example.json
 
 data/uca/*.json

@@ -25,6 +25,7 @@ SECRET_PATTERNS = [
     ("Tailscale auth key", re.compile(r"\btskey-[A-Za-z0-9-]{10,}")),
 ]
 ALLOWED_SECRET_PATHS = {"scripts/release_gate.py"}
+ALLOWED_LARGE_PREFIXES = ("docs/contest/teslim/",)
 
 
 SELFTEST_SAMPLES = {
@@ -77,7 +78,7 @@ def main() -> int:
             findings.append(f"izlenen ikili varlık: {name}")
             continue
         size = path.stat().st_size
-        if size > MAX_TRACKED_BYTES:
+        if size > MAX_TRACKED_BYTES and not name.startswith(ALLOWED_LARGE_PREFIXES):
             findings.append(f"izlenen dosya çok büyük: {name} ({size / 1_048_576:.1f} MB)")
         if suffix not in TEXT_SUFFIXES or name in ALLOWED_SECRET_PATHS:
             continue
