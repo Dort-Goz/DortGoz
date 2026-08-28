@@ -16,6 +16,11 @@ kendi kendine yapılmaz.
 
 [Dörtgöz TEKNOFEST 2026 proje demosunu YouTube'da izleyin.](https://youtu.be/xHLaRKJZjhI)
 
+## Teslim sunumu
+
+Güncel teslim dosyası:
+[`Dortgoz_Teslim_Sunumu_2026-08-28.pptx`](docs/contest/teslim/Dortgoz_Teslim_Sunumu_2026-08-28.pptx).
+
 ## Uçtan uca akış
 
 ```text
