@@ -449,8 +449,8 @@ function EventCard({
   const label = eventLabel(item.event_type);
   return (
     <article className="overflow-hidden border border-zinc-800 bg-zinc-900 transition-colors hover:border-zinc-700">
-      <div className="grid grid-cols-[7rem_minmax(0,1fr)] sm:grid-cols-[11rem_minmax(0,1fr)_8rem] sm:items-stretch">
-        <div className="row-span-2 min-h-32 overflow-hidden bg-zinc-950 sm:row-span-1 sm:min-h-28">
+      <div className="grid grid-cols-1 sm:grid-cols-[11rem_minmax(0,1fr)_minmax(10rem,12rem)] sm:items-stretch">
+        <div className="min-h-32 overflow-hidden bg-zinc-950 sm:min-h-28">
           {media ? (
             <img
               src={media.thumbnail_url}
@@ -500,11 +500,11 @@ function EventCard({
             ))}
           </div>
         </div>
-        <div className="col-start-2 flex items-center p-3 pt-0 sm:col-auto sm:pt-3 sm:pl-0">
+        <div className="flex min-w-0 items-center p-3 pt-0 sm:p-3 sm:pl-0">
           <button
             type="button"
             onClick={() => onOpen(item.event_id)}
-            className="btn btn-accent w-full"
+            className="btn btn-accent btn-wrap min-w-0 w-full"
           >
             {actionLabel}
           </button>

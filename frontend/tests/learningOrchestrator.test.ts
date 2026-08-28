@@ -142,6 +142,8 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(source).toContain('review: "İnceleme bekliyor"');
     expect(source).toContain('actionLabel="Olayı incele"');
     expect(source).toContain('actionLabel="Fine-tune için değerlendir"');
+    expect(source).toContain("grid grid-cols-1 sm:grid-cols-[11rem_minmax(0,1fr)_minmax(10rem,12rem)]");
+    expect(source).toContain("btn btn-accent btn-wrap min-w-0 w-full");
   });
 
   test("teknik ayrıntılar kapalı bölümde kalır ve öğrenme kendi çalışma alanıdır", () => {
