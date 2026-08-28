@@ -11,6 +11,8 @@ import TriagePanel from "./TriagePanel";
 import { startPreviewStream } from "../lib/livePreview";
 import { PHASE_TR, RISK_TR, TYPE_TR, clock, humanizeEnums } from "../lib/labels";
 
+const PREVIEW_TICK_MS = 250;
+const PREVIEW_BUFFER_FRAMES = 24;
 interface LiveFeed {
   name: string;
   url: string;
@@ -65,6 +67,7 @@ function LiveGrid({
   const [view, setView] = useState<"duvar" | "kayitlar">("duvar");
   const [reportFeed, setReportFeed] = useState<string | null>(null);
   const [preview, setPreview] = useState<Record<string, string>>({});
+  const [previewLive, setPreviewLive] = useState(false);
   const previewRef = useRef<Record<string, string>>({});
   const [rate, setRate] = useState<number>(() =>
     Number(localStorage.getItem("dortgoz.canliKareOrani") || 1));
@@ -125,23 +128,38 @@ function LiveGrid({
   useEffect(() => {
     if (!active) return;
     const controller = new AbortController();
-    let pending: Record<string, string> = {};
-    let queued = false;
+    const buffers: Record<string, string[]> = {};
     startPreviewStream((feed, url) => {
-      const previous = previewRef.current[feed] ?? pending[feed];
-      if (previous) URL.revokeObjectURL(previous);
-      pending = { ...pending, [feed]: url };
-      if (queued) return;
-      queued = true;
-      requestAnimationFrame(() => {
-        queued = false;
-        previewRef.current = { ...previewRef.current, ...pending };
-        pending = {};
-        setPreview(previewRef.current);
-      });
-    }, controller.signal);
+      const queue = buffers[feed] ?? (buffers[feed] = []);
+      queue.push(url);
+      while (queue.length > PREVIEW_BUFFER_FRAMES) {
+        URL.revokeObjectURL(queue.shift()!);
+      }
+    }, controller.signal, setPreviewLive);
+
+    const tick = setInterval(() => {
+      const shown = previewRef.current;
+      const next = { ...shown };
+      const replaced: string[] = [];
+      let changed = false;
+      for (const [feed, queue] of Object.entries(buffers)) {
+        const url = queue.shift();
+        if (!url) continue;
+        if (shown[feed]) replaced.push(shown[feed]);
+        next[feed] = url;
+        changed = true;
+      }
+      if (!changed) return;
+      previewRef.current = next;
+      setPreview(next);
+      requestAnimationFrame(() => replaced.forEach(URL.revokeObjectURL));
+    }, PREVIEW_TICK_MS);
+
     return () => {
       controller.abort();
+      clearInterval(tick);
+      setPreviewLive(false);
+      for (const queue of Object.values(buffers)) queue.forEach(URL.revokeObjectURL);
       for (const url of Object.values(previewRef.current)) URL.revokeObjectURL(url);
       previewRef.current = {};
       setPreview({});
@@ -298,6 +316,14 @@ function LiveGrid({
       <div className="panel-title">
         <span>{zoomed ? "Diğer akışlar" : "Akış Duvarı"}</span>
         <span className="flex-1" />
+        {active && !previewLive && (
+          <span
+            className="chip chip-orta normal-case tracking-normal"
+            title="Canlı video bağlantısı yok — kutucuklar segment başına anlık görüntü gösteriyor"
+          >
+            anlık görüntü
+          </span>
+        )}
         {feeds.length > 0 && (
           <span className="chip border border-zinc-700 font-mono normal-case tracking-normal text-zinc-300">
             {feeds.length}
