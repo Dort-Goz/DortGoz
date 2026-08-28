@@ -93,7 +93,7 @@ def _is_mock_run(run_id: str) -> bool:
     return run_id.startswith("fixture-ui-") or run_id.startswith("canli-mock-")
 
 
-def _item_evidence(item: "triage.TriageItem") -> tuple[float, ...]:
+def _item_evidence(item: triage.TriageItem) -> tuple[float, ...]:
     stamps = {
         round(float(entry["timestamp"]), 3)
         for entry in item.evidence_refs

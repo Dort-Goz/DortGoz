@@ -10,6 +10,7 @@ bulunmaz.
 - Git
 - `uv` (backend için Python 3.12 ortamını lock dosyasına göre yönetir)
 - Bun
+- Python 3 ve `curl` (örnek klip ve model indirme betikleri için)
 - Gerçek video analizi için ayrıca lisansı onaylanmış `ffmpeg` ve `ffprobe`
 
 Arayüz test akışı model/GPU/FFmpeg istemez ve video analizi yapmaz. İlk kez bağımlılık indirmek için internet gerekir;
@@ -59,6 +60,10 @@ python -m venv /tmp/siglip && /tmp/siglip/bin/pip install torch transformers onn
 /tmp/siglip/bin/python scripts/export_siglip.py
 ```
 
+Aktarım `models/semantic/local/` altına yazar ve depodaki
+`models/semantic/semantic-v1.json` ile `manifest.json` dosyalarını yeni
+hash'lerle günceller; bu iki dosyanın değişmiş görünmesi beklenen durumdur.
+
 Bu adım `development` profilinde atlanabilir. Artifact yoksa sistem hareket
 temelli bir temel modele düşer ve koşmaya devam eder.
 
@@ -68,7 +73,9 @@ temelli bir temel modele düşer ve koşmaya devam eder.
 2. `DORTGOZ_MOCK=0` yapın. `DORTGOZ_LLAMA_BASE_URL` ve `DORTGOZ_API_KEY`
    değerlerini kendi uç noktanıza göre doldurun. Uç OpenAI-uyumlu olmalıdır:
    yarışmanın sağladığı servis, yerel bir llama.cpp veya yerel bir vLLM örneği.
-   Bulut servisi kullanılmaz.
+   Bulut servisi kullanılmaz. `DORTGOZ_API_KEY` boş bırakılamaz; anahtar
+   istemeyen yerel bir uç için herhangi bir değer yazın. Yerel uçlar
+   (`http://127.0.0.1`) yalnız `development` profilinde kabul edilir (§3.3).
 3. Model takma adlarını ucunuzun `/v1/models` çıktısıyla eşleştirin. ⚠ Geçersiz
    bir ad hata vermez, sessizce varsayılana yönlenir.
 
@@ -78,10 +85,14 @@ Bu kip gerçek videoyu analiz eder. Dış aksiyonlar yine yalnız yerel taslak �
 
 `DORTGOZ_DEPLOYMENT_PROFILE` iki değer alır.
 
-- `development` — eksik yerel bileşen varsa uyarır ve düşerek devam eder.
+- `development` — eksik yerel bileşen varsa uyarır ve düşerek devam eder. Her
+  OpenAI-uyumlu uçla (yerel dahil) çalışır; Qdrant değişkenleri boş kalabilir.
 - `competition-real` — D-FINE dağıtımını, SigLIP artifact'ini, prosedür
-  manifestini ve uç kimliğini zorunlu sayar. Eksik bileşen varsa `GET /ready` 503
-  döner ve analiz hiç başlamaz.
+  manifestini, EVREN uç kimliğini ve EVREN Qdrant kimliğini (`DORTGOZ_QDRANT_URL`,
+  `_PREFIX`, `_API_KEY`) zorunlu sayar. Uç yerel olmayan bir `https://` adres
+  olmalı; model takma adları tam olarak `llm-fast`, `vlm`, `llm-large`, `router`,
+  `guard`, `bge-m3-embed` olmalı ve hepsi `/v1/models` listesinde bulunmalıdır.
+  Eksik bileşen varsa `GET /ready` 503 döner ve analiz hiç başlamaz.
 
 ⚠ `competition-real`, D-FINE için model kaydından üretilmiş hash doğrulamalı bir
 aktif dağıtım manifesti ister. Bu manifest `fetch_models.sh` ile gelmez. **Yeni
@@ -175,7 +186,16 @@ olarak kullanılmaz çünkü aynı eşikte tespit sayısını değiştirir.
 
 ### 3.5. Başlatma
 
-Aşağıdaki kontrol geçmeden gerçek modu açmayın:
+`development` profilinde backend ve konsolu iki terminalde elle açın; `.env`
+backend tarafından okunur (Windows PowerShell'de `&&` yerine komutları ayrı
+satırda çalıştırın):
+
+```bash
+cd backend && uv run uvicorn dortgoz.main:app --port 8000
+cd frontend && bun run dev
+```
+
+`competition-real` profilinde aşağıdaki kontrol geçmeden gerçek modu açmayın:
 
 ```powershell
 uv run --directory backend python ..\scripts\preflight.py --root .. --mode real --check-tools
@@ -183,8 +203,10 @@ uv run --directory backend python ..\scripts\preflight.py --root .. --mode real 
 ```
 
 Linux/macOS'ta preflight komutunda `/` kullanın ve son komutu `./scripts/dev.sh real`
-olarak çalıştırın. Preflight geçmediği sürece uygulama gerçek profili açmaz;
-bu bilinçli bir güvenlik kapısıdır.
+olarak çalıştırın. Preflight `.env` içinde `competition-real` profilini ve §3.3'teki
+her koşulu ister; geçmediği sürece uygulama gerçek profili açmaz. Bu bilinçli bir
+güvenlik kapısıdır. `dev.sh real` ve `dev.ps1 -Real` profili her zaman
+`competition-real` olarak zorlar.
 
 `dev.sh` ve `dev.ps1` yalnız `127.0.0.1` adresine bağlanır. Başka bir
 bilgisayardan (örneğin özel ağ/VPN üzerinden) erişmek için
