@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { IncidentUpdate, WindowReport, WindowSignals } from "../types/events";
 import { PHASE_TR, RISK_TR, TYPE_TR, clock } from "../lib/labels";
+import ClampText from "./ClampText";
 
 const quiet = (r: WindowReport) => r.anomaly_type === "normal" && r.events.length === 0;
 
@@ -124,10 +125,10 @@ const IncidentCard = memo(function IncidentCard(
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
             <span className="font-mono text-xs text-zinc-500">{clock(inc.t)}</span>
-            <span className="chip bg-zinc-800 font-semibold uppercase tracking-wide text-zinc-300">
+            <span className="chip chip-notr font-semibold uppercase tracking-wide">
               {TYPE_TR[inc.anomaly_type] ?? inc.anomaly_type}
             </span>
-            {pendingReview && (
+            {pendingReview && !inc.review_reason && (
               <span className="chip border border-amber-900 bg-amber-950/60 font-semibold uppercase tracking-wide text-amber-300">
                 ⚑ inceleme
               </span>
@@ -135,7 +136,7 @@ const IncidentCard = memo(function IncidentCard(
             {decided && (
               <span
                 className="chip border border-emerald-900 bg-emerald-950/50 font-semibold uppercase tracking-wide text-emerald-300"
-                title="Operatör bu olayı olay inceleme merkezinde karara bağladı"
+                title="Olay inceleme merkezinde karara bağlandı"
               >
                 ✔ karara bağlandı
               </span>
@@ -144,7 +145,12 @@ const IncidentCard = memo(function IncidentCard(
               {RISK_TR[inc.risk] ?? inc.risk}
             </span>
           </div>
-          <div className="mt-0.5 text-sm font-medium text-zinc-200">{inc.title}</div>
+          <ClampText
+            text={inc.title}
+            lines={2}
+            expanded={inc.incident_id === highlightId}
+            className="mt-0.5 text-sm font-medium text-zinc-200"
+          />
           <div className="flex items-baseline gap-2 text-[10px] text-zinc-500">
             <span>{PHASE_TR[inc.phase] ?? inc.phase}</span>
             {inc.olay_baslangic != null && inc.olay_bitis != null && (
@@ -158,9 +164,12 @@ const IncidentCard = memo(function IncidentCard(
       {pendingReview && inc.review_reason && (
         <p className="mt-1 text-[11px] text-amber-400/80">⚑ {inc.review_reason}</p>
       )}
-      <p className={`mt-1 whitespace-pre-line text-xs text-zinc-400 ${
-        inc.incident_id === highlightId ? "" : "line-clamp-3"
-      }`}>{inc.detail}</p>
+      <ClampText
+        text={inc.detail}
+        lines={3}
+        expanded={inc.incident_id === highlightId}
+        className="mt-1 text-xs text-zinc-400"
+      />
       {inc.incident_id === highlightId && signals && (
         <p className="mt-1 border-t border-zinc-800 pt-1 font-mono text-[10px] text-zinc-500">
           {signals}

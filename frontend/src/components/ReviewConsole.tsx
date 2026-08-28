@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { categoryLabel, clock } from "../lib/labels";
+import { categoryLabel, clock, severityClass, severityLabel } from "../lib/labels";
 import ImportPackage from "./ImportPackage";
 
 export { categoryLabel };
@@ -45,28 +45,13 @@ const STATUS_TR: Record<string, string> = {
 
 const STATUS_CLS: Record<string, string> = {
   confirmed: "bg-emerald-900 text-emerald-200",
-  rejected: "bg-zinc-800 text-zinc-400",
+  rejected: "chip-notr",
   human_review: "bg-amber-900 text-amber-200",
   processing_failed: "bg-red-900 text-red-200",
 };
 
-const RISK_TR: Record<string, string> = {
-  low: "Düşük", medium: "Orta", high: "Yüksek", critical: "Kritik",
-  review_required: "İnceleme gerekli", undetermined: "Belirsiz",
-};
-
-const RISK_CLS: Record<string, string> = {
-  low: "bg-sky-900 text-sky-200", medium: "bg-amber-900 text-amber-200",
-  high: "bg-orange-900 text-orange-200", critical: "bg-red-900 text-red-200",
-};
-
-const BAND_TR: Record<string, string> = {
-  routine: "Rutin", review: "İncelenmeli", high: "Yüksek", urgent: "Acil",
-};
-
-const BAND_CLS: Record<string, string> = {
-  routine: "bg-zinc-800 text-zinc-300", review: "bg-amber-900 text-amber-200",
-  high: "bg-orange-900 text-orange-200", urgent: "bg-red-900 text-red-100",
+const STATUS_MARK: Record<string, string> = {
+  confirmed: "✔", rejected: "✘", human_review: "⚑", processing_failed: "!",
 };
 
 const VERDICT_TR: Record<string, string> = {
@@ -165,7 +150,7 @@ export default function ReviewConsole({ onOpenTraining }: {
               <option value="all">tümü</option>
               {Object.entries(facets?.urgencies ?? {}).map(([value, count]) => (
                 <option key={value} value={value}>
-                  {BAND_TR[value] ?? value} ({count})
+                  {severityLabel(value)} ({count})
                 </option>
               ))}
             </select>
@@ -212,7 +197,7 @@ export default function ReviewConsole({ onOpenTraining }: {
               }}
               className="btn btn-ghost"
             >
-              süzgeçleri temizle ✕
+              ✕ süzgeçleri temizle
             </button>
           )}
           <span
@@ -268,26 +253,20 @@ export default function ReviewConsole({ onOpenTraining }: {
                     {item.source_label} · {stamp(item.recorded_at)}
                   </div>
                 </div>
-                <div className="flex shrink-0 flex-wrap justify-end gap-1">
-                  <span className={`chip ${item.live
-                    ? "bg-red-950 text-red-300"
-                    : "bg-zinc-800 text-zinc-400"}`}>
-                    {item.live ? "canlı" : "dosya"}
-                  </span>
+                <div className="flex shrink-0 items-center gap-1">
+                  <span className="chip chip-notr">{item.live ? "canlı" : "dosya"}</span>
                   <span
-                    className={`chip ${BAND_CLS[item.intervention_band] ?? "bg-zinc-800"}`}
+                    className={`chip w-20 justify-center ${severityClass(item.intervention_band)}`}
                     title="Müdahale önceliği"
                   >
                     <span className="font-mono">{item.intervention_score}</span>{" "}
-                    · {BAND_TR[item.intervention_band] ?? item.intervention_band}
+                    · {severityLabel(item.intervention_band)}
                   </span>
-                  {item.risk !== "undetermined" && (
-                    <span className={`chip ${RISK_CLS[item.risk] ?? "bg-zinc-800 text-zinc-300"}`}>
-                      {RISK_TR[item.risk] ?? item.risk}
-                    </span>
-                  )}
-                  <span className={`chip ${STATUS_CLS[item.status] ?? "bg-zinc-800"}`}>
-                    {STATUS_TR[item.status] ?? item.status}
+                  <span
+                    className={`chip w-4 justify-center ${STATUS_CLS[item.status] ?? "chip-notr"}`}
+                    title={STATUS_TR[item.status] ?? item.status}
+                  >
+                    {STATUS_MARK[item.status] ?? "·"}
                   </span>
                 </div>
               </button>
@@ -297,7 +276,7 @@ export default function ReviewConsole({ onOpenTraining }: {
                 <button
                   disabled={offset === 0}
                   onClick={() => setOffset(Math.max(0, offset - PAGE))}
-                  className="btn btn-outline h-6 px-2 disabled:opacity-40"
+                  className="btn btn-sm btn-outline disabled:opacity-40"
                 >
                   ← önceki
                 </button>
@@ -307,7 +286,7 @@ export default function ReviewConsole({ onOpenTraining }: {
                 <button
                   disabled={offset + PAGE >= total}
                   onClick={() => setOffset(offset + PAGE)}
-                  className="btn btn-outline h-6 px-2 disabled:opacity-40"
+                  className="btn btn-sm btn-outline disabled:opacity-40"
                 >
                   sonraki →
                 </button>
@@ -329,9 +308,7 @@ export default function ReviewConsole({ onOpenTraining }: {
           </div>
           <div className="panel-body space-y-2 p-2 text-xs">
             {!open && (
-              <div className="text-zinc-500">
-                Soldan bir kayıt seçin. Kayıt kaynağıyla, kararıyla ve kanıtıyla açılır.
-              </div>
+              <div className="text-zinc-500">Soldan bir kayıt seçin.</div>
             )}
             {open && (
               <>
@@ -350,21 +327,21 @@ export default function ReviewConsole({ onOpenTraining }: {
                   </div>
                 )}
                 <div className="flex flex-wrap gap-1">
-                  <span className={`chip ${BAND_CLS[open.intervention_band] ?? "bg-zinc-800"}`}>
+                  <span className={`chip ${severityClass(open.intervention_band)}`}>
                     öncelik <span className="font-mono">{open.intervention_score}</span> ·{" "}
-                    {BAND_TR[open.intervention_band] ?? open.intervention_band}
+                    {severityLabel(open.intervention_band)}
                   </span>
                   {open.risk !== "undetermined" && (
-                    <span className={`chip ${RISK_CLS[open.risk] ?? "bg-zinc-800 text-zinc-300"}`}>
-                      {RISK_TR[open.risk] ?? open.risk}
+                    <span className={`chip ${severityClass(open.risk)}`}>
+                      {severityLabel(open.risk)}
                     </span>
                   )}
-                  <span className={`chip ${STATUS_CLS[open.status] ?? "bg-zinc-800"}`}>
+                  <span className={`chip ${STATUS_CLS[open.status] ?? "chip-notr"}`}>
                     {STATUS_TR[open.status] ?? open.status}
                   </span>
-                  <span className="chip bg-zinc-800 text-zinc-300">
-                    {open.evidence_count} kanıt karesi
-                  </span>
+                  {open.evidence_count > 0 && (
+                    <span className="chip chip-notr">{open.evidence_count} kanıt karesi</span>
+                  )}
                 </div>
                 <dl className="space-y-0.5 text-zinc-400">
                   <div className="flex gap-2">
@@ -405,14 +382,14 @@ export default function ReviewConsole({ onOpenTraining }: {
                 </dl>
                 <div className="flex flex-wrap gap-1 border-t border-zinc-800 pt-2">
                   {open.clip_url && (
-                    <a href={open.clip_url} download className="btn btn-outline h-6 px-2">
-                      ⇩ kaydı indir
+                    <a href={open.clip_url} download className="btn btn-sm btn-outline">
+                      ↓ kaydı indir
                     </a>
                   )}
                   {onOpenTraining && (
                     <button
                       onClick={() => onOpenTraining(open.event_id)}
-                      className="btn btn-outline-accent h-6 px-2"
+                      className="btn btn-sm btn-outline-accent"
                       title="Kaydı yeniden incele ve ayrı geliştirme izni ver"
                     >
                       ◎ ayrıntılı incele

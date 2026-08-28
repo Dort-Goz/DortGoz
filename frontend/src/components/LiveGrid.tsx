@@ -186,7 +186,7 @@ function LiveGrid({
           <select
             value={rate}
             onChange={(e) => changeRate(Number(e.target.value))}
-            title="Izgara karesi kaç segmentte bir indirilsin — yavaş bağlantıda yükseltin (büyütülmüş görünüm her zaman en tazedir)"
+            title="Yavaş bağlantıda yükseltin"
             className="field"
           >
             <option value={1}>her segment</option>
@@ -200,7 +200,7 @@ function LiveGrid({
           <button
             onClick={() => setReportFeed(zoom ?? feeds[0].name)}
             className="btn btn-outline-warn"
-            title="Duvarın bildirmediği bir olay gördüyseniz elle kayda geçirin"
+            title="Sistemin kaçırdığı olayı bildir"
           >
             ⚑ Kaçan olayı bildir
           </button>
@@ -208,10 +208,12 @@ function LiveGrid({
 
         <span className="flex-1" />
         {active && (
-          <span className="truncate font-mono text-zinc-400">
+          <span
+            className="truncate font-mono text-zinc-400"
+            title={`${feeds.reduce((a, f) => a + f.segments_done, 0)} segment işlendi`}
+          >
             {feeds.filter((f) => f.state !== "hata").length}/{feeds.length} akış ·{" "}
-            {feeds.filter((f) => (f.lag_s ?? 1e9) <= 45).length} canlıya yetişik ·{" "}
-            {feeds.reduce((a, f) => a + f.segments_done, 0)} segment işlendi
+            {feeds.filter((f) => (f.lag_s ?? 1e9) <= 45).length} canlıya yetişik
           </span>
         )}
         {error && <span className="truncate text-red-400">{error}</span>}
@@ -295,9 +297,8 @@ function LiveGrid({
           );
         })}
         {!active && feeds.length === 0 && (
-          <div className="col-span-full flex flex-col items-center gap-2 py-20 text-zinc-500">
-            <span className="text-3xl text-zinc-800">▦</span>
-            <span className="text-xs">Canlı kip kapalı — config/live_feeds.json'daki akışlarla başlatın.</span>
+          <div className="col-span-full py-20 text-center text-xs text-zinc-600">
+            Canlı kip kapalı.
           </div>
         )}
       </div>
@@ -373,12 +374,12 @@ function FocusedFeed({
         <span className="flex-1" />
         <button
           onClick={onReport}
-          className="btn btn-outline-warn h-6 px-1.5"
+          className="btn btn-sm btn-outline-warn"
           title="Bu kamerada sistemin kaçırdığı bir olayı bildir"
         >
           ⚑ bildir
         </button>
-        <button onClick={onClose} className="btn btn-ghost h-6 px-1.5" title="Duvara dön">
+        <button onClick={onClose} className="btn btn-sm btn-ghost" title="Duvara dön">
           kapat ✕
         </button>
       </div>

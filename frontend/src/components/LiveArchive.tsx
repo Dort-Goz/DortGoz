@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { categoryLabel, clock } from "../lib/labels";
+import { categoryLabel, clock, severityClass, severityLabel } from "../lib/labels";
 
 export { categoryLabel };
 
@@ -17,16 +17,6 @@ interface LiveClip {
   thumbnail_url: string | null;
   available: boolean;
 }
-
-const RISK_TR: Record<string, string> = {
-  low: "Düşük", medium: "Orta", high: "Yüksek", critical: "Kritik",
-  review_required: "İnceleme", undetermined: "Belirsiz",
-};
-
-const RISK_CLS: Record<string, string> = {
-  low: "bg-sky-900 text-sky-200", medium: "bg-amber-900 text-amber-200",
-  high: "bg-orange-900 text-orange-200", critical: "bg-red-900 text-red-200",
-};
 
 const VERDICT_TR: Record<string, string> = {
   accept: "Anomali onaylandı", reject: "Yanlış alarm", edit: "Düzeltildi",
@@ -82,7 +72,7 @@ export default function LiveArchive({ feedNames }: { feedNames: Record<string, s
           <select
             value={feed}
             onChange={(event) => setFeed(event.target.value)}
-            className="field h-6 py-0 text-[11px]"
+            className="field field-sm"
           >
             <option value="">tümü</option>
             {cameras.map((name) => (
@@ -90,25 +80,22 @@ export default function LiveArchive({ feedNames }: { feedNames: Record<string, s
             ))}
           </select>
         </label>
-        <span className="chip border border-zinc-700 font-mono normal-case tracking-normal text-zinc-300">
+        <span
+          title={`Kayıtlar ${Math.round(retention / 24)} gün sonra diskten silinir`}
+          className="chip border border-zinc-700 font-mono normal-case tracking-normal text-zinc-300"
+        >
           {clips.length}
         </span>
       </div>
 
-      <div className="shrink-0 border-b border-zinc-800 px-2 py-1.5 text-[11px] text-zinc-500">
-        Kayıtlar canlı tarafta kalır. Analiz istenirse kayıt indirilir ve Analiz
-        sekmesindeki “Video yükle” ile ayrıca yüklenir. Sistem bunu kendiliğinden yapmaz.
-        {" "}Kayıtlar {Math.round(retention / 24)} gün sonra diskten silinir.
-      </div>
-
-      <div className="panel-body space-y-1 p-1.5 text-xs">
+      <div className="panel-body grid content-start gap-1 p-1.5 text-xs sm:grid-cols-2 2xl:grid-cols-3">
         {error && (
-          <div className="rounded-sm border border-red-900 bg-red-950/40 px-2 py-1 text-red-200">
+          <div className="col-span-full rounded-sm border border-red-900 bg-red-950/40 px-2 py-1 text-red-200">
             {error}
           </div>
         )}
         {!error && clips.length === 0 && (
-          <div className="text-zinc-500">Henüz kesilmiş olay kaydı yok.</div>
+          <div className="col-span-full text-zinc-500">Henüz olay kaydı yok.</div>
         )}
         {clips.map((clip) => (
           <div
@@ -138,16 +125,18 @@ export default function LiveArchive({ feedNames }: { feedNames: Record<string, s
                   {sizeLabel(clip.size_bytes)}
                 </div>
                 <div className="mt-0.5 flex flex-wrap gap-1">
-                  <span className={`chip ${RISK_CLS[clip.risk] ?? "bg-zinc-800 text-zinc-300"}`}>
-                    {RISK_TR[clip.risk] ?? clip.risk}
-                  </span>
+                  {clip.risk !== "undetermined" && (
+                    <span className={`chip ${severityClass(clip.risk)}`}>
+                      {severityLabel(clip.risk)}
+                    </span>
+                  )}
                   {clip.verdict && (
-                    <span className="chip bg-zinc-800 text-zinc-300">
+                    <span className="chip chip-notr">
                       {VERDICT_TR[clip.verdict] ?? clip.verdict}
                     </span>
                   )}
                   {!clip.available && (
-                    <span className="chip bg-zinc-800 text-zinc-500"
+                    <span className="chip chip-notr text-zinc-500"
                           title="Saklama süresi doldu; karar kaydı durur, video dosyası silindi">
                       süresi doldu
                     </span>
@@ -158,7 +147,7 @@ export default function LiveArchive({ feedNames }: { feedNames: Record<string, s
                 <button
                   disabled={!clip.available}
                   onClick={() => setPlaying(playing === clip.media_id ? "" : clip.media_id)}
-                  className="btn btn-outline-accent h-6 px-1.5 text-[10px] disabled:border-zinc-800 disabled:text-zinc-600"
+                  className="btn btn-sm btn-outline-accent disabled:border-zinc-800 disabled:text-zinc-600"
                 >
                   {playing === clip.media_id ? "gizle" : "▶ oynat"}
                 </button>
@@ -167,11 +156,11 @@ export default function LiveArchive({ feedNames }: { feedNames: Record<string, s
                   download
                   aria-disabled={!clip.available}
                   title="Kaydı indir — analiz için Analiz sekmesinden ayrıca yüklenir"
-                  className={`btn h-6 px-1.5 text-[10px] ${
+                  className={`btn btn-sm ${
                     clip.available ? "btn-outline" : "pointer-events-none btn-outline opacity-40"
                   }`}
                 >
-                  ⇩ indir
+                  ↓ indir
                 </a>
               </div>
             </div>

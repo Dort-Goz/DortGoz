@@ -64,15 +64,13 @@ function ChatPanel({
   };
 
   return (
-    <div className="panel panel-accent h-full">
-      <div className="panel-title flex items-center gap-2">
+    <div className="panel h-full">
+      <div className="panel-title">
         <span>Operatör Sohbeti</span>
       </div>
       <div ref={ref} onScroll={onScroll} className="panel-body space-y-1.5 p-2">
         {messages.length === 0 && (
-          <p className="p-2 text-xs text-zinc-600">
-            Ajana soru sorun — koşu sırasında ve sonrasında yanıtlar.
-          </p>
+          <p className="p-2 text-xs text-zinc-600">Henüz mesaj yok.</p>
         )}
         {messages.map((m, i) => (
           <div
@@ -133,7 +131,7 @@ function ChatPanel({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && submit()}
-          placeholder={incident ? "Sorunuzu yazın veya ✦ ile olayı aydınlatın" : "Ajana sorun"}
+          placeholder="Ajana sorun"
           className="field h-7 min-w-0 flex-1"
         />
         <button

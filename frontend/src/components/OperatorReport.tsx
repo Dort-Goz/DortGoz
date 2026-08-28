@@ -1,10 +1,8 @@
 import { useEffect, useState } from "react";
-import { clock } from "../lib/labels";
+import { clock, severityLabel } from "../lib/labels";
 import { CATEGORY_TR, parseClock } from "./TriagePanel";
 
-const RISK_TR: Record<string, string> = {
-  dusuk: "Düşük", orta: "Orta", yuksek: "Yüksek", kritik: "Kritik",
-};
+const RISK_LEVELS = ["dusuk", "orta", "yuksek", "kritik"] as const;
 
 const AGO_OPTIONS = [
   [0, "şimdi gördüm"], [30, "30 sn önce"], [60, "1 dk önce"], [120, "2 dk önce"],
@@ -114,15 +112,14 @@ export default function OperatorReportDialog({
             {live ? "canlı akış" : "video analizi"}
           </span>
           <span className="flex-1" />
-          <button onClick={onClose} className="btn btn-ghost h-7 px-2" title="Kapat (Esc)">
-            kapat ✕
+          <button onClick={onClose} className="btn btn-ghost" title="Kapat (Esc)">
+            ✕ kapat
           </button>
         </div>
 
         <div className="space-y-2 p-3 text-xs">
           <p className="text-zinc-500">
-            Sistem bu olayı bildirmedi; sizin gördüğünüz kayda geçer ve doğrulanmış
-            anomali olarak nöbet defterine yazılır.
+            Bildirim doğrulanmış anomali olarak nöbet defterine yazılır.
           </p>
 
           {live && (
@@ -160,8 +157,8 @@ export default function OperatorReportDialog({
                 onChange={(e) => setRisk(e.target.value)}
                 className="field w-full"
               >
-                {Object.entries(RISK_TR).map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
+                {RISK_LEVELS.map((value) => (
+                  <option key={value} value={value}>{severityLabel(value)}</option>
                 ))}
               </select>
             </label>
@@ -222,7 +219,7 @@ export default function OperatorReportDialog({
               onChange={(e) => setNote(e.target.value)}
               rows={3}
               maxLength={500}
-              placeholder="Ne gördünüz? (karar iziyle birlikte kalıcı kayda geçer)"
+              placeholder="Ne gördünüz?"
               className="field-area w-full"
               autoFocus
             />
@@ -235,7 +232,7 @@ export default function OperatorReportDialog({
           )}
           {done ? (
             <div className="rounded-sm border border-emerald-900 bg-emerald-950/40 px-2 py-1 text-emerald-300">
-              ✔ Kayda geçti — nöbet defterine yazıldı, “Olay inceleme” sekmesinde açılır.
+              ✔ Kayda geçti — “Olay inceleme” sekmesinde açılır.
             </div>
           ) : (
             <div className="flex items-center justify-end gap-1.5">

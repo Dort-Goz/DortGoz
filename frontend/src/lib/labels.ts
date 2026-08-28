@@ -45,14 +45,60 @@ export const RISK_TR: Record<Risk, string> = {
   dusuk: "düşük", orta: "orta", yuksek: "yüksek", kritik: "kritik",
 };
 
+const SEVERITY_TR: Record<string, string> = {
+  dusuk: "Düşük", low: "Düşük",
+  orta: "Orta", medium: "Orta",
+  yuksek: "Yüksek", high: "Yüksek",
+  kritik: "Kritik", critical: "Kritik",
+  routine: "Rutin", review: "İncelenmeli", urgent: "Acil",
+  review_required: "İnceleme", undetermined: "Belirsiz",
+};
+
+const SEVERITY_CLS: Record<string, string> = {
+  dusuk: "chip-dusuk", low: "chip-dusuk",
+  orta: "chip-orta", medium: "chip-orta",
+  review: "chip-orta", review_required: "chip-orta",
+  yuksek: "chip-yuksek", high: "chip-yuksek",
+  kritik: "chip-kritik", critical: "chip-kritik", urgent: "chip-kritik",
+  routine: "chip-notr", undetermined: "chip-notr",
+};
+
+export const severityLabel = (key: string): string => SEVERITY_TR[key] ?? key;
+
+export const severityClass = (key: string): string => SEVERITY_CLS[key] ?? "chip-notr";
+
 export const PHASE_TR: Record<string, string> = {
   basladi: "başladı", gelisiyor: "gelişiyor", sonuclandi: "sonuçlandı",
 };
 
 export const NODE_TR: Record<string, string> = {
   perceive: "algı", triage: "eleme", interpret: "yorum", ledger: "defter",
-  oversight: "gözetmen", tools: "araç", respond: "yanıt",
+  oversight: "gözetmen", hakem: "hakem", tools: "araç", respond: "yanıt",
+  hazirlik: "hazırlık", tarama: "tarama", pencere_analizi: "pencere analizi",
+  dogrulama: "doğrulama", aksiyon: "aksiyon",
 };
+
+const TOOL_TR: Record<string, string> = {
+  pencere_sorgula: "pencere sorgula",
+  ikinci_gorus_al: "ikinci görüş al",
+  kanit_klibi_olustur: "kanıt klibi oluştur",
+  olay_raporu_olustur: "olay raporu oluştur",
+  olayi_aydinlat: "olayı aydınlat",
+  olayi_vurgula: "olayı vurgula",
+  videoya_git: "videoya git",
+  yeniden_incele: "yeniden incele",
+  prosedur_sorgula: "prosedür sorgula",
+  aksiyon_durumunu_sorgula: "aksiyon durumunu sorgula",
+  aktuator_calistir: "aktüatör çalıştır",
+  aktuator_durumu_sorgula: "aktüatör durumu sorgula",
+  emniyet_bildirimi_hazirla: "emniyet bildirimi hazırla",
+  acil_saglik_bildirimi_hazirla: "acil sağlık bildirimi hazırla",
+  guvenlik_uyarisi_hazirla: "güvenlik uyarısı hazırla",
+  alan_guvenligi_iste: "alan güvenliği iste",
+};
+
+export const toolLabel = (name: string): string =>
+  TOOL_TR[name] ?? name.replace(/_/g, " ");
 
 export function stripPerf(detail: string): string {
   return detail

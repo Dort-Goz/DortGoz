@@ -124,11 +124,11 @@ export default function VideoPanel({
   return (
     <div className="panel h-full">
       <div className="panel-title">
-        <span>Canlı İzleme</span>
+        <span>Kayıt</span>
         {feed && (
           <span
             className="chip border border-zinc-700 font-mono normal-case tracking-normal text-zinc-300"
-            title="Bu panel seçili kamerayı oynatır — akış duvarından başka kamera seçebilirsiniz"
+            title="Seçili kamera"
           >
             {feed}
           </span>
@@ -146,8 +146,8 @@ export default function VideoPanel({
         {onReport && video && (
           <button
             onClick={() => onReport(videoRef.current?.currentTime ?? 0)}
-            className="btn btn-outline-warn h-6 shrink-0 px-1.5 normal-case tracking-normal"
-            title="Sistemin kaçırdığı bir olayı bildir — pencere oynatıcının durduğu kareye göre önerilir"
+            className="btn btn-sm btn-outline-warn shrink-0 normal-case tracking-normal"
+            title="Sistemin kaçırdığı olayı bildir"
           >
             ⚑ bildir
           </button>
@@ -164,12 +164,7 @@ export default function VideoPanel({
             className="h-full w-full object-contain"
           />
         ) : (
-          <div className="flex flex-col items-center gap-2 px-4 text-center">
-            <span className="text-3xl text-zinc-800">◉</span>
-            <span className="text-xs text-zinc-600">
-              Koşu başlatın — üst çubuktaki “Başlat” düğmesine basın.
-            </span>
-          </div>
+          <span className="text-xs text-zinc-600">Kayıt seçili değil.</span>
         )}
         <canvas ref={canvasRef} className="pointer-events-none absolute inset-0" />
       </div>

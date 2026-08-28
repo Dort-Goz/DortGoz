@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EventEvidenceRef } from "../types/events";
+import ClampText from "./ClampText";
 import LiveAlerts, { playChime, type LiveAlert } from "./LiveAlerts";
 import LiveEventModal from "./LiveEventModal";
 import { outranks, shouldChime, unseenAlerts } from "../lib/liveAlerts";
-import { categoryLabel } from "../lib/labels";
+import { categoryLabel, severityClass, severityLabel } from "../lib/labels";
+
+const RISK_LEVELS = ["dusuk", "orta", "yuksek", "kritik"] as const;
 
 interface SuggestedAction {
   action: string;
@@ -124,18 +127,6 @@ export const CATEGORY_TR: Record<string, string> = {
   bilinmeyen: "Sınıflandırılamayan",
 };
 
-const RISK_CLS: Record<string, string> = {
-  dusuk: "bg-sky-900 text-sky-200", orta: "bg-amber-900 text-amber-200",
-  yuksek: "bg-orange-900 text-orange-200", kritik: "bg-red-900 text-red-200",
-};
-
-const RISK_TR: Record<string, string> = {
-  dusuk: "Düşük",
-  orta: "Orta",
-  yuksek: "Yüksek",
-  kritik: "Kritik",
-};
-
 const FALSE_ALARM_TR: Record<string, string> = {
   normal_activity: "Olağan hareket",
   camera_condition: "Kamera veya ışık koşulu",
@@ -145,20 +136,6 @@ const FALSE_ALARM_TR: Record<string, string> = {
   wrong_classification: "Yanlış sınıflandırma",
   other: "Diğer",
 };
-
-const PRIORITY_TR = {
-  routine: "Rutin",
-  review: "İncelenmeli",
-  high: "Yüksek",
-  urgent: "Acil",
-} as const;
-
-const PRIORITY_CLS = {
-  routine: "bg-zinc-800 text-zinc-300",
-  review: "bg-amber-900 text-amber-200",
-  high: "bg-orange-900 text-orange-200",
-  urgent: "bg-red-900 text-red-100",
-} as const;
 
 const clock = (t: number) =>
   `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
@@ -280,14 +257,12 @@ export function PendingCard({
         <div className="min-w-0">
           {/* Kip başlığı zaten başlığı ve kamerayı yazıyor; burada tekrar etmeyiz. */}
           {!modal && (
-            <div className="line-clamp-2 font-medium text-zinc-200" title={item.title}>
-              {item.title}
-            </div>
+            <ClampText text={item.title} lines={2} className="font-medium text-zinc-200" />
           )}
           {/* Kip başlığı kamerayı ve duvar saatini zaten yazıyor. */}
           {!modal && (
             <div className="text-zinc-400">
-              {feedLabel} · video <span className="font-mono">{clock(item.t)}</span> · <span className="font-mono">{wallClock(item.wall)}</span>
+              {feedLabel} · video <span className="font-mono">{clock(item.t)}</span>
             </div>
           )}
           {(item.event_start ?? item.clip_start) != null
@@ -305,25 +280,19 @@ export function PendingCard({
           )}
           <div className="mt-1 flex flex-wrap gap-1">
             <span
-              className={`chip ${PRIORITY_CLS[item.intervention_band]}`}
+              className={`chip ${severityClass(item.intervention_band)}`}
               title={item.intervention_reasons.join("\n")}
             >
-              <span className="font-mono">{item.intervention_score}</span> · {PRIORITY_TR[item.intervention_band]}
+              <span className="font-mono">{item.intervention_score}</span> · {severityLabel(item.intervention_band)}
             </span>
-            {item.sample ? (
-              <span className="chip bg-sky-900 text-sky-200">
-                denetim örneği
-              </span>
-            ) : (
-              <span className={`chip ${RISK_CLS[item.risk] ?? "bg-zinc-800"}`}>
-                {item.risk}
-              </span>
+            {item.sample && (
+              <span className="chip chip-dusuk">denetim örneği</span>
             )}
-            <span className="chip bg-zinc-800 text-zinc-300">
-              model: {CATEGORY_TR[item.model_category] ?? item.model_category}
+            <span className="chip chip-notr">
+              {CATEGORY_TR[item.model_category] ?? item.model_category}
             </span>
             {item.tekrar > 1 && (
-              <span className="chip bg-indigo-900 text-indigo-200"
+              <span className="chip chip-notr"
                     title="Aynı kameradan aynı sınıfta tekrar tespit — tek kartta birleştirildi">
                 ×<span className="font-mono">{item.tekrar}</span>
               </span>
@@ -333,7 +302,7 @@ export function PendingCard({
         {onSeek && item.video && !item.live && !modal && !onOpen && (
           <button
             onClick={() => onSeek(item.feed, item.t, item.video, item.live)}
-            className="btn btn-outline-accent ml-auto h-6 shrink-0 px-1.5 text-[10px]"
+            className="btn btn-sm btn-outline-accent ml-auto shrink-0"
             title="Videoyu olay anına götür"
           >
             ▶ videoda aç
@@ -380,7 +349,7 @@ export function PendingCard({
                     <div className="font-mono text-[9px] text-sky-300">
                       {clock(evidence.timestamp)}
                     </div>
-                    <div className="line-clamp-2 text-[9px] leading-tight text-zinc-400">
+                    <div className="line-clamp-2 text-[9px] leading-tight text-zinc-400" title={evidence.claim}>
                       {evidence.claim}
                     </div>
                   </div>
@@ -418,24 +387,6 @@ export function PendingCard({
           >
             Tarayıcınız olay klibini oynatamıyor.
           </video>
-          {modal && (
-            <div className="flex items-center gap-2 text-[10px] text-zinc-500">
-              {item.clip_start != null && item.clip_end != null && (
-                <span className="font-mono">
-                  kayıt {clock(item.clip_start)}–{clock(item.clip_end)}
-                </span>
-              )}
-              <span className="flex-1" />
-              <a
-                href={item.clip_url ?? item.evidence ?? "#"}
-                download
-                title="Kaydı indir — analiz istenirse “Video yükle” ile ayrıca yüklenir"
-                className="btn btn-outline h-6 px-1.5 text-[10px]"
-              >
-                ⇩ kaydı indir
-              </a>
-            </div>
-          )}
         </div>
       ) : modal && (
         <div className="flex h-40 items-center justify-center rounded-sm border border-dashed border-zinc-800 bg-black text-xs text-zinc-500">
@@ -464,8 +415,8 @@ export function PendingCard({
             <span className={`font-medium ${verdict === "anomali" ? "text-emerald-300" : "text-zinc-300"}`}>
               {verdict === "anomali" ? "Anomali geri bildirimi" : "Yanlış alarm geri bildirimi"}
             </span>
-            <button onClick={() => setVerdict("")} className="btn btn-ghost h-6 px-2">
-              Vazgeç ×
+            <button onClick={() => setVerdict("")} className="btn btn-sm btn-ghost">
+              ✕ vazgeç
             </button>
           </div>
 
@@ -492,8 +443,8 @@ export function PendingCard({
                   onChange={(event) => setRisk(event.target.value)}
                   className="field w-full"
                 >
-                  {Object.entries(RISK_TR).map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
+                  {RISK_LEVELS.map((value) => (
+                    <option key={value} value={value}>{severityLabel(value)}</option>
                   ))}
                 </select>
               </label>
@@ -877,8 +828,8 @@ export default function TriagePanel({
             </div>
           )}
           {snap.critical_overflow_count > 0 && (
-            <div className="rounded-sm border border-red-800 bg-red-950/40 px-2 py-1 text-xs text-red-100">
-              Kuyruk dolu. {snap.critical_overflow_count} kritik olay güvenlik için kuyrukta tutuluyor.
+            <div className="rounded-sm border border-amber-900 bg-amber-950/40 px-2 py-1 text-xs text-amber-200">
+              Kuyruk dolu. {snap.critical_overflow_count} kritik olay kuyrukta tutuluyor.
             </div>
           )}
         </div>
@@ -916,14 +867,14 @@ export default function TriagePanel({
                   <div className="flex gap-1">
                     <button
                       onClick={() => ruleAction(proposal, "approve")}
-                      className="btn btn-outline-warn h-6"
+                      className="btn btn-sm btn-outline-warn"
                       title="Kuralı yalnız 24 saat için etkinleştir"
                     >
                       24 saat onayla
                     </button>
                     <button
                       onClick={() => ruleAction(proposal, "reject")}
-                      className="btn btn-outline h-6"
+                      className="btn btn-sm btn-outline"
                     >
                       Reddet
                     </button>
@@ -976,7 +927,7 @@ export default function TriagePanel({
                       <button
                         key={suggestion.action}
                         onClick={() => requestAction(i, suggestion.action)}
-                        className="btn btn-outline-warn h-6 px-1.5 text-[10px]"
+                        className="btn btn-sm btn-outline-warn"
                         title="Yalnız operatör onayına gidecek yerel taslak isteği oluşturur"
                       >
                         + {suggestion.label}

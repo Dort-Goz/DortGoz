@@ -112,6 +112,13 @@ export default function LiveAlerts({
   return createPortal(
     // z-40: kip pencerelerinin (z-50/z-60) altında kalmak zorunda.
     <div className="pointer-events-none fixed bottom-3 right-[21.5rem] z-40 flex w-80 flex-col-reverse gap-1.5">
+      <button
+        onClick={onMuteToggle}
+        title={muted ? "Kritik olayda sesli uyarıyı aç" : "Sesli uyarıyı kapat"}
+        className="pointer-events-auto self-end rounded-sm border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-[10px] text-zinc-400 shadow-lg shadow-black/60 hover:border-zinc-500 hover:text-zinc-100"
+      >
+        {muted ? "ses kapalı" : "ses açık"}
+      </button>
       {alerts.map((alert) => {
         const tone = TONE[severityRank(alert)];
         return (
@@ -161,13 +168,6 @@ export default function LiveAlerts({
           </div>
         );
       })}
-      <button
-        onClick={onMuteToggle}
-        title={muted ? "Kritik olayda sesli uyarıyı aç" : "Sesli uyarıyı kapat"}
-        className="pointer-events-auto self-end rounded-sm border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-[10px] text-zinc-400 shadow-lg shadow-black/60 hover:border-zinc-500 hover:text-zinc-100"
-      >
-        {muted ? "ses kapalı" : "ses açık"}
-      </button>
     </div>,
     host,
   );

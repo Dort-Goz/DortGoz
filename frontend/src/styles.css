@@ -97,9 +97,15 @@ body {
 .btn-danger {
   @apply border-red-700 bg-red-700 text-white hover:border-red-600 hover:bg-red-600;
 }
+.btn-sm {
+  @apply h-6 px-2 text-[10px];
+}
 
 .field {
   @apply h-7 rounded-sm border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200 outline-none transition-colors focus:border-sky-800 disabled:cursor-not-allowed disabled:opacity-40;
+}
+.field-sm {
+  @apply h-6 py-0 text-[11px];
 }
 .field-area {
   @apply w-full rounded-sm border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs leading-relaxed text-zinc-200 outline-none transition-colors focus:border-sky-800 disabled:cursor-not-allowed disabled:opacity-40;
@@ -107,6 +113,21 @@ body {
 
 .chip {
   @apply inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-sm px-1.5 py-px text-[10px] font-medium leading-4;
+}
+.chip-notr {
+  @apply bg-zinc-800 text-zinc-300;
+}
+.chip-dusuk {
+  @apply bg-sky-900 text-sky-200;
+}
+.chip-orta {
+  @apply bg-amber-900 text-amber-200;
+}
+.chip-yuksek {
+  @apply bg-orange-900 text-orange-200;
+}
+.chip-kritik {
+  @apply bg-red-900 text-red-100;
 }
 .microlabel {
   @apply text-[10px] font-semibold uppercase tracking-wider text-zinc-500;

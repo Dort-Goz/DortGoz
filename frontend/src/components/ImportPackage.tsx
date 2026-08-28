@@ -36,7 +36,7 @@ export default function ImportPackage() {
       />
       <button
         onClick={() => input.current?.click()}
-        title="Analiz paketini (.zip) içeri al — sohbet paket üzerinde tam yetenekle çalışır"
+        title="Analiz paketini (.zip) içeri al"
         className="btn btn-outline"
       >
         ↑ içeri al

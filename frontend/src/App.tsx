@@ -401,7 +401,7 @@ export default function App() {
       {value === "live" && livePending > 0 && (
         <span
           title={`${livePending} canlı olay operatör kararı bekliyor`}
-          className="ml-1.5 inline-flex min-w-4 items-center justify-center rounded-sm bg-red-700 px-1 font-mono text-[10px] leading-4 text-red-50"
+          className="ml-1.5 inline-flex min-w-4 items-center justify-center rounded-sm bg-amber-600 px-1 font-mono text-[10px] leading-4 text-amber-950"
         >
           {livePending}
         </span>
@@ -412,7 +412,7 @@ export default function App() {
   return (
     <div className="flex h-screen flex-col overflow-hidden">
       {fixtureMode && (
-        <div className="flex h-8 shrink-0 items-center justify-center border-b border-amber-900/60 bg-amber-950/40 px-3 text-[11px] font-bold tracking-wide text-amber-200">
+        <div className="flex h-6 shrink-0 items-center justify-center border-b border-amber-900/60 bg-amber-950/30 px-3 text-[10px] font-semibold uppercase tracking-wider text-amber-300/90">
           ARAYÜZ TEST AKIŞI · “BAŞLAT” KAYITLI BİR ÖRNEK AKIŞI OYNATIR · VİDEO ANALİZ EDİLMEZ
         </div>
       )}
@@ -440,7 +440,7 @@ export default function App() {
         <div className="flex-1" />
         <label
           className="hidden items-center gap-1.5 sm:flex"
-          title="Kararlara, onaylara ve terfilere bu ad yazan olarak geçer"
+          title="Kararlara bu ad yazan olarak geçer"
         >
           <span className="microlabel">kullanıcı</span>
           <input
@@ -452,8 +452,8 @@ export default function App() {
         </label>
         <span
           title={connection === "open"
-            ? "Sunucu bağlantısı açık — olaylar canlı akıyor"
-            : "Sunucu bağlantısı yok — ekrandaki veri BAYAT olabilir"}
+            ? "Olaylar canlı akıyor"
+            : "Bağlantı yok — ekrandaki veri bayat olabilir"}
           className={`chip border font-semibold uppercase tracking-wide ${CONNECTION_CLS[connection]}`}
         >
           {connection === "open" ? "●" : "○"} {CONNECTION_TR[connection]}
@@ -497,7 +497,7 @@ export default function App() {
               value={runMode}
               onChange={(e) => setRunMode(e.target.value as "" | "temkinli" | "genis")}
               disabled={busy}
-              title="Çalışma kipi — dengeli: varsayılan; temkinli: alarm ikinci okumayla doğrulanır (az yanlış alarm); geniş: çift okuma + son tarama (en yüksek yakalama)"
+              title="temkinli: az yanlış alarm · geniş: en yüksek yakalama"
               className="field"
             >
               <option value="">dengeli</option>
@@ -519,7 +519,7 @@ export default function App() {
               <button
                 onClick={() => startDemo(demoCount)}
                 disabled={busy}
-                title="Çoklu kamera demosu: N akış eşzamanlı çözümlenir (24 = şartname senaryosu)"
+                title="N akış eşzamanlı çözümlenir"
                 className="btn btn-outline-accent"
               >
                 ⊞ demo
@@ -541,7 +541,7 @@ export default function App() {
             disabled={busy}
             title={busy
               ? "Önce çalışan analizi durdurun"
-              : "Ekrandaki analiz sonuçlarını temizler — sunucudaki kayıtlar silinmez"}
+              : "Ekranı temizler; sunucudaki kayıtlar silinmez"}
             className="btn btn-outline"
           >
             ✕ temizle
@@ -557,8 +557,8 @@ export default function App() {
             }}
             disabled={!detailReady}
             title={detailReady
-              ? "Seçili olayı insan incelemesine ve kontrollü eğitim verisi hazırlığına aç"
-              : "Önce analiz tamamlanmalı ve zaman çizelgesinden bir olay seçilmelidir"}
+              ? "Seçili olayı insan incelemesine aç"
+              : "Önce analizi bitirin ve bir olay seçin"}
             className="btn btn-outline-accent"
           >
             ◎ ayrıntılı incele
@@ -567,7 +567,7 @@ export default function App() {
             onClick={() => { if (exportRunId) location.href = `/api/runs/${exportRunId}/export`; }}
             disabled={!exportRunId}
             title={exportRunId
-              ? "Biten koşuyu taşınabilir paket (.zip) olarak dışarı çıkar"
+              ? "Koşuyu .zip paket olarak dışarı çıkar"
               : "Önce bir analiz tamamlanmalı"}
             className="btn btn-outline"
           >
@@ -596,7 +596,7 @@ export default function App() {
       <div className="flex min-h-0 flex-1 gap-1.5 p-1.5">
       <FeedStrip feeds={analysisFeeds} active={analysisActive} onSelect={selectFeed} />
       <div className="grid min-h-0 flex-1 grid-cols-12 grid-rows-[minmax(0,3fr)_minmax(0,2fr)] gap-1.5">
-        <div className="col-span-4 min-h-0">
+        <div className="col-span-6 min-h-0">
           <VideoPanel
             highlight={feed.highlight}
             seekTo={feed.seekTo}
@@ -608,24 +608,7 @@ export default function App() {
             onReport={run?.run_id && run.run_id !== "-" ? setReportT : undefined}
           />
         </div>
-        <div className="col-span-4 min-h-0">
-          <ActionLog
-            requests={analysisActionRequests}
-            results={analysisActionResults}
-            onRespond={send.actuator}
-          />
-        </div>
-        <div className="col-span-4 row-span-2 min-h-0">
-          <ChatPanel
-            messages={state.chat}
-            onSend={send.chat}
-            incident={feed.highlight}
-          />
-        </div>
-        <div className="col-span-4 min-h-0">
-          <AgentTrace entries={feed.trace} />
-        </div>
-        <div className="col-span-4 min-h-0">
+        <div className="col-span-3 row-span-2 min-h-0">
           <Timeline
             incidents={feed.incidents}
             reports={feed.reports}
@@ -633,6 +616,23 @@ export default function App() {
             reportsPulse={feed.reportsPulse}
             decided={decided}
             onSelect={selectIncident}
+          />
+        </div>
+        <div className="col-span-3 row-span-2 min-h-0">
+          <ChatPanel
+            messages={state.chat}
+            onSend={send.chat}
+            incident={feed.highlight}
+          />
+        </div>
+        <div className="col-span-3 min-h-0">
+          <AgentTrace entries={feed.trace} />
+        </div>
+        <div className="col-span-3 min-h-0">
+          <ActionLog
+            requests={analysisActionRequests}
+            results={analysisActionResults}
+            onRespond={send.actuator}
           />
         </div>
       </div>

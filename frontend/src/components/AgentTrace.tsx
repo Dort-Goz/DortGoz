@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from "react";
 import type { TraceEntry } from "../state";
-import { NODE_TR, humanizeEnums, stripPerf } from "../lib/labels";
+import { NODE_TR, humanizeEnums, stripPerf, toolLabel } from "../lib/labels";
 import { useStickyScroll } from "../lib/useStickyScroll";
 
 type StepRow = { kind: "step"; seq: number; node: string; status: string; detail: string };
@@ -85,7 +85,7 @@ function AgentTrace({ entries }: { entries: TraceEntry[] }) {
         <button
           onClick={() => setVerbose((v) => !v)}
           title="Ham akış: hiçbir satır gizlenmez (hata ayıklama)"
-          className={`btn h-5 px-1.5 text-[10px] normal-case tracking-normal ${
+          className={`btn btn-sm normal-case tracking-normal ${
             verbose ? "btn-outline-warn" : "btn-outline"
           }`}
         >
@@ -123,19 +123,16 @@ function AgentTrace({ entries }: { entries: TraceEntry[] }) {
       <div ref={ref} onScroll={onScroll}
            className="panel-body space-y-0.5 p-2 font-mono text-[11px] leading-5">
         {entries.length === 0 && (
-          <p className="p-2 font-sans text-xs text-zinc-600">
-            Koşu başlayınca ajan adımları burada akar.
-          </p>
+          <p className="p-2 font-sans text-xs text-zinc-600">Ajan adımı yok.</p>
         )}
         {rows.map((r) =>
           r.kind === "quiet" ? (
             <QuietRow key={`q${r.seq}`} rows={r.rows} />
           ) : r.kind === "tool" && r.entry.tool ? (
-            <div key={r.seq}>
-              <span className="text-amber-400">⚙ {r.entry.tool.tool}</span>
-              <span className="text-zinc-500">({JSON.stringify(r.entry.tool.args)})</span>
+            <div key={r.seq} title={JSON.stringify(r.entry.tool.args)}>
+              <span className="text-amber-400">⚙ {toolLabel(r.entry.tool.tool)}</span>
               {r.entry.tool.rationale && (
-                <span className="italic text-zinc-400"> · gerekçe: {r.entry.tool.rationale}</span>
+                <span className="text-zinc-400"> — {r.entry.tool.rationale}</span>
               )}
               {r.entry.tool.result && (
                 <span className="text-zinc-300"> → {r.entry.tool.result}</span>
