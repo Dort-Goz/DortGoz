@@ -210,6 +210,7 @@ class LearningOrchestrator:
                 LearningRouteItem(
                     event_id=entry.event.event_id,
                     event_revision=entry.event.revision,
+                    event_type=entry.event.event_type.value,
                     review_id=entry.review_id,
                     approval_id=entry.approval_id,
                     use=use,

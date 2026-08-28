@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { maintenanceSource } from "./maintenanceSource";
 import { readFileSync } from "node:fs";
 import {
   approvalWaitingCount,
@@ -119,17 +120,15 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
   });
 
   test("bakım ekranı kanıt görselini ve mühendis dilini taşır", () => {
-    const source = readFileSync(
-      new URL("../src/components/ModelMaintenancePanel.tsx", import.meta.url),
-      "utf8",
-    );
+    const source = maintenanceSource();
 
     expect(source).toContain("getIncidentMedia");
     expect(source).toContain("media.thumbnail_url");
     expect(source).toContain("Kanıt {shortClock(media.clip_start)}");
     // Kuyruk bileşeni operatör örtmecesiyle değil teknik adıyla anılır.
-    expect(source).toContain("presentationForUse(group.use).technicalComponent");
-    expect(source).not.toContain("presentationForUse(group.use).title");
+    expect(source).toContain("presentationForUse(group.use)");
+    expect(source).toContain("presentation.technicalComponent");
+    expect(source).not.toContain("presentation.title");
     expect(source).toContain("Besleyeceği bileşenler");
     expect(source).toContain("İnceleme bekleyen olay yok.");
     expect(source).toContain("Onay bekleyen olay yok.");

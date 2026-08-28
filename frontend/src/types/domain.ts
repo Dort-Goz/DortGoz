@@ -205,6 +205,7 @@ export interface PipelineEventItem {
 export interface LearningRouteItem {
   event_id: string;
   event_revision: number;
+  event_type: string;
   review_id: string;
   approval_id: string;
   use: DevelopmentUse;
@@ -310,6 +311,33 @@ export interface PipelineModelItem {
   shadow_passed: boolean;
 }
 
+export interface DfineTrainingPolicy {
+  policy_version: string;
+  minimum_verified_frames: number;
+  minimum_train_frames: number;
+  minimum_validation_frames: number;
+  minimum_source_videos: number;
+  maximum_epochs: number;
+  maximum_batch_size: number;
+  maximum_workers: number;
+  maximum_gpu_minutes_per_job: number;
+  maximum_gpu_minutes_per_day: number;
+  allowed_architectures: DfineArchitecture[];
+}
+
+export interface PromotionPolicy {
+  policy_version: string;
+  minimum_map_50_95: number;
+  minimum_critical_recall: number;
+  maximum_false_alarms_per_hour: number;
+  maximum_p95_latency_ms: number;
+  maximum_peak_memory_mb: number;
+  minimum_repetitions: number;
+  maximum_critical_recall_drop: number;
+  maximum_false_alarm_increase: number;
+  maximum_latency_increase_ratio: number;
+}
+
 export interface PipelineReadiness {
   can_plan: boolean;
   can_run: boolean;
@@ -329,6 +357,8 @@ export interface LearningPipelineView {
   candidates: PipelineModelItem[];
   champion: PipelineModelItem | null;
   readiness: PipelineReadiness;
+  training_policy: DfineTrainingPolicy | null;
+  promotion_policy: PromotionPolicy | null;
   drift: DriftSnapshot;
   mode: "human_gated";
   automatic_training: false;

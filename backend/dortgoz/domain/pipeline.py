@@ -9,7 +9,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .feedback import DevelopmentUse
 from .learning import DriftSnapshot, LearningBand, LearningRouteItem
-from .model_lifecycle import ModelVersion, TrainingJob
+from .model_lifecycle import (
+    DfineTrainingPolicy,
+    ModelVersion,
+    PromotionPolicy,
+    TrainingJob,
+)
 
 
 class PipelineStage(StrEnum):
@@ -99,6 +104,9 @@ class LearningPipelineView(BaseModel):
     candidates: list[PipelineModelItem]
     champion: PipelineModelItem | None = None
     readiness: PipelineReadiness
+    # Politikalar arayüze gider: form üst sınırları ve terfi eşikleri buradan okunur.
+    training_policy: DfineTrainingPolicy | None = None
+    promotion_policy: PromotionPolicy | None = None
     drift: DriftSnapshot
     mode: Literal["human_gated"] = "human_gated"
     automatic_training: Literal[False] = False

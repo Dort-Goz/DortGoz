@@ -149,6 +149,8 @@ class LearningPipelineService:
                 else None
             ),
             readiness=readiness,
+            training_policy=training_policy,
+            promotion_policy=promotion_policy,
             drift=snapshot.drift,
         )
 

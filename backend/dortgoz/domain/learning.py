@@ -113,6 +113,7 @@ class LearningRouteItem(BaseModel):
 
     event_id: str = Field(min_length=1)
     event_revision: int = Field(ge=1)
+    event_type: str = Field(min_length=1)
     review_id: str = Field(min_length=1)
     approval_id: str = Field(min_length=1)
     use: DevelopmentUse

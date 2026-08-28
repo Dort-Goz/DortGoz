@@ -1,12 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   approveEventsInBatch,
-  exportCandidateOnnx,
   getIncidentMedia,
   getLearningPipeline,
-  planTrainingJob,
-  promoteModel,
-  runTrainingJob,
 } from "../lib/api";
 import { CANONICAL_TYPE_TR } from "../lib/labels";
 import { presentationForUse } from "../lib/learningPresentation";
@@ -14,21 +10,22 @@ import {
   STAGE_ORDER,
   STAGE_TR,
   firstActionableStage,
-  formatElapsed,
-  jobStatusClass,
-  jobStatusLabel,
-  measurementSteps,
   ratio,
   readinessSummary,
 } from "../lib/pipelinePresentation";
+import {
+  Empty,
+  MeasurementStage,
+  PromotionStage,
+  QueueStage,
+  TrainingStage,
+  type StageProps,
+} from "./MaintenanceStages";
 import type {
-  DfineArchitecture,
   IncidentMedia,
   LearningPipelineView,
   PipelineEventItem,
-  PipelineModelItem,
   PipelineStage,
-  TrainingJob,
 } from "../types/domain";
 import type { CanonicalEventType } from "../types/events";
 
@@ -78,15 +75,6 @@ function feedsLine(item: PipelineEventItem): string {
   return `Besleyeceği bileşenler: ${components}`;
 }
 
-/** Steps the API cannot own: they need an external, immutable test set. */
-function measurementCommand(modelVersionId: string): string {
-  return [
-    "python scripts/dfine_feedback_training.py prepare-evaluation",
-    `  --event-store runs/dortgoz.sqlite3 --model-version-id ${modelVersionId}`,
-    "  --test-dataset-manifest <test-manifest.json> --coco-annotations <test.json>",
-  ].join("\n");
-}
-
 export default function ModelMaintenancePanel({
   user,
   onOpenEvent,
@@ -101,12 +89,7 @@ export default function ModelMaintenancePanel({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const [note, setNote] = useState("");
-  const [promotionReason, setPromotionReason] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
-  const [architecture, setArchitecture] = useState<DfineArchitecture>("dfine_n");
-  const [epochs, setEpochs] = useState(10);
-  const [batchSize, setBatchSize] = useState(2);
-  const [gpuMinutes, setGpuMinutes] = useState(60);
 
   const load = useCallback(async () => {
     try {
@@ -194,6 +177,14 @@ export default function ModelMaintenancePanel({
     view.stages.find((item) => item.stage === name)?.count ?? 0;
   const champion = view.champion;
   const signed = user.trim();
+  const stageProps: StageProps = {
+    view,
+    signed,
+    busy,
+    act: (label, run) => void act(label, run),
+    onOpenEvent,
+    onOpenStage: setStage,
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -370,325 +361,10 @@ export default function ModelMaintenancePanel({
             )
           )}
 
-          {active === "queue" && (
-            <>
-              <section className="bg-zinc-900 p-3">
-                <h3 className="font-semibold text-zinc-100">Eğitim paketi oluştur</h3>
-                <p className="mt-1 text-zinc-400">
-                  İzinli ve insan doğrulamalı kareler COCO'ya aktarılır, iş kuyruğa alınır.
-                  Eğitim kendiliğinden başlamaz.
-                </p>
-                <div className="mt-3 flex flex-wrap items-end gap-2">
-                  <label className="space-y-0.5">
-                    <span className="microlabel block">mimari</span>
-                    <select
-                      value={architecture}
-                      onChange={(e) => setArchitecture(e.target.value as DfineArchitecture)}
-                      className="field w-28"
-                    >
-                      <option value="dfine_n">dfine_n</option>
-                      <option value="dfine_s">dfine_s</option>
-                    </select>
-                  </label>
-                  <NumberField label="epok" value={epochs} onChange={setEpochs} />
-                  <NumberField label="yığın" value={batchSize} onChange={setBatchSize} />
-                  <NumberField label="gpu dk" value={gpuMinutes} onChange={setGpuMinutes} />
-                  <button
-                    type="button"
-                    disabled={!view.readiness.can_plan || !signed || busy !== ""}
-                    title={
-                      view.readiness.can_plan
-                        ? (signed ? undefined : "Önce üst çubuktaki kullanıcı adını doldurun")
-                        : view.readiness.blockers.join("; ")
-                    }
-                    onClick={() => void act("plan", () => planTrainingJob({
-                      architecture,
-                      requested_by: signed,
-                      epochs,
-                      batch_size: batchSize,
-                      max_gpu_minutes: gpuMinutes,
-                    }))}
-                    className="btn btn-accent"
-                  >
-                    {busy === "plan" ? "Oluşturuluyor…" : "Paket oluştur"}
-                  </button>
-                </div>
-                {!view.readiness.can_plan && (
-                  <ul className="mt-2 space-y-0.5 text-amber-200">
-                    {view.readiness.blockers.map((blocker) => (
-                      <li key={blocker}>• {blocker}</li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-
-              {view.queue.filter((group) => group.count > 0).length === 0 ? (
-                <Empty>Paketlenmeye hazır izinli örnek yok.</Empty>
-              ) : (
-                view.queue.filter((group) => group.count > 0).map((group) => (
-                  <section key={group.use} className="bg-zinc-900 p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <h3 className="font-semibold text-zinc-100">
-                        {presentationForUse(group.use).technicalComponent}
-                      </h3>
-                      <span className="text-[10px] text-zinc-600">{group.count} olay</span>
-                    </div>
-                    <p className="mt-0.5 text-zinc-400">Hedef havuz: {group.downstream}</p>
-                    <p className="mt-0.5 text-[10px] text-zinc-500">
-                      Güvenlik kapısı: {group.safety_gate}
-                    </p>
-                    <div className="mt-2 space-y-1">
-                      {group.items.map((item) => (
-                        <button
-                          key={`${group.use}-${item.event_id}`}
-                          type="button"
-                          onClick={() => onOpenEvent(item.event_id)}
-                          className="flex w-full items-center gap-3 bg-zinc-950 px-3 py-2 text-left hover:bg-zinc-800"
-                        >
-                          <span className="font-mono text-zinc-500">
-                            {shortId(item.event_id)}
-                          </span>
-                          <span className="ml-auto font-mono text-zinc-400">
-                            skor {item.learning_score}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-                ))
-              )}
-            </>
-          )}
-
-          {active === "training" && (
-            view.jobs.length === 0 ? (
-              <Empty>Kayıtlı eğitim işi yok.</Empty>
-            ) : (
-              view.jobs.map((job: TrainingJob) => (
-                <article key={job.job_id} className="bg-zinc-900 p-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-zinc-300">{shortId(job.job_id)}</span>
-                    <span className={`chip border ${jobStatusClass(job.status)}`}>
-                      {jobStatusLabel(job.status)}
-                    </span>
-                    <span className="chip border border-zinc-700 bg-zinc-950 text-zinc-400">
-                      {job.architecture}
-                    </span>
-                    <span className="ml-auto font-mono text-zinc-500">
-                      {formatElapsed(job.elapsed_seconds)}
-                    </span>
-                    {job.status === "queued" && (
-                      <button
-                        type="button"
-                        disabled={!view.readiness.can_run || busy !== ""}
-                        title={
-                          view.readiness.can_run
-                            ? undefined
-                            : readinessSummary(view.readiness)
-                        }
-                        onClick={() => void act(job.job_id, () => runTrainingJob(job.job_id))}
-                        className="btn btn-accent"
-                      >
-                        {busy === job.job_id ? "Başlatılıyor…" : "Eğitimi başlat"}
-                      </button>
-                    )}
-                  </div>
-                  <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-zinc-400 sm:grid-cols-4">
-                    <Detail label="kare" value={`${job.verified_frame_count}`} />
-                    <Detail
-                      label="eğitim/doğrulama"
-                      value={`${job.train_frame_count}/${job.validation_frame_count}`}
-                    />
-                    <Detail label="kaynak video" value={`${job.source_video_count}`} />
-                    <Detail label="kutu" value={`${job.box_count}`} />
-                    <Detail label="epok" value={`${job.epochs}`} />
-                    <Detail label="yığın" value={`${job.batch_size}`} />
-                    <Detail label="isteyen" value={job.requested_by} />
-                    <Detail label="sınıf" value={job.category_names.join(", ")} />
-                  </dl>
-                  {job.error_message && (
-                    <p className="mt-2 bg-red-950/40 px-2 py-1 text-red-200">
-                      {job.error_code}: {job.error_message}
-                    </p>
-                  )}
-                </article>
-              ))
-            )
-          )}
-
-          {active === "measurement" && (() => {
-            const measuring = view.candidates.filter((item) => !item.measured);
-            if (measuring.length === 0) {
-              return <Empty>Ölçüm bekleyen aday model yok.</Empty>;
-            }
-            return measuring.map((item: PipelineModelItem) => (
-              <article key={item.version.model_version_id} className="bg-zinc-900 p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-zinc-300">
-                    {shortId(item.version.model_version_id)}
-                  </span>
-                  <span className="chip border border-zinc-700 bg-zinc-950 text-zinc-400">
-                    {item.version.architecture}
-                  </span>
-                  {!item.onnx_exported && (
-                    <button
-                      type="button"
-                      disabled={busy !== ""}
-                      onClick={() => void act(
-                        item.version.model_version_id,
-                        () => exportCandidateOnnx(item.version.model_version_id),
-                      )}
-                      className="btn btn-accent ml-auto"
-                    >
-                      {busy === item.version.model_version_id
-                        ? "Aktarılıyor…"
-                        : "ONNX'e aktar"}
-                    </button>
-                  )}
-                </div>
-                <ol className="mt-3 flex flex-wrap gap-3">
-                  {measurementSteps(item).map((step) => (
-                    <li
-                      key={step.label}
-                      className={step.done ? "text-emerald-300" : "text-zinc-500"}
-                    >
-                      {step.done ? "✓" : "○"} {step.label}
-                    </li>
-                  ))}
-                </ol>
-                {item.onnx_exported && (
-                  <>
-                    <p className="mt-3 text-zinc-400">
-                      Kalan adımlar değişmez bir test kümesi ister; konsoldan çalıştırın:
-                    </p>
-                    <pre className="mt-1 overflow-x-auto bg-zinc-950 p-2 font-mono text-[10px] text-zinc-400">
-                      {measurementCommand(item.version.model_version_id)}
-                    </pre>
-                  </>
-                )}
-              </article>
-            ));
-          })()}
-
-          {active === "promotion" && (
-            <>
-              {champion && (
-                <section className="border border-emerald-900 bg-emerald-950/20 p-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-semibold text-emerald-100">Yürürlükteki model</h3>
-                    <span className="font-mono text-zinc-300">
-                      {shortId(champion.version.model_version_id)}
-                    </span>
-                    <span className="chip border border-zinc-700 bg-zinc-950 text-zinc-400">
-                      {champion.version.architecture}
-                    </span>
-                    <span className="ml-auto text-[10px] text-zinc-500">
-                      terfi eden: {champion.version.approved_by ?? "—"}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-zinc-400">Aday bu değerleri geçmek zorundadır.</p>
-                  <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-zinc-400 sm:grid-cols-4">
-                    <Detail
-                      label="mAP50-95"
-                      value={ratio(champion.version.evaluation?.map_50_95)}
-                    />
-                    <Detail
-                      label="kritik recall"
-                      value={ratio(champion.version.evaluation?.critical_recall)}
-                    />
-                    <Detail
-                      label="yanlış alarm/saat"
-                      value={`${champion.version.evaluation?.false_alarms_per_hour ?? "—"}`}
-                    />
-                    <Detail
-                      label="p95 gecikme"
-                      value={`${champion.version.evaluation?.p95_latency_ms ?? "—"} ms`}
-                    />
-                  </dl>
-                </section>
-              )}
-
-              {view.candidates.filter((item) => item.measured).length === 0 ? (
-                <Empty>Ölçümü tamamlanmış aday yok.</Empty>
-              ) : (
-                <>
-                  <label className="block space-y-0.5 bg-zinc-900 p-2">
-                    <span className="microlabel block">terfi gerekçesi</span>
-                    <input
-                      value={promotionReason}
-                      onChange={(e) => setPromotionReason(e.target.value)}
-                      placeholder="ölçüm kapısı geçildi"
-                      className="field w-full"
-                    />
-                  </label>
-                  {view.candidates.filter((item) => item.measured).map((item) => (
-                    <article key={item.version.model_version_id} className="bg-zinc-900 p-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono text-zinc-300">
-                          {shortId(item.version.model_version_id)}
-                        </span>
-                        <span
-                          className={`chip border ${
-                            item.gate_passed
-                              ? "border-emerald-900 bg-emerald-950/30 text-emerald-200"
-                              : "border-amber-900 bg-amber-950/30 text-amber-200"
-                          }`}
-                        >
-                          {item.gate_passed ? "Kapıdan geçti" : "Kapı engelli"}
-                        </span>
-                        <button
-                          type="button"
-                          disabled={!item.gate_passed || !signed || busy !== ""}
-                          title={
-                            item.gate_passed
-                              ? (signed ? undefined : "Önce üst çubuktaki kullanıcı adını doldurun")
-                              : item.gate_failures.join("; ")
-                          }
-                          onClick={() => void act(
-                            item.version.model_version_id,
-                            () => promoteModel(item.version.model_version_id, {
-                              approved_by: signed,
-                              reason: promotionReason.trim() || "ölçüm kapısı geçildi",
-                            }),
-                          )}
-                          className="btn btn-accent ml-auto"
-                        >
-                          {busy === item.version.model_version_id
-                            ? "Terfi ediliyor…"
-                            : "Terfi ettir"}
-                        </button>
-                      </div>
-                      <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-zinc-400 sm:grid-cols-4">
-                        <Detail
-                          label="mAP50-95"
-                          value={ratio(item.version.evaluation?.map_50_95)}
-                        />
-                        <Detail
-                          label="kritik recall"
-                          value={ratio(item.version.evaluation?.critical_recall)}
-                        />
-                        <Detail
-                          label="yanlış alarm/saat"
-                          value={`${item.version.evaluation?.false_alarms_per_hour ?? "—"}`}
-                        />
-                        <Detail
-                          label="p95 gecikme"
-                          value={`${item.version.evaluation?.p95_latency_ms ?? "—"} ms`}
-                        />
-                      </dl>
-                      {item.gate_failures.length > 0 && (
-                        <ul className="mt-2 space-y-0.5 text-amber-200">
-                          {item.gate_failures.map((failure) => (
-                            <li key={failure}>• {failure}</li>
-                          ))}
-                        </ul>
-                      )}
-                    </article>
-                  ))}
-                </>
-              )}
-            </>
-          )}
+          {active === "queue" && <QueueStage {...stageProps} />}
+          {active === "training" && <TrainingStage {...stageProps} />}
+          {active === "measurement" && <MeasurementStage {...stageProps} />}
+          {active === "promotion" && <PromotionStage {...stageProps} />}
         </div>
       </div>
 
@@ -700,12 +376,6 @@ export default function ModelMaintenancePanel({
       </footer>
       </div>
     </div>
-  );
-}
-
-function Empty({ children }: { children: ReactNode }) {
-  return (
-    <p className="bg-zinc-900/60 px-4 py-8 text-center text-zinc-400">{children}</p>
   );
 }
 
@@ -797,37 +467,5 @@ function EventCard({
         </div>
       </div>
     </article>
-  );
-}
-
-function Detail({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="microlabel">{label}</dt>
-      <dd className="font-mono text-zinc-300">{value}</dd>
-    </div>
-  );
-}
-
-function NumberField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <label className="space-y-0.5">
-      <span className="microlabel block">{label}</span>
-      <input
-        type="number"
-        min={1}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value) || 1)}
-        className="field w-20"
-      />
-    </label>
   );
 }

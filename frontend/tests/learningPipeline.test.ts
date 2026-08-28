@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { maintenanceSource } from "./maintenanceSource";
 import { readFileSync } from "node:fs";
 import {
   STAGE_ORDER,
@@ -140,10 +141,7 @@ describe("öğrenme hattı sunumu", () => {
   });
 
   test("otomatik eğitim kapalı sözleşmesini arayüzde yazar", () => {
-    const source = readFileSync(
-      new URL("../src/components/ModelMaintenancePanel.tsx", import.meta.url),
-      "utf8",
-    );
+    const source = maintenanceSource();
 
     expect(source).toContain("otomatik eğitim ve otomatik");
     expect(source).toContain("terfi KAPALIDIR");
