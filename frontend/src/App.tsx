@@ -10,6 +10,8 @@ import ImportPackage from "./components/ImportPackage";
 import FeedStrip from "./components/FeedStrip";
 import LiveGrid from "./components/LiveGrid";
 import ModelMaintenancePanel from "./components/ModelMaintenancePanel";
+import MaintenanceReviewDialog from "./components/MaintenanceReviewDialog";
+import FineTuneDecisionDialog from "./components/FineTuneDecisionDialog";
 import OperatorReportDialog from "./components/OperatorReport";
 import UploadPanel from "./components/UploadPanel";
 import TrainingReviewPanel from "./components/TrainingReviewPanel";
@@ -113,13 +115,10 @@ export default function App() {
     () => localStorage.getItem("dortgoz.reviewer") ?? "operator",
   );
   const [trainingEventId, setTrainingEventId] = useState("");
-  const [trainingReviewMode, setTrainingReviewMode] = useState<"review" | "maintenance">(
-    "review",
-  );
+  const [maintenanceReviewEventId, setMaintenanceReviewEventId] = useState("");
+  const [fineTuneEventId, setFineTuneEventId] = useState("");
   const [reportT, setReportT] = useState<number | null>(null);
-  const [openedFromMaintenance, setOpenedFromMaintenance] = useState(false);
   const [maintenanceRefreshToken, setMaintenanceRefreshToken] = useState(0);
-  const [maintenanceHandoffEventId, setMaintenanceHandoffEventId] = useState("");
   const [reviewRefreshToken, setReviewRefreshToken] = useState(0);
   const [fixtureMode, setFixtureMode] = useState(false);
   const [livePending, setLivePending] = useState(0);
@@ -137,28 +136,11 @@ export default function App() {
 
   const closeTrainingReview = useCallback(() => {
     setTrainingEventId("");
-    setTrainingReviewMode("review");
-    setOpenedFromMaintenance(false);
   }, []);
 
   const finishEventReview = useCallback(() => {
-    const reviewedEventId = trainingEventId;
     setTrainingEventId("");
-    setTrainingReviewMode("review");
-    setOpenedFromMaintenance(false);
     setReviewRefreshToken((current) => current + 1);
-    setMaintenanceRefreshToken((current) => current + 1);
-    setMaintenanceHandoffEventId(reviewedEventId);
-    setLiveView(false);
-    setReviewView(false);
-    setMaintenanceView(true);
-    history.replaceState(null, "", "#bakim");
-  }, [trainingEventId]);
-
-  const returnToMaintenance = useCallback(() => {
-    setTrainingEventId("");
-    setTrainingReviewMode("review");
-    setOpenedFromMaintenance(false);
     setMaintenanceRefreshToken((current) => current + 1);
     setLiveView(false);
     setReviewView(false);
@@ -167,30 +149,35 @@ export default function App() {
   }, []);
 
   const openMaintenanceEvent = useCallback((eventId: string) => {
-    setOpenedFromMaintenance(true);
-    setTrainingReviewMode("maintenance");
-    setTrainingEventId(eventId);
+    setFineTuneEventId(eventId);
   }, []);
 
   const openMaintenanceReviewEvent = useCallback((eventId: string) => {
-    setOpenedFromMaintenance(true);
-    setTrainingReviewMode("review");
-    setTrainingEventId(eventId);
+    setMaintenanceReviewEventId(eventId);
   }, []);
 
   const openReviewEvent = useCallback((eventId: string) => {
-    setOpenedFromMaintenance(false);
-    setTrainingReviewMode("review");
     setTrainingEventId(eventId);
   }, []);
 
-  const openEventInMaintenance = useCallback((eventId: string) => {
+  const openEventInMaintenance = useCallback((_eventId: string) => {
     setLiveView(false);
     setReviewView(false);
     setMaintenanceView(true);
     history.replaceState(null, "", "#bakim");
-    openMaintenanceEvent(eventId);
-  }, [openMaintenanceEvent]);
+    setMaintenanceRefreshToken((current) => current + 1);
+  }, []);
+
+  const finishMaintenanceReview = useCallback((eventId: string) => {
+    setMaintenanceReviewEventId("");
+    setMaintenanceRefreshToken((current) => current + 1);
+    setFineTuneEventId(eventId);
+  }, []);
+
+  const finishFineTuneDecision = useCallback(() => {
+    setFineTuneEventId("");
+    setMaintenanceRefreshToken((current) => current + 1);
+  }, []);
 
   useEffect(() => {
     const socket = new DortgozSocket(
@@ -431,7 +418,6 @@ export default function App() {
         setLiveView(value === "live");
         setReviewView(value === "review");
         setMaintenanceView(value === "maintenance");
-        if (value !== "maintenance") setMaintenanceHandoffEventId("");
         history.replaceState(null, "", WORKSPACE_HASH[value]);
       }}
       className={`h-full px-2.5 transition-colors ${
@@ -698,8 +684,6 @@ export default function App() {
             onReviewEvent={openMaintenanceReviewEvent}
             onOpenEvent={openMaintenanceEvent}
             refreshToken={maintenanceRefreshToken}
-            handoffEventId={maintenanceHandoffEventId}
-            onDismissHandoff={() => setMaintenanceHandoffEventId("")}
           />
         </div>
       )}
@@ -721,10 +705,27 @@ export default function App() {
         <TrainingReviewPanel
           user={user}
           eventId={trainingEventId}
-          mode={trainingReviewMode}
-          onClose={openedFromMaintenance ? returnToMaintenance : closeTrainingReview}
-          onBack={openedFromMaintenance ? returnToMaintenance : undefined}
+          mode="review"
+          onClose={closeTrainingReview}
           onReviewSaved={finishEventReview}
+        />
+      )}
+
+      {maintenanceReviewEventId && (
+        <MaintenanceReviewDialog
+          eventId={maintenanceReviewEventId}
+          user={user}
+          onClose={() => setMaintenanceReviewEventId("")}
+          onSaved={finishMaintenanceReview}
+        />
+      )}
+
+      {fineTuneEventId && (
+        <FineTuneDecisionDialog
+          eventId={fineTuneEventId}
+          user={user}
+          onClose={() => setFineTuneEventId("")}
+          onSaved={finishFineTuneDecision}
         />
       )}
     </div>

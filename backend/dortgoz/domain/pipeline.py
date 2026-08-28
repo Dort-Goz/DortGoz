@@ -49,6 +49,10 @@ class PipelineEventItem(BaseModel):
     recommended_uses: list[DevelopmentUse]
     ready_uses: list[DevelopmentUse]
     blockers: list[str]
+    operator_decision: str | None = None
+    operator_event_type: str | None = None
+    maintenance_decision: str | None = None
+    maintenance_event_type: str | None = None
 
 
 class PipelineQueueGroup(BaseModel):

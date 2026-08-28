@@ -29,6 +29,7 @@ from .memory import AnalysisProvenance, AnalysisRecord, AnalysisResult, Analysis
 from .priority import InterventionBand, InterventionPriority, intervention_band_for_score
 from .provenance import (
     HumanReview,
+    MaintenanceReview,
     ModelRunRef,
     ProcedureSource,
     ReviewDecision,
@@ -92,6 +93,7 @@ __all__ = [
     "InterventionPriority",
     "KeyframeRef",
     "LegacyWsEventType",
+    "MaintenanceReview",
     "ModelRunRef",
     "OfflineDatasetManifest",
     "ProcedureAction",

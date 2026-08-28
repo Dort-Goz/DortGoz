@@ -62,9 +62,41 @@ class HumanReviewInput(BaseModel):
     intervention_required: bool | None = None
 
 
+class MaintenanceReviewInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operator_review_id: str = Field(min_length=1)
+    decision: Literal["confirm", "reject", "edit"]
+    reviewer: str = Field(min_length=1, max_length=120)
+    note: str = Field(min_length=1, max_length=4000)
+    event_type: str | None = None
+    start_time: float | None = Field(default=None, ge=0)
+    peak_time: float | None = Field(default=None, ge=0)
+    end_time: float | None = Field(default=None, ge=0)
+    risk_level: str | None = None
+    false_alarm_reason: FalseAlarmReason | None = None
+
+    @model_validator(mode="after")
+    def review_fields_are_consistent(self) -> MaintenanceReviewInput:
+        times = (self.start_time, self.peak_time, self.end_time)
+        if any(value is not None for value in times) and not all(
+            value is not None for value in times
+        ):
+            raise ValueError("IT inceleme zamanları birlikte verilmelidir")
+        if all(value is not None for value in times):
+            start, peak, end = times
+            assert start is not None and peak is not None and end is not None
+            if not start <= peak <= end:
+                raise ValueError("IT inceleme zamanları sıralı olmalıdır")
+        if self.decision in {"confirm", "edit"}:
+            if self.event_type is None:
+                raise ValueError("IT anomali kararı kategori gerektirir")
+        elif self.event_type is not None:
+            raise ValueError("IT anomali yok kararı kategori taşıyamaz")
+        return self
+
+
 class TriageDecisionInput(BaseModel):
-
-
     model_config = ConfigDict(extra="forbid")
 
     key: str = Field(min_length=1, max_length=400)
@@ -159,6 +191,7 @@ class DevelopmentApprovalInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     review_id: str = Field(min_length=1)
+    maintenance_review_id: str | None = Field(default=None, min_length=1)
     status: DevelopmentApprovalStatus
     approved_uses: list[DevelopmentUse] = Field(default_factory=list)
     reviewer: str = Field(min_length=1, max_length=120)

@@ -82,7 +82,7 @@ def test_pipeline_endpoint_reports_every_stage(monkeypatch) -> None:
         "measurement",
         "promotion",
     ]
-    assert payload["stages"][0]["count"] == 1
+    assert payload["stages"][0]["count"] == 0
     assert payload["jobs"] == []
     assert payload["candidates"] == []
     assert payload["champion"] is None
@@ -112,7 +112,7 @@ def test_batch_approval_reports_events_without_review(monkeypatch) -> None:
     assert "event-yok" in reasons
 
 
-def test_batch_approval_moves_reviewed_events_into_the_queue(monkeypatch) -> None:
+def test_it_review_and_fine_tune_decision_move_event_into_dfine_queue(monkeypatch) -> None:
     runtime = ApiRuntime()
     monkeypatch.setattr(api_module, "runtime", runtime)
     event_id = _seed_reviewed_event(runtime, 3)
@@ -131,22 +131,46 @@ def test_batch_approval_moves_reviewed_events_into_the_queue(monkeypatch) -> Non
         )
         assert review.status_code == 200
 
-        approved = client.post(
-            "/api/learning/approvals/batch",
+        invalid_maintenance = client.post(
+            f"/api/events/{event_id}/maintenance-review",
             json={
-                "event_ids": [event_id],
-                "approved_uses": ["evaluation"],
-                "reviewer": "muhendis",
-                "note": "Değerlendirme havuzu için onaylandı.",
+                "operator_review_id": review.json()["review_id"],
+                "decision": "confirm",
+                "reviewer": "it-operator",
+                "note": "Kategori olmadan kaydedilmemeli.",
+            },
+        )
+        assert invalid_maintenance.status_code == 422
+
+        maintenance = client.post(
+            f"/api/events/{event_id}/maintenance-review",
+            json={
+                "operator_review_id": review.json()["review_id"],
+                "decision": "confirm",
+                "event_type": "possible_theft",
+                "reviewer": "it-operator",
+                "note": "IT olayı bağımsız doğruladı.",
+            },
+        )
+        assert maintenance.status_code == 200
+
+        approved = client.post(
+            f"/api/events/{event_id}/development-approval",
+            json={
+                "review_id": review.json()["review_id"],
+                "maintenance_review_id": maintenance.json()["maintenance_review_id"],
+                "status": "approved",
+                "approved_uses": ["d_fine_training"],
+                "reviewer": "it-operator",
+                "note": "D-FINE fine-tune kuyruğuna gönderildi.",
             },
         )
         assert approved.status_code == 200
-        assert approved.json()["approved_event_ids"] == [event_id]
 
         pipeline = client.get("/api/learning/pipeline").json()
 
     queue = {group["use"]: group["count"] for group in pipeline["queue"]}
-    assert queue["evaluation"] == 1
+    assert queue == {"d_fine_training": 1}
     stages = {stage["stage"]: stage["count"] for stage in pipeline["stages"]}
     assert stages["queue"] == 1
     assert stages["review"] == 0
@@ -174,12 +198,28 @@ def test_rejected_learning_decision_leaves_the_approval_queue(monkeypatch) -> No
         assert review.json()["end_time"] == 3
 
         before = client.get("/api/learning/pipeline").json()
-        assert event_id in {item["event_id"] for item in before["approval_items"]}
+        assert event_id in {item["event_id"] for item in before["review_items"]}
+
+        maintenance = client.post(
+            f"/api/events/{event_id}/maintenance-review",
+            json={
+                "operator_review_id": review.json()["review_id"],
+                "decision": "reject",
+                "reviewer": "it-operator",
+                "note": "IT anomali bulmadı.",
+                "false_alarm_reason": "normal_activity",
+            },
+        )
+        assert maintenance.status_code == 200
+
+        awaiting = client.get("/api/learning/pipeline").json()
+        assert event_id in {item["event_id"] for item in awaiting["approval_items"]}
 
         rejected = client.post(
             f"/api/events/{event_id}/development-approval",
             json={
                 "review_id": review.json()["review_id"],
+                "maintenance_review_id": maintenance.json()["maintenance_review_id"],
                 "status": "rejected",
                 "approved_uses": [],
                 "reviewer": "operator",

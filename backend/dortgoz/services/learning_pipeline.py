@@ -4,7 +4,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ..domain.feedback import DevelopmentUse
+from ..domain.feedback import (
+    DevelopmentApproval,
+    DevelopmentApprovalStatus,
+    DevelopmentUse,
+)
+from ..domain.learning import LearningRouteItem
 from ..domain.model_lifecycle import (
     DfineArchitecture,
     DfineTrainingPolicy,
@@ -23,6 +28,7 @@ from ..domain.pipeline import (
     PipelineStage,
     PipelineStageSummary,
 )
+from ..domain.provenance import HumanReview, MaintenanceReview
 from ..repositories.protocols import EventRepository
 from .execution_coordinator import ExecutionCoordinator
 from .learning_orchestrator import LearningOrchestrator, LearningSnapshot
@@ -38,8 +44,6 @@ _ATTENTION_JOB_STATES = frozenset(
         TrainingJobStatus.BUDGET_STOPPED,
     }
 )
-_APPROVAL_PENDING_STATES = frozenset({"approval_required", "not_approved", "stale"})
-
 _JOB_HISTORY_LIMIT = 50
 # Stage counts stay exact; only the transported item lists are capped.
 _STAGE_ITEM_LIMIT = 50
@@ -110,18 +114,69 @@ class LearningPipelineService:
                 reverse=True,
             )
         ]
-        review_items = [
-            self._event_item(entry.summary)
-            for entry in snapshot.events
-            if entry.review_id is None
-        ]
-        approval_items = [
-            self._event_item(entry.summary)
-            for entry in snapshot.events
-            if entry.review_id is not None and self._awaits_approval(entry)
-        ]
+        operator_reviews: dict[str, HumanReview | None] = {}
+        maintenance_reviews: dict[str, MaintenanceReview | None] = {}
+        approvals: dict[str, DevelopmentApproval | None] = {}
+        for entry in snapshot.events:
+            event_id = entry.event.event_id
+            operator_history = self.repository.list_reviews(event_id)
+            operator_review = operator_history[-1] if operator_history else None
+            maintenance_history = self.repository.list_maintenance_reviews(event_id)
+            maintenance_review = maintenance_history[-1] if maintenance_history else None
+            approval_history = self.repository.list_development_approvals(event_id)
+            approval = approval_history[-1] if approval_history else None
+            operator_reviews[event_id] = operator_review
+            maintenance_reviews[event_id] = maintenance_review
+            approvals[event_id] = approval
+
+        review_items = []
+        approval_items = []
+        for entry in snapshot.events:
+            event_id = entry.event.event_id
+            operator_review = operator_reviews[event_id]
+            maintenance_review = maintenance_reviews[event_id]
+            current_maintenance = (
+                maintenance_review
+                if operator_review is not None
+                and maintenance_review is not None
+                and maintenance_review.operator_review_id == operator_review.review_id
+                else None
+            )
+            if operator_review is not None and current_maintenance is None:
+                review_items.append(
+                    self._event_item(
+                        entry.summary,
+                        operator_review=operator_review,
+                    )
+                )
+                continue
+            if operator_review is None or current_maintenance is None:
+                continue
+            approval = approvals[event_id]
+            current_approval = (
+                approval
+                if approval is not None
+                and approval.review_id == operator_review.review_id
+                and approval.maintenance_review_id
+                == current_maintenance.maintenance_review_id
+                else None
+            )
+            if current_approval is None:
+                approval_items.append(
+                    self._event_item(
+                        entry.summary,
+                        operator_review=operator_review,
+                        maintenance_review=current_maintenance,
+                    )
+                )
+
         queue = [
-            self._queue_group(use, snapshot) for use in DevelopmentUse
+            self._dfine_queue_group(
+                snapshot,
+                operator_reviews=operator_reviews,
+                maintenance_reviews=maintenance_reviews,
+                approvals=approvals,
+            )
         ]
         readiness = self.readiness(
             training_policy=training_policy, promotion_policy=promotion_policy
@@ -235,25 +290,56 @@ class LearningPipelineService:
         except (OSError, ValueError, KeyError):
             return (None, None)
 
-    def _queue_group(
-        self, use: DevelopmentUse, snapshot: LearningSnapshot
+    def _dfine_queue_group(
+        self,
+        snapshot: LearningSnapshot,
+        *,
+        operator_reviews: dict[str, HumanReview | None],
+        maintenance_reviews: dict[str, MaintenanceReview | None],
+        approvals: dict[str, DevelopmentApproval | None],
     ) -> PipelineQueueGroup:
-        queue = self.orchestrator.route_queue(use, snapshot=snapshot)
-        sample = next(
-            (
-                route
-                for entry in snapshot.events
-                for route in entry.plan.routes
-                if route.use == use
-            ),
-            None,
-        )
+        items: list[LearningRouteItem] = []
+        for entry in snapshot.events:
+            event_id = entry.event.event_id
+            operator_review = operator_reviews[event_id]
+            maintenance_review = maintenance_reviews[event_id]
+            approval = approvals[event_id]
+            if (
+                operator_review is None
+                or maintenance_review is None
+                or approval is None
+                or maintenance_review.operator_review_id != operator_review.review_id
+                or approval.review_id != operator_review.review_id
+                or approval.maintenance_review_id
+                != maintenance_review.maintenance_review_id
+                or approval.status != DevelopmentApprovalStatus.APPROVED
+                or DevelopmentUse.D_FINE_TRAINING not in approval.approved_uses
+            ):
+                continue
+            items.append(
+                LearningRouteItem(
+                    event_id=event_id,
+                    event_revision=entry.event.revision,
+                    event_type=(
+                        maintenance_review.event_type
+                        or operator_review.event_type
+                        or entry.event.event_type.value
+                    ),
+                    review_id=operator_review.review_id,
+                    approval_id=approval.approval_id,
+                    use=DevelopmentUse.D_FINE_TRAINING,
+                    learning_score=entry.plan.learning_score,
+                    learning_band=entry.plan.learning_band,
+                    downstream="D-FINE eğitim kuyruğu",
+                )
+            )
+        items.sort(key=lambda item: (-item.learning_score, item.event_id))
         return PipelineQueueGroup(
-            use=use,
-            downstream=sample.downstream if sample is not None else use.value,
-            safety_gate=sample.safety_gate if sample is not None else "insan onayı",
-            count=queue.count,
-            items=queue.items,
+            use=DevelopmentUse.D_FINE_TRAINING,
+            downstream="D-FINE eğitim kuyruğu",
+            safety_gate="IT incelemesi ve fine-tune kararı",
+            count=len(items),
+            items=items,
         )
 
     def _model_item(
@@ -282,23 +368,33 @@ class LearningPipelineService:
         )
 
     @staticmethod
-    def _event_item(summary) -> PipelineEventItem:
+    def _event_item(
+        summary,
+        *,
+        operator_review: HumanReview,
+        maintenance_review: MaintenanceReview | None = None,
+    ) -> PipelineEventItem:
         return PipelineEventItem(
             event_id=summary.event_id,
             event_type=summary.event_type,
             video_id=summary.video_id,
             learning_score=summary.learning_score,
             learning_band=summary.learning_band,
-            recommended_uses=list(summary.recommended_uses),
-            ready_uses=list(summary.ready_uses),
-            blockers=list(summary.blockers),
-        )
-
-    @staticmethod
-    def _awaits_approval(entry) -> bool:
-        return any(
-            route.recommended and route.approval_state in _APPROVAL_PENDING_STATES
-            for route in entry.plan.routes
+            recommended_uses=[DevelopmentUse.D_FINE_TRAINING],
+            ready_uses=[],
+            blockers=[],
+            operator_decision=operator_review.decision.value,
+            operator_event_type=operator_review.event_type,
+            maintenance_decision=(
+                maintenance_review.decision.value
+                if maintenance_review is not None
+                else None
+            ),
+            maintenance_event_type=(
+                maintenance_review.event_type
+                if maintenance_review is not None
+                else None
+            ),
         )
 
     @staticmethod
@@ -313,10 +409,6 @@ class LearningPipelineService:
         ready_events = {
             item.event_id for group in queue for item in group.items
         }
-        stale_approvals = sum(
-            any("yenilenmeli" in blocker for blocker in item.blockers)
-            for item in approval_items
-        )
         active_jobs = [job for job in jobs if job.status in _ACTIVE_JOB_STATES]
         attention_jobs = [job for job in jobs if job.status in _ATTENTION_JOB_STATES]
         measuring = [item for item in candidates if not item.measured]
@@ -326,22 +418,22 @@ class LearningPipelineService:
                 stage=PipelineStage.REVIEW,
                 count=len(review_items),
                 blocked_count=0,
-                action_label="Olayı incele",
-                detail="Operatör kararı bekleyen olaylar.",
+                action_label="IT incelemesini aç",
+                detail="IT incelemesi",
             ),
             PipelineStageSummary(
                 stage=PipelineStage.APPROVAL,
                 count=len(approval_items),
-                blocked_count=stale_approvals,
-                action_label="Geliştirme iznini ver",
-                detail="İncelendi, geliştirme kullanımı için açık izin bekliyor.",
+                blocked_count=0,
+                action_label="Fine-tune kararını ver",
+                detail="Fine-tune kararı",
             ),
             PipelineStageSummary(
                 stage=PipelineStage.QUEUE,
                 count=len(ready_events),
                 blocked_count=0,
                 action_label="Paket oluştur",
-                detail="İzinli örnekler eğitim paketine alınmaya hazır.",
+                detail="Eğitim kuyruğu",
             ),
             # blocked her aşamada count'un alt kümesidir; başarısız iş de
             # insan bekler, bu yüzden count'a girer.

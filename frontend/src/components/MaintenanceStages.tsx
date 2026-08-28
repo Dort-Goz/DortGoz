@@ -6,7 +6,6 @@ import {
   runTrainingJob,
 } from "../lib/api";
 import { CANONICAL_TYPE_TR } from "../lib/labels";
-import { presentationForUse } from "../lib/learningPresentation";
 import {
   clampToLimit,
   formatElapsed,
@@ -16,7 +15,6 @@ import {
   jobStatusLabel,
   measurementSteps,
   modelForJob,
-  orderedQueueGroups,
   promotionMetricRows,
   ratio,
   readinessSummary,
@@ -118,10 +116,6 @@ function LimitedField({
   );
 }
 
-/**
- * Kuyruk: izinli örneklerin hangi havuza aktığını gösterir ve eğitim paketini
- * kurar. Havuzların tamamı listelenir; boş havuz da nedeniyle görünür kalır.
- */
 export function QueueStage({ view, signed, busy, act, onOpenEvent }: StageProps) {
   const limits = trainingLimits(view.training_policy);
   const allowed = view.training_policy?.allowed_architectures ?? ["dfine_n", "dfine_s"];
@@ -133,7 +127,6 @@ export function QueueStage({ view, signed, busy, act, onOpenEvent }: StageProps)
   );
 
   const dfine = view.queue.find((group) => group.use === "d_fine_training");
-  const policy = view.training_policy;
 
   return (
     <>
@@ -191,19 +184,6 @@ export function QueueStage({ view, signed, busy, act, onOpenEvent }: StageProps)
             {busy === "plan" ? "Oluşturuluyor…" : "Paket oluştur"}
           </button>
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-zinc-500">
-          <span className="font-mono">{policy?.policy_version ?? "politika okunamadı"}</span>
-          {policy && (
-            <>
-              <span>en az {policy.minimum_verified_frames} doğrulanmış kare</span>
-              <span>en az {policy.minimum_source_videos} kaynak video</span>
-              <span>günlük {policy.maximum_gpu_minutes_per_day} dk GPU</span>
-            </>
-          )}
-          <span className="text-zinc-600">
-            havuzda {dfine?.count ?? 0} izinli olay
-          </span>
-        </div>
         {view.readiness.blockers.length > 0 && (
           <ul className="mt-2 space-y-0.5 text-amber-200">
             {view.readiness.blockers.map((blocker) => (
@@ -213,68 +193,36 @@ export function QueueStage({ view, signed, busy, act, onOpenEvent }: StageProps)
         )}
       </section>
 
-      <Section title="havuzlar">
-        <div className="space-y-1.5">
-          {orderedQueueGroups(view.queue).map((group) => {
-            const presentation = presentationForUse(group.use);
-            const empty = group.count === 0;
-            return (
-              <article
-                key={group.use}
-                className={`bg-zinc-900 ${empty ? "px-3 py-1.5 opacity-50" : "p-3"}`}
+      <Section title="D-FINE kuyruğu" count={`${dfine?.count ?? 0}`}>
+        {!dfine || dfine.count === 0 ? (
+          <Empty>Kayıt yok.</Empty>
+        ) : (
+          <div className="space-y-px">
+            {dfine.items.slice(0, QUEUE_ITEM_LIMIT).map((item) => (
+              <button
+                key={item.event_id}
+                type="button"
+                onClick={() => onOpenEvent(item.event_id)}
+                className="flex w-full min-w-0 items-center gap-3 bg-zinc-900 px-3 py-2 text-left hover:bg-zinc-800"
               >
-                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                  <h4 className="font-semibold text-zinc-100">
-                    {presentation.technicalComponent}
-                  </h4>
-                  <span className="text-zinc-500">{group.downstream}</span>
-                  <span className="flex-1" />
-                  <span
-                    className={`chip border font-mono ${
-                      empty
-                        ? "border-zinc-800 bg-zinc-950 text-zinc-600"
-                        : "border-zinc-700 bg-zinc-950 text-zinc-300"
-                    }`}
-                  >
-                    {group.count}
-                  </span>
-                </div>
-                {!empty && (
-                  <p className="mt-0.5 text-[10px] text-zinc-600">
-                    Güvenlik kapısı: {group.safety_gate}
-                  </p>
-                )}
-                {!empty && (
-                  <div className="mt-2 space-y-px">
-                    {group.items.slice(0, QUEUE_ITEM_LIMIT).map((item) => (
-                      <button
-                        key={`${group.use}-${item.event_id}`}
-                        type="button"
-                        onClick={() => onOpenEvent(item.event_id)}
-                        className="flex w-full items-center gap-3 bg-zinc-950 px-3 py-1.5 text-left hover:bg-zinc-800"
-                      >
-                        <span className="text-zinc-200">
-                          {eventLabel(item.event_type)}
-                        </span>
-                        <span className="font-mono text-[10px] text-zinc-600">
-                          {shortId(item.event_id)}
-                        </span>
-                        <span className="ml-auto font-mono text-zinc-400">
-                          skor {item.learning_score}
-                        </span>
-                      </button>
-                    ))}
-                    {group.items.length > QUEUE_ITEM_LIMIT && (
-                      <p className="px-1 pt-1 text-[10px] text-zinc-600">
-                        + {group.items.length - QUEUE_ITEM_LIMIT} olay daha
-                      </p>
-                    )}
-                  </div>
-                )}
-              </article>
-            );
-          })}
-        </div>
+                <span className="min-w-0 truncate text-zinc-200">
+                  {eventLabel(item.event_type)}
+                </span>
+                <span className="min-w-0 truncate font-mono text-[10px] text-zinc-600">
+                  {shortId(item.event_id)}
+                </span>
+                <span className="ml-auto shrink-0 font-mono text-zinc-400">
+                  {item.learning_score}
+                </span>
+              </button>
+            ))}
+            {dfine.items.length > QUEUE_ITEM_LIMIT && (
+              <p className="px-1 pt-1 text-[10px] text-zinc-600">
+                {QUEUE_ITEM_LIMIT}/{dfine.items.length}
+              </p>
+            )}
+          </div>
+        )}
       </Section>
     </>
   );

@@ -1,18 +1,7 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import {
-  approveEventsInBatch,
-  getIncidentMedia,
-  getLearningPipeline,
-} from "../lib/api";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { getIncidentMedia, getLearningPipeline } from "../lib/api";
 import { CANONICAL_TYPE_TR } from "../lib/labels";
-import { presentationForUse } from "../lib/learningPresentation";
-import {
-  STAGE_ORDER,
-  STAGE_TR,
-  firstActionableStage,
-  ratio,
-  readinessSummary,
-} from "../lib/pipelinePresentation";
+import { STAGE_ORDER, firstActionableStage, ratio } from "../lib/pipelinePresentation";
 import {
   Empty,
   MeasurementStage,
@@ -29,37 +18,28 @@ import type {
 } from "../types/domain";
 import type { CanonicalEventType } from "../types/events";
 
-/** Bakım hattı kararsız kayıtları gösterir; karar Olay inceleme kipinde verilir. */
 export const MAINTENANCE_STAGE_ORDER: PipelineStage[] = [...STAGE_ORDER];
 
-const MAINTENANCE_STAGE_TR: Record<PipelineStage, string> = {
-  ...STAGE_TR,
-  review: "İnceleme bekliyor",
-  approval: "Fine-tune onayı",
+const STAGE_TR: Record<PipelineStage, string> = {
+  review: "IT incelemesi",
+  approval: "Fine-tune kararı",
+  queue: "Eğitim kuyruğu",
+  training: "Eğitim",
+  measurement: "Ölçüm",
+  promotion: "Terfi",
 };
 
-const BAND_TR = {
-  low: "Düşük",
-  medium: "Orta",
-  high: "Yüksek",
-  priority: "Öncelikli",
-} as const;
-
-/** Aşamanın bakım mühendisi için ne anlama geldiği; sekme başlığında durur. */
-const STAGE_NOTE: Record<PipelineStage, string> = {
-  review: "insan kararı Olay inceleme kipinde verilir",
-  approval: "IT ekibi uygun kaydı geliştirme havuzuna alır",
-  queue: "izinli kareler COCO'ya aktarılmayı bekliyor",
-  training: "münhasır iş; aynı anda tek eğitim çalışır",
-  measurement: "değişmez dış test kümesi ister",
-  promotion: "kapı, adayı yürürlükteki modelle karşılaştırır",
+const DECISION_TR: Record<string, string> = {
+  confirm: "Anomali doğru",
+  edit: "Anomali düzeltildi",
+  reject: "Anomali yok",
 };
 
 const POLL_MS = 5000;
-/** Kanıt görüntüsü yalnız ekrandaki ilk satırlar için çekilir. */
 const THUMBNAIL_LIMIT = 12;
 
-function eventLabel(type: string): string {
+function eventLabel(type: string | null): string {
+  if (!type) return "—";
   return CANONICAL_TYPE_TR[type as CanonicalEventType] ?? type;
 }
 
@@ -73,57 +53,35 @@ function shortClock(seconds: number): string {
     + `${String(whole % 60).padStart(2, "0")}`;
 }
 
-/** Mühendisin sorusu: bu olay hangi bileşeni besler? */
-function feedsLine(item: PipelineEventItem): string {
-  if (item.recommended_uses.length === 0) {
-    return "İnsan kararı yok; şu anda hiçbir bileşeni beslemiyor.";
-  }
-  const components = item.recommended_uses
-    .map((use) => presentationForUse(use).technicalComponent)
-    .join(", ");
-  return `Besleyeceği bileşenler: ${components}`;
-}
-
 export default function ModelMaintenancePanel({
   user,
   onReviewEvent,
   onOpenEvent,
   refreshToken,
-  handoffEventId,
-  onDismissHandoff,
 }: {
-  /** Konsolun tek kimliği; onay, eğitim ve terfi kayıtlarını imzalar. */
   user: string;
   onReviewEvent: (eventId: string) => void;
   onOpenEvent: (eventId: string) => void;
   refreshToken: number;
-  handoffEventId?: string;
-  onDismissHandoff?: () => void;
 }) {
   const [view, setView] = useState<LearningPipelineView | null>(null);
   const [media, setMedia] = useState<Record<string, IncidentMedia | null>>({});
   const [stage, setStage] = useState<PipelineStage | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
-  const [note, setNote] = useState("");
-  const [selected, setSelected] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     try {
       setView(await getLearningPipeline());
       setError("");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Bakım hattı durumu alınamadı.");
+      setError(reason instanceof Error ? reason.message : "Bakım hattı alınamadı.");
     }
   }, []);
 
   useEffect(() => {
     void load();
   }, [load, refreshToken]);
-
-  useEffect(() => {
-    if (handoffEventId) setStage("approval");
-  }, [handoffEventId]);
 
   const jobRunning = useMemo(
     () => (view?.jobs ?? []).some((job) => job.status === "running"),
@@ -178,29 +136,19 @@ export default function ModelMaintenancePanel({
     }
   };
 
-  const toggle = (eventId: string) =>
-    setSelected((current) =>
-      current.includes(eventId)
-        ? current.filter((item) => item !== eventId)
-        : [...current, eventId],
-    );
-
   if (!view) {
     return (
       <div className="flex h-full items-center justify-center text-xs text-zinc-500">
-        {error || "Bakım hattı durumu okunuyor…"}
+        {error || "Yükleniyor…"}
       </div>
     );
   }
 
-  /** Aşama sayısı gerçek birikimi verir; liste uçları sunucuda kırpılıdır. */
   const stageCount = (name: PipelineStage) =>
     view.stages.find((item) => item.stage === name)?.count ?? 0;
-  const champion = view.champion;
-  const signed = user.trim();
   const stageProps: StageProps = {
     view,
-    signed,
+    signed: user.trim(),
     busy,
     act: (label, run) => void act(label, run),
     onOpenEvent,
@@ -210,41 +158,31 @@ export default function ModelMaintenancePanel({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="toolbar">
-        <div className="toolbar-group">
+        <div className="toolbar-group min-w-0">
           <span className="microlabel block">aşama</span>
           <nav
             aria-label="Bakım aşamaları"
-            className="flex h-7 items-center gap-0.5 rounded-sm border border-zinc-800 bg-zinc-950 p-0.5"
+            className="flex h-7 min-w-0 items-center gap-0.5 overflow-x-auto rounded-sm border border-zinc-800 bg-zinc-950 p-0.5"
           >
             {MAINTENANCE_STAGE_ORDER.map((name) => {
               const summary = view.stages.find((item) => item.stage === name);
               const count = summary?.count ?? 0;
-              const blocked = summary?.blocked_count ?? 0;
               const isActive = active === name;
               return (
                 <button
                   key={name}
                   type="button"
                   onClick={() => setStage(name)}
-                  title={summary?.detail}
                   aria-current={isActive ? "page" : undefined}
-                  className={`h-full px-2.5 transition-colors ${
+                  className={`h-full shrink-0 px-2.5 transition-colors ${
                     isActive
                       ? "bg-zinc-800 font-medium text-zinc-100"
                       : "text-zinc-500 hover:text-zinc-200"
                   }`}
                 >
-                  {MAINTENANCE_STAGE_TR[name]}
+                  {STAGE_TR[name]}
                   {count > 0 && (
-                    <span
-                      className={`ml-1.5 inline-flex min-w-4 items-center justify-center rounded-sm px-1 font-mono text-[10px] leading-4 ${
-                        blocked > 0
-                          ? "bg-amber-800 text-amber-100"
-                          : isActive
-                            ? "bg-zinc-600 text-zinc-100"
-                            : "bg-zinc-800 text-zinc-300"
-                      }`}
-                    >
+                    <span className="ml-1.5 inline-flex min-w-4 items-center justify-center rounded-sm bg-zinc-700 px-1 font-mono text-[10px] leading-4 text-zinc-100">
                       {count}
                     </span>
                   )}
@@ -264,247 +202,148 @@ export default function ModelMaintenancePanel({
         </button>
 
         <span className="flex-1" />
-        <span
-          title="Canlı çalışan dedektör sürümü"
-          className={`chip border ${
-            champion
-              ? "border-emerald-900 bg-emerald-950/30 text-emerald-200"
-              : "border-zinc-700 bg-zinc-950 text-zinc-400"
-          }`}
-        >
-          {champion
-            ? `yürürlükte ${champion.version.architecture} ·`
-              + ` mAP ${ratio(champion.version.evaluation?.map_50_95)}`
-            : "yürürlükte terfi etmiş aday yok"}
-        </span>
+        {view.champion && (
+          <span className="chip border border-emerald-900 bg-emerald-950/30 text-emerald-200">
+            {view.champion.version.architecture} · mAP {ratio(view.champion.version.evaluation?.map_50_95)}
+          </span>
+        )}
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-1.5 p-1.5 text-xs">
-        {handoffEventId && (
-          <div className="flex shrink-0 items-center gap-3 border border-sky-900 bg-sky-950/30 px-3 py-2 text-sky-100">
-            <span className="text-base text-sky-400">→</span>
-            <span>
-              <strong className="font-semibold">Olay incelemesi tamamlandı.</strong>{" "}
-              Kayıt, IT ekibinin fine-tune aday değerlendirmesine devredildi.
-            </span>
-            {onDismissHandoff && (
-              <button
-                type="button"
-                onClick={onDismissHandoff}
-                className="ml-auto text-sky-400 hover:text-sky-100"
-                aria-label="Görev devri bildirimini kapat"
-              >
-                Kapat ×
-              </button>
-            )}
+        {error && (
+          <div className="shrink-0 border border-red-900 bg-red-950/40 px-3 py-2 text-red-200">
+            {error}
           </div>
         )}
-      {error && (
-        <div className="shrink-0 border border-red-900 bg-red-950/40 px-3 py-2 text-red-200">
-          {error}
-        </div>
-      )}
 
-      <div className="panel min-h-0 flex-1">
-        <div className="panel-title">
-          <span>{MAINTENANCE_STAGE_TR[active]}</span>
-          <span className="microlabel normal-case tracking-normal">
-            {STAGE_NOTE[active]}
-          </span>
-          <span className="flex-1" />
-          {stageCount(active) > 0 && (
-            <span className="chip border border-zinc-700 font-mono normal-case tracking-normal text-zinc-300">
-              {stageCount(active)}
-            </span>
-          )}
-        </div>
+        <div className="panel min-h-0 flex-1">
+          <div className="panel-title">
+            <span>{STAGE_TR[active]}</span>
+            <span className="flex-1" />
+            {stageCount(active) > 0 && (
+              <span className="chip border border-zinc-700 font-mono normal-case tracking-normal text-zinc-300">
+                {stageCount(active)}
+              </span>
+            )}
+          </div>
 
-        <div className="panel-body space-y-2 p-2">
-          {active === "review" && (
-            view.review_items.length === 0 ? (
-              <Empty>İnceleme bekleyen olay yok.</Empty>
-            ) : (
-              <>
-                {view.review_items.map((item) => (
-                  <EventCard
-                    key={item.event_id}
-                    item={item}
-                    media={media[item.event_id]}
-                    onOpen={onReviewEvent}
-                    actionLabel="Olayı incele"
-                  />
-                ))}
-                <Truncated shown={view.review_items.length} total={stageCount("review")} />
-              </>
-            )
-          )}
-
-          {active === "approval" && (
-            view.approval_items.length === 0 ? (
-              <Empty>Fine-tune onayı bekleyen olay yok.</Empty>
-            ) : (
-              <>
-                <div className="flex flex-wrap items-end gap-2 bg-zinc-900 p-2">
-                  <label className="min-w-48 flex-1 space-y-0.5">
-                    <span className="microlabel block">fine-tune gerekçesi</span>
-                    <input
-                      value={note}
-                      onChange={(e) => setNote(e.target.value)}
-                      placeholder="toplu fine-tune kabul gerekçesi"
-                      className="field w-full"
+          <div className="panel-body space-y-2 p-2">
+            {active === "review" && (
+              view.review_items.length === 0 ? (
+                <Empty>Bekleyen kayıt yok.</Empty>
+              ) : (
+                <>
+                  {view.review_items.map((item) => (
+                    <EventCard
+                      key={item.event_id}
+                      item={item}
+                      media={media[item.event_id]}
+                      onOpen={onReviewEvent}
+                      actionLabel="IT incele"
                     />
-                  </label>
-                  <button
-                    type="button"
-                    disabled={
-                      selected.length === 0 || !signed || !note.trim() || busy !== ""
-                    }
-                    title={signed ? undefined : "Önce üst çubuktaki kullanıcı adını doldurun"}
-                    onClick={() => void act("batch", async () => {
-                      const uses = new Set(
-                        view.approval_items
-                          .filter((item) => selected.includes(item.event_id))
-                          .flatMap((item) => item.recommended_uses),
-                      );
-                      const result = await approveEventsInBatch({
-                        event_ids: selected,
-                        approved_uses: [...uses],
-                        reviewer: signed,
-                        note: note.trim(),
-                      });
-                      setSelected([]);
-                      if (result.failures.length > 0) {
-                        setError(
-                          `${result.failures.length} olay onaylanamadı: `
-                          + result.failures.map((f) => f.reason).join("; "),
-                        );
-                      }
-                    })}
-                    className="btn btn-accent"
-                  >
-                    {busy === "batch"
-                      ? "Onaylanıyor…"
-                      : `Fine-tune adayına al (${selected.length})`}
-                  </button>
-                </div>
-                {view.approval_items.map((item) => (
-                  <EventCard
-                    key={item.event_id}
-                    item={item}
-                    media={media[item.event_id]}
-                    onOpen={onOpenEvent}
-                    actionLabel="Fine-tune için değerlendir"
-                    checked={selected.includes(item.event_id)}
-                    onToggle={() => toggle(item.event_id)}
-                  />
-                ))}
-                <Truncated shown={view.approval_items.length} total={stageCount("approval")} />
-              </>
-            )
-          )}
+                  ))}
+                  <Truncated shown={view.review_items.length} total={stageCount("review")} />
+                </>
+              )
+            )}
 
-          {active === "queue" && <QueueStage {...stageProps} />}
-          {active === "training" && <TrainingStage {...stageProps} />}
-          {active === "measurement" && <MeasurementStage {...stageProps} />}
-          {active === "promotion" && <PromotionStage {...stageProps} />}
+            {active === "approval" && (
+              view.approval_items.length === 0 ? (
+                <Empty>Bekleyen kayıt yok.</Empty>
+              ) : (
+                <>
+                  {view.approval_items.map((item) => (
+                    <EventCard
+                      key={item.event_id}
+                      item={item}
+                      media={media[item.event_id]}
+                      onOpen={onOpenEvent}
+                      actionLabel="Fine-tune kararı"
+                    />
+                  ))}
+                  <Truncated shown={view.approval_items.length} total={stageCount("approval")} />
+                </>
+              )
+            )}
+
+            {active === "queue" && <QueueStage {...stageProps} />}
+            {active === "training" && <TrainingStage {...stageProps} />}
+            {active === "measurement" && <MeasurementStage {...stageProps} />}
+            {active === "promotion" && <PromotionStage {...stageProps} />}
+          </div>
         </div>
-      </div>
-
-      <footer className="shrink-0 text-[10px] leading-relaxed text-zinc-500">
-        {readinessSummary(view.readiness)} · eğitim politikası{" "}
-        {view.readiness.training_policy_version ?? "—"} · terfi politikası{" "}
-        {view.readiness.promotion_policy_version ?? "—"} · otomatik eğitim ve otomatik
-        terfi KAPALIDIR; her adım insan onayıyla ilerler.
-      </footer>
       </div>
     </div>
   );
 }
 
-/** Sunucu liste uçlarını kırpar; sayaçla listenin farkını açıkça yazarız. */
 function Truncated({ shown, total }: { shown: number; total: number }) {
   if (total <= shown) return null;
-  return (
-    <p className="px-1 text-[10px] text-zinc-600">
-      Sunucu ilk {shown} kaydı gönderdi; bu aşamada toplam {total} olay bekliyor.
-    </p>
-  );
+  return <p className="px-1 text-[10px] text-zinc-600">{shown}/{total}</p>;
 }
 
 function EventCard({
   item,
   media,
   onOpen,
-  checked,
-  onToggle,
-  actionLabel = "Bakım kaydını aç",
+  actionLabel,
 }: {
   item: PipelineEventItem;
   media?: IncidentMedia | null;
   onOpen: (eventId: string) => void;
-  checked?: boolean;
-  onToggle?: () => void;
-  actionLabel?: string;
+  actionLabel: string;
 }) {
-  const label = eventLabel(item.event_type);
+  const label = eventLabel(item.operator_event_type ?? item.event_type);
   return (
     <article className="overflow-hidden border border-zinc-800 bg-zinc-900 transition-colors hover:border-zinc-700">
-      <div className="grid grid-cols-1 sm:grid-cols-[11rem_minmax(0,1fr)_minmax(10rem,12rem)] sm:items-stretch">
+      <div className="grid grid-cols-1 sm:grid-cols-[11rem_minmax(0,1fr)_minmax(9rem,11rem)] sm:items-stretch">
         <div className="min-h-32 overflow-hidden bg-zinc-950 sm:min-h-28">
           {media ? (
             <img
               src={media.thumbnail_url}
-              alt={`${label} kanıt görüntüsü`}
+              alt="Olay görüntüsü"
               loading="lazy"
               className="h-full w-full object-cover"
             />
           ) : (
-            <div className="flex h-full min-h-24 items-center justify-center bg-gradient-to-br from-zinc-900 to-zinc-950 text-[10px] text-zinc-600">
+            <div className="flex h-full min-h-24 items-center justify-center text-[10px] text-zinc-600">
               Görsel yok
             </div>
           )}
         </div>
+
         <div className="min-w-0 p-3">
-          <div className="flex items-start gap-2">
-            {onToggle && (
-              <input
-                type="checkbox"
-                checked={checked}
-                onChange={onToggle}
-                aria-label={`${label} kaydını toplu onaya seç`}
-                className="mt-1 h-4 w-4 shrink-0 accent-sky-600"
-              />
-            )}
-            <h4 className="text-sm font-medium text-zinc-100">{label}</h4>
-          </div>
-          <p className="mt-1 text-zinc-400">{feedsLine(item)}</p>
-          <div className="mt-3 flex flex-wrap items-center gap-1.5">
-            <span className="chip border border-zinc-700 bg-zinc-950 text-zinc-400">
-              Öğrenme {BAND_TR[item.learning_band]} · {item.learning_score}
+          <h4 className="text-sm font-medium text-zinc-100">{label}</h4>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <span className="chip border border-zinc-700 bg-zinc-950 text-zinc-300">
+              Operatör · {DECISION_TR[item.operator_decision ?? ""] ?? item.operator_decision}
             </span>
+            {item.maintenance_decision && (
+              <span className="chip border border-sky-900 bg-sky-950/30 text-sky-200">
+                IT · {DECISION_TR[item.maintenance_decision] ?? item.maintenance_decision}
+              </span>
+            )}
             {media && (
               <span className="chip border border-zinc-700 bg-zinc-950 font-mono text-zinc-400">
-                Kanıt {shortClock(media.clip_start)}–{shortClock(media.clip_end)}
+                {shortClock(media.clip_start)}–{shortClock(media.clip_end)}
               </span>
             )}
             <span className="chip border border-zinc-700 bg-zinc-950 font-mono text-zinc-500">
-              Kayıt {shortId(item.video_id)}
+              {shortId(item.video_id)}
             </span>
             {item.blockers.map((blocker) => (
-              <span
-                key={blocker}
-                className="chip border border-amber-900 bg-amber-950/30 text-amber-200"
-              >
+              <span key={blocker} className="chip border border-amber-900 bg-amber-950/30 text-amber-200">
                 {blocker}
               </span>
             ))}
           </div>
         </div>
+
         <div className="flex min-w-0 items-center p-3 pt-0 sm:p-3 sm:pl-0">
           <button
             type="button"
             onClick={() => onOpen(item.event_id)}
-            className="btn btn-accent btn-wrap min-w-0 w-full"
+            className="btn btn-accent btn-wrap w-full min-w-0"
           >
             {actionLabel}
           </button>

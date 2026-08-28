@@ -36,6 +36,23 @@ export interface HumanReview {
   created_at: string;
 }
 
+export interface MaintenanceReview {
+  maintenance_review_id: string;
+  event_id: string;
+  operator_review_id: string;
+  decision: "confirm" | "reject" | "edit";
+  event_type: string | null;
+  start_time: number | null;
+  peak_time: number | null;
+  end_time: number | null;
+  risk_level: string | null;
+  false_alarm_reason: string | null;
+  note: string;
+  reviewer: string;
+  revision: number;
+  created_at: string;
+}
+
 export interface IncidentMedia {
   media_id: string;
   event_id: string;
@@ -80,6 +97,7 @@ export interface DevelopmentApproval {
   approval_id: string;
   event_id: string;
   review_id: string;
+  maintenance_review_id: string | null;
   status: "approved" | "rejected" | "revoked";
   approved_uses: DevelopmentUse[];
   reviewer: string;
@@ -200,6 +218,10 @@ export interface PipelineEventItem {
   recommended_uses: DevelopmentUse[];
   ready_uses: DevelopmentUse[];
   blockers: string[];
+  operator_decision: string | null;
+  operator_event_type: string | null;
+  maintenance_decision: string | null;
+  maintenance_event_type: string | null;
 }
 
 export interface LearningRouteItem {

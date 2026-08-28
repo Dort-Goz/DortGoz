@@ -93,3 +93,43 @@ class HumanReview(BaseModel):
             if not start <= peak <= end:
                 raise ValueError("human review zamanları sıralı olmalıdır")
         return self
+
+
+class MaintenanceReview(BaseModel):
+    """IT'nin operatör kararından bağımsız olay incelemesi."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    maintenance_review_id: str = Field(min_length=1)
+    event_id: str = Field(min_length=1)
+    operator_review_id: str = Field(min_length=1)
+    decision: ReviewDecision
+    event_type: str | None = None
+    start_time: float | None = Field(default=None, ge=0)
+    peak_time: float | None = Field(default=None, ge=0)
+    end_time: float | None = Field(default=None, ge=0)
+    risk_level: str | None = None
+    false_alarm_reason: FalseAlarmReason | None = None
+    note: str = Field(min_length=1)
+    reviewer: str = Field(min_length=1)
+    revision: int = Field(ge=1)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @model_validator(mode="after")
+    def review_fields_are_consistent(self) -> MaintenanceReview:
+        values = (self.start_time, self.peak_time, self.end_time)
+        if any(value is not None for value in values) and not all(
+            value is not None for value in values
+        ):
+            raise ValueError("IT inceleme zamanları birlikte verilmelidir")
+        if all(value is not None for value in values):
+            start, peak, end = values
+            assert start is not None and peak is not None and end is not None
+            if not start <= peak <= end:
+                raise ValueError("IT inceleme zamanları sıralı olmalıdır")
+        if self.decision in {ReviewDecision.CONFIRM, ReviewDecision.EDIT}:
+            if self.event_type is None:
+                raise ValueError("IT anomali kararı kategori gerektirir")
+        elif self.event_type is not None:
+            raise ValueError("IT anomali yok kararı kategori taşıyamaz")
+        return self

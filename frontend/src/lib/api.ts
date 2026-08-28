@@ -3,6 +3,7 @@ import type {
   DevelopmentApproval,
   DevelopmentUse,
   HumanReview,
+  MaintenanceReview,
   IncidentMedia,
   InterventionPriority,
   BatchApprovalResult,
@@ -98,6 +99,32 @@ export interface HumanReviewInput {
 export const saveEventReview = (eventId: string, body: HumanReviewInput) =>
   request<HumanReview>(`/api/events/${encodeURIComponent(eventId)}/review`, json(body));
 
+export interface MaintenanceReviewInput {
+  operator_review_id: string;
+  decision: "confirm" | "reject" | "edit";
+  reviewer: string;
+  note: string;
+  event_type?: string;
+  start_time?: number;
+  peak_time?: number;
+  end_time?: number;
+  risk_level?: string;
+  false_alarm_reason?: string;
+}
+
+export const getMaintenanceReviews = (eventId: string) =>
+  request<MaintenanceReview[]>(
+    `/api/events/${encodeURIComponent(eventId)}/maintenance-reviews`,
+  );
+
+export const saveMaintenanceReview = (
+  eventId: string,
+  body: MaintenanceReviewInput,
+) => request<MaintenanceReview>(
+  `/api/events/${encodeURIComponent(eventId)}/maintenance-review`,
+  json(body),
+);
+
 export const getDevelopmentApprovals = (eventId: string) =>
   request<DevelopmentApproval[]>(
     `/api/events/${encodeURIComponent(eventId)}/development-approvals`,
@@ -156,6 +183,7 @@ export const approveEventForLearning = (
   eventId: string,
   body: {
     review_id: string;
+    maintenance_review_id?: string;
     approved_uses: DevelopmentUse[];
     reviewer: string;
     note: string;
@@ -170,6 +198,7 @@ export const approveEventForDFine = (
   eventId: string,
   body: {
     review_id: string;
+    maintenance_review_id?: string;
     reviewer: string;
     note: string;
     supersedes_approval_id?: string;
@@ -183,6 +212,7 @@ export const rejectEventLearningApproval = (
   eventId: string,
   body: {
     review_id: string;
+    maintenance_review_id?: string;
     reviewer: string;
     note: string;
     supersedes_approval_id?: string;
@@ -196,6 +226,7 @@ export const revokeEventLearningApproval = (
   eventId: string,
   body: {
     review_id: string;
+    maintenance_review_id?: string;
     reviewer: string;
     note: string;
     supersedes_approval_id: string;

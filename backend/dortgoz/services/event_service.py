@@ -19,11 +19,13 @@ from ..domain.memory import AnalysisRecord, AnalysisResult, AnalysisStatus
 from ..domain.provenance import (
     AnalysisProvenance,
     HumanReview,
+    MaintenanceReview,
     ModelRunRef,
     ReviewDecision,
     TraceRecord,
 )
 from ..domain.video import VideoMetadata
+from ..repositories.errors import RepositoryConflictError
 from ..repositories.protocols import EventRepository
 
 
@@ -144,12 +146,14 @@ class EventMemoryService:
         approved_uses: list[DevelopmentUse],
         reviewer: str,
         note: str,
+        maintenance_review_id: str | None = None,
         supersedes_approval_id: str | None = None,
     ) -> DevelopmentApproval:
         approval = DevelopmentApproval(
             approval_id=str(uuid4()),
             event_id=event_id,
             review_id=review_id,
+            maintenance_review_id=maintenance_review_id,
             status=status,
             approved_uses=approved_uses,
             reviewer=reviewer,
@@ -157,6 +161,46 @@ class EventMemoryService:
             supersedes_approval_id=supersedes_approval_id,
         )
         return self.repository.save_development_approval(approval)
+
+    def review_maintenance_event(
+        self,
+        event_id: str,
+        operator_review_id: str,
+        decision: ReviewDecision,
+        *,
+        reviewer: str,
+        note: str,
+        event_type: str | None = None,
+        start_time: float | None = None,
+        peak_time: float | None = None,
+        end_time: float | None = None,
+        risk_level: str | None = None,
+        false_alarm_reason: FalseAlarmReason | None = None,
+    ) -> MaintenanceReview:
+        operator_reviews = self.repository.list_reviews(event_id)
+        if not operator_reviews:
+            raise RepositoryConflictError("IT incelemesi için operatör kararı gerekli")
+        latest_operator_review = operator_reviews[-1]
+        if latest_operator_review.review_id != operator_review_id:
+            raise RepositoryConflictError(
+                "operatör kararı değişti; IT incelemesini yeniden açın"
+            )
+        review = MaintenanceReview(
+            maintenance_review_id=str(uuid4()),
+            event_id=event_id,
+            operator_review_id=operator_review_id,
+            decision=decision,
+            event_type=event_type,
+            start_time=start_time,
+            peak_time=peak_time,
+            end_time=end_time,
+            risk_level=risk_level,
+            false_alarm_reason=false_alarm_reason,
+            note=note,
+            reviewer=reviewer,
+            revision=1,
+        )
+        return self.repository.save_maintenance_review(review)
 
     def get_analysis_result(self, analysis_id: str) -> AnalysisResult | None:
         return self.repository.get_analysis_result(analysis_id)

@@ -279,6 +279,19 @@ class TrainingSampleService:
                 "TRAINING_REVIEW_STALE",
                 "Development onayı olayın en güncel insan incelemesine bağlı olmalıdır.",
             )
+        maintenance_reviews = self.repository.list_maintenance_reviews(event_id)
+        maintenance_review = maintenance_reviews[-1] if maintenance_reviews else None
+        if (
+            latest.maintenance_review_id is None
+            or maintenance_review is None
+            or maintenance_review.maintenance_review_id
+            != latest.maintenance_review_id
+            or maintenance_review.operator_review_id != latest.review_id
+        ):
+            raise TrainingSampleError(
+                "TRAINING_MAINTENANCE_REVIEW_REQUIRED",
+                "En güncel IT incelemesine bağlı fine-tune kararı zorunludur.",
+            )
         return event, latest
 
     def _resolve_manifest(self, name: str) -> Path:

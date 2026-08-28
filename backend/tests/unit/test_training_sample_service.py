@@ -23,7 +23,12 @@ from dortgoz.domain.feedback import (
     DevelopmentApprovalStatus,
     DevelopmentUse,
 )
-from dortgoz.domain.provenance import AnalysisProvenance, HumanReview, ReviewDecision
+from dortgoz.domain.provenance import (
+    AnalysisProvenance,
+    HumanReview,
+    MaintenanceReview,
+    ReviewDecision,
+)
 from dortgoz.domain.training import (
     FrameReviewResult,
     TrainingSampleStatus,
@@ -172,11 +177,27 @@ def _repository(video_payload: bytes) -> tuple[InMemoryEventRepository, Developm
             revision=1,
         )
     )
+    maintenance_review = repository.save_maintenance_review(
+        MaintenanceReview(
+            maintenance_review_id="maintenance-training-sample",
+            event_id=EVENT_ID,
+            operator_review_id=review.review_id,
+            decision=ReviewDecision.CONFIRM,
+            event_type=VerifiedEventType.PHYSICAL_FIGHT.value,
+            start_time=10,
+            peak_time=12,
+            end_time=15,
+            note="IT olayı bağımsız doğruladı.",
+            reviewer="it-operator",
+            revision=1,
+        )
+    )
     approval = repository.save_development_approval(
         DevelopmentApproval(
             approval_id="approval-training-sample",
             event_id=EVENT_ID,
             review_id=review.review_id,
+            maintenance_review_id=maintenance_review.maintenance_review_id,
             status=DevelopmentApprovalStatus.APPROVED,
             approved_uses=[DevelopmentUse.D_FINE_TRAINING],
             reviewer="operator",

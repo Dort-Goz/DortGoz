@@ -27,7 +27,13 @@ from ..domain.model_lifecycle import (
     TrainingJobStatus,
 )
 from ..domain.priority import InterventionPriority
-from ..domain.provenance import AnalysisProvenance, HumanReview, ReviewDecision, TraceRecord
+from ..domain.provenance import (
+    AnalysisProvenance,
+    HumanReview,
+    MaintenanceReview,
+    ReviewDecision,
+    TraceRecord,
+)
 from ..domain.training import (
     TrainingFrameReview,
     TrainingSample,
@@ -112,6 +118,7 @@ class InMemoryEventRepository:
         self._events: dict[str, VerifiedEvent] = {}
         self._event_history: dict[str, list[VerifiedEvent]] = {}
         self._reviews: dict[str, HumanReview] = {}
+        self._maintenance_reviews: dict[str, MaintenanceReview] = {}
         self._development_approvals: dict[str, DevelopmentApproval] = {}
         self._rule_proposals: dict[str, RuleProposal] = {}
         self._incident_media: dict[str, IncidentMedia] = {}
@@ -377,6 +384,66 @@ class InMemoryEventRepository:
             reviews = [review for review in self._reviews.values() if review.event_id == event_id]
             return _copy(sorted(reviews, key=lambda review: (review.revision, review.created_at)))
 
+    def save_maintenance_review(self, review: MaintenanceReview) -> MaintenanceReview:
+        with self._lock:
+            if review.event_id not in self._events:
+                raise RepositoryNotFoundError(f"event bulunamadı: {review.event_id}")
+            operator_review = self._reviews.get(review.operator_review_id)
+            if operator_review is None:
+                raise RepositoryNotFoundError(
+                    f"operatör incelemesi bulunamadı: {review.operator_review_id}"
+                )
+            if operator_review.event_id != review.event_id:
+                raise RepositoryConflictError("IT incelemesi operatör kararıyla eşleşmiyor")
+            if review.maintenance_review_id in self._maintenance_reviews:
+                raise RepositoryDuplicateError(
+                    "maintenance_review_id zaten kayıtlı: "
+                    f"{review.maintenance_review_id}"
+                )
+            history = sorted(
+                (
+                    item
+                    for item in self._maintenance_reviews.values()
+                    if item.event_id == review.event_id
+                ),
+                key=lambda item: (item.revision, item.created_at),
+            )
+            stored = MaintenanceReview.model_validate(
+                {**review.model_dump(), "revision": len(history) + 1}
+            )
+            self._maintenance_reviews[stored.maintenance_review_id] = _copy(stored)
+            for sample_id, sample in list(self._training_samples.items()):
+                approval = self._development_approvals.get(sample.approval_id)
+                if (
+                    sample.event_id == stored.event_id
+                    and sample.status != TrainingSampleStatus.REVOKED
+                    and approval is not None
+                    and approval.maintenance_review_id != stored.maintenance_review_id
+                ):
+                    self._training_samples[sample_id] = TrainingSample.model_validate(
+                        {
+                            **sample.model_dump(),
+                            "status": TrainingSampleStatus.REVOKED,
+                            "invalidated_by_review_id": stored.maintenance_review_id,
+                            "updated_at": max(sample.updated_at, stored.created_at),
+                            "revision": sample.revision + 1,
+                        }
+                    )
+            return _copy(stored)
+
+    def list_maintenance_reviews(self, event_id: str) -> list[MaintenanceReview]:
+        with self._lock:
+            if event_id not in self._events:
+                raise RepositoryNotFoundError(f"event bulunamadı: {event_id}")
+            reviews = [
+                review
+                for review in self._maintenance_reviews.values()
+                if review.event_id == event_id
+            ]
+            return _copy(
+                sorted(reviews, key=lambda review: (review.revision, review.created_at))
+            )
+
     def save_development_approval(self, approval: DevelopmentApproval) -> DevelopmentApproval:
         with self._lock:
             if approval.event_id not in self._events:
@@ -386,6 +453,22 @@ class InMemoryEventRepository:
                 raise RepositoryNotFoundError(f"review bulunamadı: {approval.review_id}")
             if review.event_id != approval.event_id:
                 raise RepositoryConflictError("development approval review ile eşleşmiyor")
+            if approval.maintenance_review_id is not None:
+                maintenance_review = self._maintenance_reviews.get(
+                    approval.maintenance_review_id
+                )
+                if maintenance_review is None:
+                    raise RepositoryNotFoundError(
+                        "IT incelemesi bulunamadı: "
+                        f"{approval.maintenance_review_id}"
+                    )
+                if (
+                    maintenance_review.event_id != approval.event_id
+                    or maintenance_review.operator_review_id != approval.review_id
+                ):
+                    raise RepositoryConflictError(
+                        "development approval IT incelemesiyle eşleşmiyor"
+                    )
             if approval.approval_id in self._development_approvals:
                 raise RepositoryDuplicateError(f"approval_id zaten kayıtlı: {approval.approval_id}")
 

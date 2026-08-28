@@ -14,6 +14,7 @@ from ..domain.priority import InterventionPriority
 from ..domain.provenance import (
     AnalysisProvenance,
     HumanReview,
+    MaintenanceReview,
     TraceRecord,
 )
 from ..domain.training import TrainingFrameReview, TrainingSample
@@ -73,6 +74,14 @@ class EventRepository(Protocol):
     def save_review(self, review: HumanReview) -> HumanReview: ...
 
     def list_reviews(self, event_id: str) -> list[HumanReview]: ...
+
+    def save_maintenance_review(
+        self, review: MaintenanceReview
+    ) -> MaintenanceReview: ...
+
+    def list_maintenance_reviews(
+        self, event_id: str
+    ) -> list[MaintenanceReview]: ...
 
     def save_development_approval(
         self, approval: DevelopmentApproval

@@ -26,6 +26,7 @@ from dortgoz.domain.priority import InterventionBand, InterventionPriority
 from dortgoz.domain.provenance import (
     AnalysisProvenance,
     HumanReview,
+    MaintenanceReview,
     ReviewDecision,
     TraceRecord,
 )
@@ -142,7 +143,7 @@ def test_sqlite_repository_persists_event_review_and_trace_after_restart(tmp_pat
     assert [item.revision for item in restarted.list_event_revisions("event-offline-1")] == [1, 2]
 
 
-def test_sqlite_v7_uses_normalized_tables_and_persists_development_gate(
+def test_sqlite_v8_uses_normalized_tables_and_persists_development_gate(
     tmp_path: Path,
 ) -> None:
     database_path = tmp_path / "feedback.sqlite3"
@@ -171,11 +172,24 @@ def test_sqlite_v7_uses_normalized_tables_and_persists_development_gate(
             revision=1,
         )
     )
+    maintenance_review = repository.save_maintenance_review(
+        MaintenanceReview(
+            maintenance_review_id="maintenance-feedback-1",
+            event_id="event-offline-1",
+            operator_review_id=review.review_id,
+            decision=ReviewDecision.REJECT,
+            false_alarm_reason=FalseAlarmReason.NORMAL_ACTIVITY,
+            note="IT kaydı bağımsız inceledi.",
+            reviewer="it-operator",
+            revision=1,
+        )
+    )
     repository.save_development_approval(
         DevelopmentApproval(
             approval_id="approval-feedback-1",
             event_id="event-offline-1",
             review_id=review.review_id,
+            maintenance_review_id=maintenance_review.maintenance_review_id,
             status=DevelopmentApprovalStatus.APPROVED,
             approved_uses=[
                 DevelopmentUse.THRESHOLD_CALIBRATION,
@@ -201,6 +215,7 @@ def test_sqlite_v7_uses_normalized_tables_and_persists_development_gate(
             "events",
             "event_revisions",
             "human_reviews",
+            "maintenance_reviews",
             "development_approvals",
             "rule_proposals",
             "incident_media",
@@ -212,20 +227,27 @@ def test_sqlite_v7_uses_normalized_tables_and_persists_development_gate(
             "audit_log",
         } <= tables
         assert "repository_snapshot" not in tables
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 8
         assert connection.execute("SELECT COUNT(*) FROM human_reviews").fetchone()[0] == 1
+        assert (
+            connection.execute("SELECT COUNT(*) FROM maintenance_reviews").fetchone()[0]
+            == 1
+        )
         assert (
             connection.execute("SELECT COUNT(*) FROM development_approvals").fetchone()[0]
             == 1
         )
-        assert connection.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0] == 2
+        assert connection.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0] == 3
 
     restarted = SqliteEventRepository(database_path)
     reviews = restarted.list_reviews("event-offline-1")
+    maintenance_reviews = restarted.list_maintenance_reviews("event-offline-1")
     approvals = restarted.list_development_approvals("event-offline-1")
 
     assert reviews[0].false_alarm_reason == FalseAlarmReason.NORMAL_ACTIVITY
     assert reviews[0].intervention_required is False
+    assert maintenance_reviews[0].operator_review_id == reviews[0].review_id
+    assert approvals[0].maintenance_review_id == maintenance_reviews[0].maintenance_review_id
     assert approvals[0].approved_uses == [
         DevelopmentUse.THRESHOLD_CALIBRATION,
         DevelopmentUse.EVALUATION,
@@ -374,7 +396,7 @@ def test_sqlite_v1_snapshot_is_migrated_without_deleting_rollback_data(
 
     migrated = SqliteEventRepository(database_path)
 
-    assert migrated.schema_version == 7
+    assert migrated.schema_version == 8
     assert migrated.get_video(VIDEO_ID) is not None
     assert migrated.get_event("event-offline-1") is not None
     with sqlite3.connect(database_path) as connection:
@@ -458,7 +480,7 @@ def test_sqlite_v2_database_adds_training_samples_without_losing_events(
 
     migrated = SqliteEventRepository(database_path)
 
-    assert migrated.schema_version == 7
+    assert migrated.schema_version == 8
     assert migrated.get_event("event-offline-1") is not None
     with sqlite3.connect(database_path) as connection:
         tables = {

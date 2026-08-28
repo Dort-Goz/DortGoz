@@ -106,6 +106,7 @@ class DevelopmentApproval(BaseModel):
     approval_id: str = Field(min_length=1)
     event_id: str = Field(min_length=1)
     review_id: str = Field(min_length=1)
+    maintenance_review_id: str | None = Field(default=None, min_length=1)
     status: DevelopmentApprovalStatus
     approved_uses: list[DevelopmentUse] = Field(default_factory=list)
     reviewer: str = Field(min_length=1)

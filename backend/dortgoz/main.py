@@ -28,6 +28,7 @@ from .api.errors import (
 from .api.router import router as api_router
 from .api.router import runtime as api_runtime
 from .config import settings
+from .domain.provenance import ReviewDecision
 from .domain.video import VideoIngestError
 from .errors import (
     RepositoryConflictError,
@@ -581,6 +582,20 @@ async def triage_report(body: OperatorReportInput) -> dict:
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    if event_id is not None:
+        event = api_runtime.repository.get_event(event_id)
+        if event is not None:
+            api_runtime.events.review_event(
+                event_id,
+                ReviewDecision.EDIT,
+                reviewer=body.reviewer,
+                note=body.note.strip(),
+                event_type=event.event_type.value,
+                start_time=start,
+                peak_time=(start + end) / 2,
+                end_time=end,
+                risk_level=body.risk,
+            )
     if not body.live or event_id is not None:
         await manager.broadcast(Event.wrap(payload, feed=body.feed, live=body.live))
     if event_id is not None:

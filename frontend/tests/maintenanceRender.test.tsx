@@ -196,19 +196,17 @@ const text = (markup: string): string =>
   markup.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 
 describe("bakım alt sekmeleri ekrana ne yazar", () => {
-  test("kuyruk politikayı, dolu havuzu ve boş havuzun nedenini gösterir", () => {
+  test("kuyruk yalnız D-FINE için kabul edilen kayıtları gösterir", () => {
     const markup = renderToStaticMarkup(<QueueStage {...props()} />);
     const body = text(markup);
 
     expect(body).toContain("en çok 20");
-    expect(body).toContain("en az 100 doğrulanmış kare");
-    expect(body).toContain("havuzda 2 izinli olay");
+    expect(body).toContain("D-FINE kuyruğu 2");
     // Olay ham kimliğiyle değil, önce türüyle okunur.
     expect(body).toContain("kavga");
-    expect(body).toContain("skor 70");
-    // Boş havuz listeden düşmez; tek satıra iner ve sayacı sıfır kalır.
-    expect(body).toContain("Kamera kuralı");
-    expect(markup).toContain("opacity-50");
+    expect(body).toContain("70");
+    expect(body).not.toContain("Kamera kuralı");
+    expect(body).not.toContain("Güvenlik kapısı");
     expect(markup).toContain('max="20"');
   });
 

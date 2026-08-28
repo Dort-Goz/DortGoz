@@ -410,10 +410,27 @@ def test_training_sample_api_prepares_and_verifies_approved_event(
                 "end_time": 15,
             },
         )
+        maintenance = client.post(
+            "/api/events/event-training-api/maintenance-review",
+            json={
+                "operator_review_id": reviewed.json()["review_id"],
+                "decision": "confirm",
+                "event_type": "physical_fight",
+                "start_time": 10,
+                "peak_time": 12,
+                "end_time": 15,
+                "reviewer": "it-operator",
+                "note": "IT olayı bağımsız doğruladı.",
+            },
+        )
+        assert maintenance.status_code == 200
         approved = client.post(
             "/api/events/event-training-api/development-approval",
             json={
                 "review_id": reviewed.json()["review_id"],
+                "maintenance_review_id": maintenance.json()[
+                    "maintenance_review_id"
+                ],
                 "status": "approved",
                 "approved_uses": ["d_fine_training"],
                 "reviewer": "operator",

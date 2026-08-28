@@ -120,36 +120,42 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(approvalWaitingCount(3, 2)).toBe(5);
   });
 
-  test("bakım ekranı kanıt görselini ve mühendis dilini taşır", () => {
+  test("bakım ekranı kanıtı, operatör kararını ve iki IT adımını taşır", () => {
     const source = maintenanceSource();
 
     expect(source).toContain("getIncidentMedia");
     expect(source).toContain("media.thumbnail_url");
-    expect(source).toContain("Kanıt {shortClock(media.clip_start)}");
-    // Kuyruk bileşeni operatör örtmecesiyle değil teknik adıyla anılır.
-    expect(source).toContain("presentationForUse(group.use)");
-    expect(source).toContain("presentation.technicalComponent");
-    expect(source).not.toContain("presentation.title");
-    expect(source).toContain("Besleyeceği bileşenler");
-    expect(source).toContain("İnceleme bekleyen olay yok.");
-    expect(source).toContain("Fine-tune onayı bekleyen olay yok.");
+    expect(source).toContain("shortClock(media.clip_start)");
+    expect(source).toContain("Operatör kararı");
+    expect(source).toContain("IT İncelemesi");
+    expect(source).toContain("IT incelemesini kaydet");
+    expect(source).toContain("Fine-tune Kararı");
+    expect(source).toContain("İstemiyorum");
+    expect(source).toContain("Fine-tune'a gönder");
+    expect(source).toContain("approveEventForDFine");
+    expect(source).not.toContain("Besleyeceği bileşenler");
+    expect(source).not.toContain("STAGE_NOTE");
     expect(source).toContain("refreshToken: number;");
     expect(source).toContain("[load, refreshToken]");
     expect(MAINTENANCE_STAGE_ORDER).toEqual([
       "review", "approval", "queue", "training", "measurement", "promotion",
     ]);
     expect(source).toContain('active === "review"');
-    expect(source).toContain('review: "İnceleme bekliyor"');
-    expect(source).toContain('actionLabel="Olayı incele"');
-    expect(source).toContain('actionLabel="Fine-tune için değerlendir"');
-    expect(source).toContain("grid grid-cols-1 sm:grid-cols-[11rem_minmax(0,1fr)_minmax(10rem,12rem)]");
-    expect(source).toContain("btn btn-accent btn-wrap min-w-0 w-full");
+    expect(source).toContain('review: "IT incelemesi"');
+    expect(source).toContain('actionLabel="IT incele"');
+    expect(source).toContain('actionLabel="Fine-tune kararı"');
+    expect(source).toContain("grid grid-cols-1 sm:grid-cols-[11rem_minmax(0,1fr)_minmax(9rem,11rem)]");
+    expect(source).toContain("btn btn-accent btn-wrap w-full min-w-0");
   });
 
   test("teknik ayrıntılar kapalı bölümde kalır ve öğrenme kendi çalışma alanıdır", () => {
     const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
-    const detail = readFileSync(
-      new URL("../src/components/TrainingReviewPanel.tsx", import.meta.url),
+    const maintenanceReview = readFileSync(
+      new URL("../src/components/MaintenanceReviewDialog.tsx", import.meta.url),
+      "utf8",
+    );
+    const fineTuneDecision = readFileSync(
+      new URL("../src/components/FineTuneDecisionDialog.tsx", import.meta.url),
       "utf8",
     );
 
@@ -161,21 +167,17 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(app).not.toContain('["maintenance", "Bakım"]');
     expect(app).not.toContain("LearningOrchestratorPanel");
     expect(app).not.toContain("◈ öğrenme merkezi");
-    expect(detail).toContain("<details");
-    expect(detail).toContain("Teknik detaylar");
-    expect(detail).toContain("presentation.technicalComponent");
-    expect(detail).toContain("presentation.technicalType");
-    expect(detail).not.toContain("Kayma gözcüsü");
-    expect(app).toContain("openedFromMaintenance");
+    expect(maintenanceReview).toContain("Operatör kararı");
+    expect(maintenanceReview).toContain("Kategori değiştir");
+    expect(fineTuneDecision).toContain("IT kararı");
+    expect(fineTuneDecision).toContain("İstemiyorum");
+    expect(app).not.toContain("openedFromMaintenance");
     expect(app).toContain("onReviewEvent={openMaintenanceReviewEvent}");
-    expect(app).toContain("handoffEventId={maintenanceHandoffEventId}");
+    expect(app).toContain("<MaintenanceReviewDialog");
+    expect(app).toContain("<FineTuneDecisionDialog");
     expect(app).toContain('history.replaceState(null, "", "#bakim")');
-    expect(app).toContain("onBack={openedFromMaintenance ? returnToMaintenance : undefined}");
     expect(app).toContain("refreshToken={maintenanceRefreshToken}");
     expect(app).toContain("setMaintenanceRefreshToken((current) => current + 1)");
-    expect(detail).toContain("← Geri dön");
-    expect(detail).toContain("Bakım ekranına dön");
-    expect(detail).toContain("Fine-tune adayına al");
   });
 
   test("olay kararıyla bakım iznini ayrı görev kiplerinde tutar", () => {

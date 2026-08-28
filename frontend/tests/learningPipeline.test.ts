@@ -140,11 +140,10 @@ describe("öğrenme hattı sunumu", () => {
     expect(jobStatusLabel("budget_stopped")).toBe("bütçe sınırında durdu");
   });
 
-  test("otomatik eğitim kapalı sözleşmesini arayüzde yazar", () => {
+  test("bakım işlemlerini açık insan düğmelerine bağlar", () => {
     const source = maintenanceSource();
 
-    expect(source).toContain("otomatik eğitim ve otomatik");
-    expect(source).toContain("terfi KAPALIDIR");
+    expect(source).not.toContain("otomatik eğitim ve otomatik");
     expect(source).toContain("Paket oluştur");
     expect(source).toContain("Eğitimi başlat");
     expect(source).toContain("Terfi ettir");
@@ -155,7 +154,7 @@ describe("öğrenme hattı sunumu", () => {
     // Paket düğmesi hazır olmayan veride kapalı kalır.
     expect(source).toContain("disabled={!view.readiness.can_plan");
     // İmza tek yerden gelir: onay, eğitim ve terfi aynı mühendis adını yazar.
-    expect(source).toContain("reviewer: signed");
+    expect(source).toContain("reviewer: user.trim()");
     expect(source).toContain("requested_by: signed");
     expect(source).toContain("approved_by: signed");
   });

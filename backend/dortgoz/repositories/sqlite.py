@@ -19,7 +19,7 @@ from ..domain.media import IncidentMedia
 from ..domain.memory import AnalysisRecord
 from ..domain.model_lifecycle import ModelVersion, TrainingJob
 from ..domain.priority import InterventionPriority
-from ..domain.provenance import HumanReview, TraceRecord
+from ..domain.provenance import HumanReview, MaintenanceReview, TraceRecord
 from ..domain.training import TrainingFrameReview, TrainingSample
 from ..domain.video import VideoMetadata
 from .bundles import FeedbackWriteBundle, FeedbackWriteResult
@@ -27,7 +27,7 @@ from .errors import RepositoryConflictError, RepositoryError
 from .memory import InMemoryEventRepository
 
 _T = TypeVar("_T")
-_DATABASE_SCHEMA_VERSION = 7
+_DATABASE_SCHEMA_VERSION = 8
 _LEGACY_SNAPSHOT_VERSION = 1
 
 
@@ -126,6 +126,19 @@ class SqliteEventRepository(InMemoryEventRepository):
                     );
                     CREATE INDEX IF NOT EXISTS idx_human_reviews_event
                         ON human_reviews(event_id, revision, created_at);
+
+                    CREATE TABLE IF NOT EXISTS maintenance_reviews (
+                        maintenance_review_id TEXT PRIMARY KEY,
+                        event_id TEXT NOT NULL REFERENCES events(event_id),
+                        operator_review_id TEXT NOT NULL REFERENCES human_reviews(review_id),
+                        decision TEXT NOT NULL,
+                        revision INTEGER NOT NULL,
+                        reviewer TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        payload TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_maintenance_reviews_event
+                        ON maintenance_reviews(event_id, revision, created_at);
 
                     CREATE TABLE IF NOT EXISTS development_approvals (
                         approval_id TEXT PRIMARY KEY,
@@ -315,7 +328,7 @@ class SqliteEventRepository(InMemoryEventRepository):
                     subject_type="database",
                     subject_id=str(self.database_path),
                     actor=None,
-                    payload={"from_version": 1, "to_version": 7},
+                    payload={"from_version": 1, "to_version": 8},
                 )
         except sqlite3.Error as exc:
             raise RepositoryError(f"legacy event store taşınamadı: {exc}") from exc
@@ -386,6 +399,11 @@ class SqliteEventRepository(InMemoryEventRepository):
             item.review_id: item
             for row in self._connection.execute("SELECT payload FROM human_reviews")
             if (item := self._model_from_payload(HumanReview, row["payload"]))
+        }
+        self._maintenance_reviews = {
+            item.maintenance_review_id: item
+            for row in self._connection.execute("SELECT payload FROM maintenance_reviews")
+            if (item := self._model_from_payload(MaintenanceReview, row["payload"]))
         }
         self._development_approvals = {
             item.approval_id: item
@@ -515,6 +533,26 @@ class SqliteEventRepository(InMemoryEventRepository):
             (
                 item.review_id,
                 item.event_id,
+                item.decision.value,
+                item.revision,
+                item.reviewer,
+                item.created_at.isoformat(),
+                self._json_payload(item),
+            ),
+        )
+
+    def _write_maintenance_review(self, item: MaintenanceReview) -> None:
+        self._connection.execute(
+            """
+            INSERT INTO maintenance_reviews(
+                maintenance_review_id, event_id, operator_review_id, decision,
+                revision, reviewer, created_at, payload
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                item.maintenance_review_id,
+                item.event_id,
+                item.operator_review_id,
                 item.decision.value,
                 item.revision,
                 item.reviewer,
@@ -832,6 +870,37 @@ class SqliteEventRepository(InMemoryEventRepository):
                 payload={"revoked_by_approval_id": saved.approval_id},
             )
 
+    def _write_saved_maintenance_review(self, saved: MaintenanceReview) -> None:
+        self._write_maintenance_review(saved)
+        invalidated_samples = [
+            sample
+            for sample in self._training_samples.values()
+            if sample.invalidated_by_review_id == saved.maintenance_review_id
+        ]
+        for sample in invalidated_samples:
+            self._write_training_sample(sample)
+        self._write_audit(
+            action="maintenance_review_saved",
+            subject_type="event",
+            subject_id=saved.event_id,
+            actor=saved.reviewer,
+            occurred_at=saved.created_at,
+            payload={
+                "maintenance_review_id": saved.maintenance_review_id,
+                "operator_review_id": saved.operator_review_id,
+                "decision": saved.decision.value,
+            },
+        )
+        for sample in invalidated_samples:
+            self._write_audit(
+                action="training_sample_invalidated_by_maintenance_review",
+                subject_type="training_sample",
+                subject_id=sample.sample_id,
+                actor=saved.reviewer,
+                occurred_at=saved.created_at,
+                payload={"maintenance_review_id": saved.maintenance_review_id},
+            )
+
     def _write_saved_rule_proposal(self, saved: RuleProposal) -> None:
         self._write_rule_proposal(saved)
         created = saved.revision == 1
@@ -953,6 +1022,14 @@ class SqliteEventRepository(InMemoryEventRepository):
 
         return self._transaction(
             lambda: super(SqliteEventRepository, self).save_review(review), write
+        )
+
+    def save_maintenance_review(
+        self, review: MaintenanceReview
+    ) -> MaintenanceReview:
+        return self._transaction(
+            lambda: super(SqliteEventRepository, self).save_maintenance_review(review),
+            self._write_saved_maintenance_review,
         )
 
     def save_development_approval(self, approval: DevelopmentApproval) -> DevelopmentApproval:

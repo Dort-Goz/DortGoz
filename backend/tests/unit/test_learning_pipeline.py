@@ -13,6 +13,7 @@ from dortgoz.domain.feedback import (
     DevelopmentUse,
 )
 from dortgoz.domain.pipeline import PipelineStage
+from dortgoz.domain.provenance import MaintenanceReview, ReviewDecision
 from dortgoz.services.learning_orchestrator import LearningOrchestrator
 from dortgoz.services.learning_pipeline import LearningPipelineService
 
@@ -42,30 +43,51 @@ def test_stages_follow_the_event_from_review_to_promotion(tmp_path: Path) -> Non
     view = _service(repository, tmp_path).view()
 
     assert _stage(view, PipelineStage.REVIEW).count == 1
-    assert _stage(view, PipelineStage.APPROVAL).count == 1
+    assert _stage(view, PipelineStage.APPROVAL).count == 0
     assert _stage(view, PipelineStage.QUEUE).count == 0
-    assert [item.event_id for item in view.review_items] == ["event-learning-2"]
-    assert [item.event_id for item in view.approval_items] == [reviewed.event_id]
+    assert [item.event_id for item in view.review_items] == [reviewed.event_id]
+    assert view.approval_items == []
+
+    maintenance = repository.save_maintenance_review(
+        MaintenanceReview(
+            maintenance_review_id="maintenance-pipeline-1",
+            event_id=reviewed.event_id,
+            operator_review_id=review.review_id,
+            decision=ReviewDecision.CONFIRM,
+            event_type=reviewed.event_type.value,
+            note="IT olayı bağımsız doğruladı.",
+            reviewer="it-operator",
+            revision=1,
+        )
+    )
+
+    awaiting_decision = _service(repository, tmp_path).view()
+
+    assert _stage(awaiting_decision, PipelineStage.REVIEW).count == 0
+    assert _stage(awaiting_decision, PipelineStage.APPROVAL).count == 1
+    assert [item.event_id for item in awaiting_decision.approval_items] == [
+        reviewed.event_id
+    ]
 
     repository.save_development_approval(
         DevelopmentApproval(
             approval_id="approval-pipeline-1",
             event_id=reviewed.event_id,
             review_id=review.review_id,
+            maintenance_review_id=maintenance.maintenance_review_id,
             status=DevelopmentApprovalStatus.APPROVED,
-            approved_uses=[DevelopmentUse.EVALUATION],
-            reviewer="operator",
-            note="Değerlendirme için onaylandı.",
+            approved_uses=[DevelopmentUse.D_FINE_TRAINING],
+            reviewer="it-operator",
+            note="Fine-tune için onaylandı.",
         )
     )
 
     after = _service(repository, tmp_path).view()
 
     assert _stage(after, PipelineStage.QUEUE).count == 1
-    evaluation = next(
-        group for group in after.queue if group.use == DevelopmentUse.EVALUATION
-    )
-    assert [item.event_id for item in evaluation.items] == [reviewed.event_id]
+    assert len(after.queue) == 1
+    assert after.queue[0].use == DevelopmentUse.D_FINE_TRAINING
+    assert [item.event_id for item in after.queue[0].items] == [reviewed.event_id]
 
 
 def test_missing_training_configuration_blocks_planning(tmp_path: Path) -> None:

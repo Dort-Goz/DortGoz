@@ -28,7 +28,12 @@ from ..domain.learning import (
 from ..domain.model_lifecycle import ModelVersion, TrainingJob
 from ..domain.pipeline import LearningPipelineView, PipelineModelItem
 from ..domain.priority import InterventionPriority
-from ..domain.provenance import HumanReview, ProcedureSource, ReviewDecision
+from ..domain.provenance import (
+    HumanReview,
+    MaintenanceReview,
+    ProcedureSource,
+    ReviewDecision,
+)
 from ..domain.video import VideoMetadata
 from ..errors import RepositoryNotFoundError
 from ..infrastructure.storage import LocalVideoStorage
@@ -68,6 +73,7 @@ from .contracts import (
     DevelopmentApprovalInput,
     HumanReviewInput,
     IncidentMediaView,
+    MaintenanceReviewInput,
     ModelPromotionInput,
     QueryRequest,
     QueryResponse,
@@ -406,6 +412,44 @@ async def list_event_reviews(event_id: str) -> list[HumanReview]:
     return runtime.repository.list_reviews(event_id)
 
 
+@router.post(
+    "/events/{event_id}/maintenance-review",
+    response_model=MaintenanceReview,
+)
+async def review_maintenance_event(
+    event_id: str,
+    body: MaintenanceReviewInput,
+) -> MaintenanceReview | JSONResponse:
+    try:
+        decision = ReviewDecision(body.decision)
+        event_type = (
+            VerifiedEventType(body.event_type) if body.event_type is not None else None
+        )
+    except ValueError as exc:
+        return error_response("INVALID_MAINTENANCE_REVIEW", str(exc), status_code=422)
+    return runtime.events.review_maintenance_event(
+        event_id,
+        body.operator_review_id,
+        decision,
+        reviewer=body.reviewer,
+        note=body.note,
+        event_type=event_type.value if event_type is not None else None,
+        start_time=body.start_time,
+        peak_time=body.peak_time,
+        end_time=body.end_time,
+        risk_level=body.risk_level,
+        false_alarm_reason=body.false_alarm_reason,
+    )
+
+
+@router.get(
+    "/events/{event_id}/maintenance-reviews",
+    response_model=list[MaintenanceReview],
+)
+async def list_maintenance_reviews(event_id: str) -> list[MaintenanceReview]:
+    return runtime.repository.list_maintenance_reviews(event_id)
+
+
 @router.get("/events/{event_id}/learning-plan", response_model=LearningPlan)
 async def event_learning_plan(event_id: str) -> LearningPlan:
     return runtime.learning.plan(event_id)
@@ -665,6 +709,7 @@ async def record_development_approval(
         approved_uses=body.approved_uses,
         reviewer=body.reviewer,
         note=body.note,
+        maintenance_review_id=body.maintenance_review_id,
         supersedes_approval_id=body.supersedes_approval_id,
     )
 
