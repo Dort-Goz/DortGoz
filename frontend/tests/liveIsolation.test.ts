@@ -110,11 +110,13 @@ describe("canlı ve analiz ayrımı", () => {
     expect(state.active).toBe("");
   });
 
-  test("canlı çalışma alanı kendi aksiyon günlüğünü açar", () => {
+  test("canlı aksiyon günlüğü tek yerde, nöbet kuyruğunun altında durur", () => {
     const source = readFileSync(new URL("../src/components/LiveGrid.tsx", import.meta.url), "utf8");
 
-    expect(source).toContain('["aksiyonlar", "⚙ Aksiyon günlüğü"]');
+    expect(source).toContain("logPanel={(");
     expect(source).toContain("requests={actionRequests}");
     expect(source).toContain("results={actionResults}");
+    expect(source).not.toContain('"aksiyonlar"');
+    expect(source.match(/<ActionLog/g)).toHaveLength(1);
   });
 });

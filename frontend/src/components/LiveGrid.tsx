@@ -61,7 +61,7 @@ function LiveGrid({
   const [active, setActive] = useState(false);
   const [error, setError] = useState("");
   const [zoom, setZoom] = useState<string | null>(null);
-  const [view, setView] = useState<"duvar" | "kayitlar" | "aksiyonlar">("duvar");
+  const [view, setView] = useState<"duvar" | "kayitlar">("duvar");
   const [reportFeed, setReportFeed] = useState<string | null>(null);
   const [preview, setPreview] = useState<Record<string, string>>({});
   const previewRef = useRef<Record<string, string>>({});
@@ -162,7 +162,6 @@ function LiveGrid({
             {([
               ["duvar", "▦ Akış duvarı"],
               ["kayitlar", "⛁ Olay kayıtları"],
-              ["aksiyonlar", "⚙ Aksiyon günlüğü"],
             ] as const).map(
               ([value, label]) => (
                 <button
@@ -221,13 +220,7 @@ function LiveGrid({
       <div className="flex min-h-0 flex-1 flex-col gap-1.5 p-1.5">
 
       <div className="flex min-h-0 flex-1 gap-1.5">
-        {view === "kayitlar" ? <LiveArchive feedNames={labels} /> : view === "aksiyonlar" ? (
-          <ActionLog
-            requests={actionRequests}
-            results={actionResults}
-            onRespond={onRespond}
-          />
-        ) : (
+        {view === "kayitlar" ? <LiveArchive feedNames={labels} /> : (
       <>
       <div className={`panel ${zoomed ? "w-[14vw] min-w-48 max-w-80 shrink-0" : "flex-1"}`}>
       <div className="panel-title">
