@@ -2,7 +2,8 @@ import { memo, useEffect, useState } from "react";
 import type { ActivityStatus, ActivityStrip } from "../types/events";
 import { ACTIVITY_WINDOW_SECONDS } from "../state";
 
-export type SlotKind = "bos" | "bekliyor" | "sessiz" | "hareket" | "dikkat" | "anomali";
+export type SlotKind =
+  | "bos" | "bekliyor" | "atlandi" | "sessiz" | "hareket" | "dikkat" | "anomali";
 
 export interface Slot {
   kind: SlotKind;
@@ -13,6 +14,7 @@ export interface Slot {
 const RAMP: Record<SlotKind, readonly string[]> = {
   bos: ["bg-zinc-950"],
   bekliyor: ["bg-zinc-100"],
+  atlandi: ["bg-zinc-800"],
   sessiz: ["bg-zinc-700"],
   hareket: ["bg-emerald-900", "bg-emerald-700", "bg-emerald-400"],
   dikkat: ["bg-amber-800", "bg-amber-600", "bg-amber-300"],
@@ -22,6 +24,7 @@ const RAMP: Record<SlotKind, readonly string[]> = {
 const KIND_TR: Record<SlotKind, string> = {
   bos: "kayıt yok",
   bekliyor: "henüz çözümlenmedi",
+  atlandi: "çözümlenmedi — segment atlandı",
   sessiz: "eşik altı — hareket yok",
   hareket: "hareket var, olay yok",
   dikkat: "dikkat çeken pencere",
@@ -76,7 +79,7 @@ export function buildTimeline(
   for (const slot of slots) {
     if (slot.kind !== "bos") continue;
     if (slot.wall >= newest && newest > 0) slot.kind = "bekliyor";
-    else if (slot.wall > oldest && slot.wall < newest) slot.kind = "bekliyor";
+    else if (slot.wall > oldest && slot.wall < newest) slot.kind = "atlandi";
   }
   return slots;
 }
@@ -103,13 +106,15 @@ function ActivityBar({ strips, height = "h-2.5" }: {
 
   const slots = buildTimeline(strips, now);
   const pending = slots.filter((s) => s.kind === "bekliyor").length;
+  const skipped = slots.filter((s) => s.kind === "atlandi").length;
   const moving = slots.filter((s) => s.level > 0).length;
 
   return (
     <div
       className={`flex w-full ${height} overflow-hidden bg-zinc-950`}
       title={`Son ${ACTIVITY_WINDOW_SECONDS / 60} dakika · eşiği geçen ${moving} kare`
-        + (pending > 0 ? ` · ${pending} sn çözümlenmeyi bekliyor` : "")}
+        + (pending > 0 ? ` · ${pending} sn çözümlenmeyi bekliyor` : "")
+        + (skipped > 0 ? ` · ${skipped} sn atlandı, çözümlenmedi` : "")}
     >
       {slots.map((slot) => (
         <span

@@ -8,6 +8,7 @@ import LiveArchive from "./LiveArchive";
 import OperatorReportDialog from "./OperatorReport";
 import TriagePanel from "./TriagePanel";
 import { startPreviewStream } from "../lib/livePreview";
+import { PHASE_TR, RISK_TR, TYPE_TR, clock, humanizeEnums } from "../lib/labels";
 
 interface LiveFeed {
   name: string;
@@ -221,44 +222,6 @@ function LiveGrid({
 
       <div className="flex min-h-0 flex-1 flex-col gap-1.5 p-1.5">
 
-      {zoomed && (
-        <div className="flex shrink-0 items-start gap-3 rounded-md border border-zinc-700 bg-zinc-900 p-2">
-          <img
-            src={liveSrc(zoomed)}
-            alt={zoomed.name}
-            className="max-h-64 rounded-sm"
-          />
-          <div className="min-w-0 space-y-1 text-xs">
-            <div className="text-sm font-bold text-zinc-100">{zoomed.desc || zoomed.name}</div>
-            <div className={`chip ${lagBadge(zoomed).cls}`} title={lagBadge(zoomed).hint}>
-              {lagBadge(zoomed).text}
-            </div>
-            <div className="font-mono text-zinc-400">
-              {zoomed.segments_done} segment · {zoomed.state}
-              {zoomed.dropped_s > 0 && ` · ${Math.round(zoomed.dropped_s)} sn atlandı`}
-            </div>
-            {zoomed.last_error && <div className="truncate text-red-400">{zoomed.last_error}</div>}
-            {(incidents[zoomed.name] ?? []).slice(-3).map((i) => (
-              <div key={i.incident_id} className="truncate text-amber-300">
-                ⚠ {i.title} · risk {i.risk}
-              </div>
-            ))}
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setReportFeed(zoomed.name)}
-                className="btn btn-outline-warn h-6 px-1.5"
-                title="Bu kamerada sistemin kaçırdığı bir olayı bildir"
-              >
-                ⚑ bildir
-              </button>
-              <button onClick={() => setZoom(null)} className="btn btn-ghost h-6 px-1.5">
-                kapat ✕
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="flex min-h-0 flex-1 gap-1.5">
         {view === "kayitlar" ? <LiveArchive feedNames={labels} /> : view === "aksiyonlar" ? (
           <ActionLog
@@ -267,9 +230,10 @@ function LiveGrid({
             onRespond={onRespond}
           />
         ) : (
-      <div className="panel flex-1">
+      <>
+      <div className={`panel ${zoomed ? "w-56 shrink-0" : "flex-1"}`}>
       <div className="panel-title">
-        <span>Akış Duvarı</span>
+        <span>{zoomed ? "Diğer akışlar" : "Akış Duvarı"}</span>
         <span className="flex-1" />
         {feeds.length > 0 && (
           <span className="chip border border-zinc-700 font-mono normal-case tracking-normal text-zinc-300">
@@ -280,7 +244,9 @@ function LiveGrid({
       <div
         className="panel-body grid content-start gap-1 p-1.5"
         style={{
-          gridTemplateColumns: `repeat(${Math.max(1, Math.ceil(Math.sqrt(feeds.length)))}, minmax(0, 1fr))`,
+          gridTemplateColumns: `repeat(${
+            zoomed ? 1 : Math.max(1, Math.ceil(Math.sqrt(feeds.length)))
+          }, minmax(0, 1fr))`,
         }}
       >
         {feeds.map((f) => {
@@ -345,6 +311,17 @@ function LiveGrid({
         )}
       </div>
       </div>
+      {zoomed && (
+        <FocusedFeed
+          feed={zoomed}
+          src={liveSrc(zoomed)}
+          strips={activity[zoomed.name] ?? []}
+          incidents={incidents[zoomed.name] ?? []}
+          onReport={() => setReportFeed(zoomed.name)}
+          onClose={() => setZoom(null)}
+        />
+      )}
+      </>
       )}
       <TriagePanel
         user={user}
@@ -364,6 +341,117 @@ function LiveGrid({
           onClose={() => setReportFeed(null)}
         />
       )}
+    </div>
+  );
+}
+
+function FocusedFeed({
+  feed, src, strips, incidents, onReport, onClose,
+}: {
+  feed: LiveFeed;
+  src: string;
+  strips: ActivityStrip[];
+  incidents: IncidentUpdate[];
+  onReport: () => void;
+  onClose: () => void;
+}) {
+  const badge = lagBadge(feed);
+  const latest = new Map<string, IncidentUpdate>();
+  for (const i of incidents) latest.set(i.incident_id, i);
+  const list = [...latest.values()].reverse();
+
+  return (
+    <div className="panel panel-accent min-w-0 flex-1">
+      <div className="panel-title">
+        <span className="truncate normal-case tracking-normal text-[13px] font-bold text-zinc-100"
+              title={feed.name}>
+          {feed.desc || feed.name}
+        </span>
+        <span className={`chip ${badge.cls}`} title={badge.hint}>{badge.text}</span>
+        {feed.state === "isleniyor" && (
+          <span className="chip bg-sky-950 text-sky-200">⚙ işleniyor</span>
+        )}
+        <span className="flex-1" />
+        <button
+          onClick={onReport}
+          className="btn btn-outline-warn h-6 px-1.5"
+          title="Bu kamerada sistemin kaçırdığı bir olayı bildir"
+        >
+          ⚑ bildir
+        </button>
+        <button onClick={onClose} className="btn btn-ghost h-6 px-1.5" title="Duvara dön">
+          kapat ✕
+        </button>
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black">
+          {src ? (
+            <img src={src} alt={feed.name} className="max-h-full max-w-full object-contain" />
+          ) : (
+            <span className="text-xs text-zinc-600">
+              {feed.state === "hata" ? "bağlantı yok" : "bağlanıyor…"}
+            </span>
+          )}
+          {feed.dropped_s > 0 && (
+            <span className="chip absolute bottom-1 right-1 bg-red-950/90 font-mono text-red-200"
+                  title="Çözümlemenin canlıya yetişmek için atladığı süre">
+              ⏭ {Math.round(feed.dropped_s)}s atlandı
+            </span>
+          )}
+        </div>
+
+        <div className="shrink-0 border-y border-zinc-800 bg-zinc-950 px-1.5 py-1">
+          <ActivityBar strips={strips} />
+          <div className="mt-1 flex items-center gap-2 font-mono text-[11px] text-zinc-500">
+            <span>{feed.segments_done} segment</span>
+            <span>·</span>
+            <span>{feed.state}</span>
+            {feed.last_error && (
+              <span className="truncate text-red-400" title={feed.last_error}>
+                · {feed.last_error}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex max-h-[38%] shrink-0 flex-col">
+          <div className="flex shrink-0 items-center gap-2 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+            <span>Bu akıştaki anomaliler</span>
+            <span className={`chip border font-mono ${
+              list.length > 0 ? "border-amber-900 text-amber-300" : "border-zinc-800 text-zinc-500"
+            }`}>
+              {list.length}
+            </span>
+          </div>
+          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-1.5 pb-1.5 text-xs">
+            {list.length === 0 && (
+              <div className="text-zinc-500">Bu akışta kayda geçen anomali yok.</div>
+            )}
+            {list.map((i) => (
+              <div key={i.incident_id}
+                   className={`flex gap-2 border-l-2 bg-zinc-950 p-1.5 risk-${i.risk}`}>
+                {i.thumbnail && (
+                  <img src={i.thumbnail} alt="" className="h-12 w-20 shrink-0 object-cover" />
+                )}
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className="text-zinc-100">{i.title}</div>
+                  {i.detail && (
+                    <div className="line-clamp-2 text-zinc-400">{humanizeEnums(i.detail)}</div>
+                  )}
+                  <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-zinc-500">
+                    <span className={`chip border risk-${i.risk}`}>risk {RISK_TR[i.risk]}</span>
+                    <span>{TYPE_TR[i.anomaly_type] ?? i.anomaly_type}</span>
+                    <span className="font-mono">{clock(i.t)}</span>
+                    <span>{PHASE_TR[i.phase] ?? i.phase}</span>
+                    {i.needs_review && <span className="text-amber-400">inceleme bekliyor</span>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

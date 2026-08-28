@@ -44,6 +44,18 @@ describe("kamera etkinlik şeridi", () => {
     expect(slots.filter((s) => s.kind === "bekliyor").length).toBe(30);
   });
 
+  test("çözümlenen iki şerit arasındaki boşluk beyaz değil koyu kalır", () => {
+    const slots = buildTimeline(
+      [strip(NOW - 90, Array(20).fill(2)), strip(NOW - 40, Array(40).fill(2))],
+      NOW,
+    );
+    const gap = slots.filter((s) => s.wall > NOW - 70 && s.wall < NOW - 40);
+
+    expect(gap.length).toBeGreaterThan(0);
+    expect(gap.every((s) => s.kind === "atlandi")).toBe(true);
+    expect(slots.filter((s) => s.kind === "bekliyor").every((s) => s.wall >= NOW - 1)).toBe(true);
+  });
+
   test("veri gelmemiş eski zaman boş kalır, beyaz olmaz", () => {
     const slots = buildTimeline([strip(NOW - 30, Array(30).fill(1))], NOW);
 
