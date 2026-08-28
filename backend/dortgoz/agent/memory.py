@@ -319,13 +319,17 @@ def _deref_frames(text: str) -> str:
 
 
 def _title_text(text: str) -> str:
+    # Başlık ilk cümledir ve TAM gelir. Görüntüleme kesmesi arayüzdedir
+    # (`components/ClampText.tsx`): kutuya sığan kadarı görünür, tamamı ipucunda
+    # durur. Burada kesilirse metin kalıcı kaybolur ve ipucu da kesik metni
+    # gösterir. Buradaki sınır yalnız kayıt sağlığı içindir (şema geneli 300).
     clean = _deref_frames(text.strip())
     head = _SENTENCE_SPLIT.split(clean)[0].strip().rstrip(".")
     head = _TIME_LEAD.sub("", head).strip()
     head = _CLOCK_LEAD.sub("", head).strip()
     if head:
         head = head[0].upper() + head[1:]
-    return head if len(head) <= 70 else _short(head, 70)
+    return head if len(head) <= 300 else _short(head, 300)
 
 
 def _short(text: str, limit: int = 160) -> str:

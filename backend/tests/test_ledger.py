@@ -96,12 +96,13 @@ def test_empty_report_without_open_incident_is_noop():
     assert led.finalize() == []
 
 
-def test_title_is_truncated_first_sentence():
+def test_title_keeps_the_whole_first_sentence():
+    # Görüntüleme kesmesi arayüzdedir; başlık tam gelmeli ki ipucu işe yarasın.
     led = Ledger()
     long = "Bir kişi yerde hareketsiz yatıyor" + " ve çevrede kimse yok" * 5
     up = led.ingest(report(0, (5, long + ". İkinci cümle.", "yuksek")))[0]
-    assert len(up.title) <= 70
-    assert up.title.endswith("…")
+    assert up.title == long
+    assert not up.title.endswith("…")
     assert "İkinci cümle" not in up.title
 
 
@@ -172,13 +173,12 @@ def test_event_window_never_runs_past_video_duration():
 
 
 def test_title_truncation_cuts_on_a_word_boundary():
+    # 300 karakter kayıt sağlığı sınırıdır; o sınırda da kelime ortasından kesmez.
     led = Ledger()
-    long_title = (
-        "Kasaya gelen kişi masanın arkasındaki çalışanla etkileşime girerek "
-        "bir nesne alışverişi yapıyor"
-    )
+    long_title = "Kasaya gelen kişi masanın arkasındaki çalışanla konuşuyor " * 8
     opened = led.ingest(report(0, (5, long_title, "orta")))[0]
 
+    assert len(opened.title) <= 300
     assert opened.title.endswith("…")
     assert not opened.title.rstrip("…").endswith(" ")
     assert long_title.startswith(opened.title.rstrip("… "))
