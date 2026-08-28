@@ -131,13 +131,17 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(source).toContain("presentation.technicalComponent");
     expect(source).not.toContain("presentation.title");
     expect(source).toContain("Besleyeceği bileşenler");
+    expect(source).toContain("İnceleme bekleyen olay yok.");
     expect(source).toContain("Onay bekleyen olay yok.");
     expect(source).toContain("refreshToken: number;");
     expect(source).toContain("[load, refreshToken]");
     expect(MAINTENANCE_STAGE_ORDER).toEqual([
-      "approval", "queue", "training", "measurement", "promotion",
+      "review", "approval", "queue", "training", "measurement", "promotion",
     ]);
-    expect(source).not.toContain('active === "review"');
+    expect(source).toContain('active === "review"');
+    expect(source).toContain('review: "İnceleme bekliyor"');
+    expect(source).toContain('actionLabel="Olayı incele"');
+    expect(source).toContain('actionLabel="Onayı değerlendir"');
   });
 
   test("teknik ayrıntılar kapalı bölümde kalır ve öğrenme kendi çalışma alanıdır", () => {
@@ -161,6 +165,7 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(detail).toContain("presentation.technicalType");
     expect(detail).not.toContain("Kayma gözcüsü");
     expect(app).toContain("openedFromMaintenance");
+    expect(app).toContain("onReviewEvent={openMaintenanceReviewEvent}");
     expect(app).toContain("onBack={openedFromMaintenance ? returnToMaintenance : undefined}");
     expect(app).toContain("refreshToken={maintenanceRefreshToken}");
     expect(app).toContain("setMaintenanceRefreshToken((current) => current + 1)");

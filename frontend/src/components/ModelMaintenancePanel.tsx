@@ -29,10 +29,13 @@ import type {
 } from "../types/domain";
 import type { CanonicalEventType } from "../types/events";
 
-/** İnsan olay kararı Olay inceleme'de verilir; Bakım bu karardan sonra başlar. */
-export const MAINTENANCE_STAGE_ORDER = STAGE_ORDER.filter(
-  (stage): stage is Exclude<PipelineStage, "review"> => stage !== "review",
-);
+/** Bakım hattı kararsız kayıtları gösterir; karar Olay inceleme kipinde verilir. */
+export const MAINTENANCE_STAGE_ORDER: PipelineStage[] = [...STAGE_ORDER];
+
+const MAINTENANCE_STAGE_TR: Record<PipelineStage, string> = {
+  ...STAGE_TR,
+  review: "İnceleme bekliyor",
+};
 
 const BAND_TR = {
   low: "Düşük",
@@ -43,7 +46,7 @@ const BAND_TR = {
 
 /** Aşamanın bakım mühendisi için ne anlama geldiği; sekme başlığında durur. */
 const STAGE_NOTE: Record<PipelineStage, string> = {
-  review: "eğitim verisi bu kararlardan üretilir",
+  review: "insan kararı Olay inceleme kipinde verilir",
   approval: "adı kayda geçen ayrı geliştirme izni",
   queue: "izinli kareler COCO'ya aktarılmayı bekliyor",
   training: "münhasır iş; aynı anda tek eğitim çalışır",
@@ -82,11 +85,13 @@ function feedsLine(item: PipelineEventItem): string {
 
 export default function ModelMaintenancePanel({
   user,
+  onReviewEvent,
   onOpenEvent,
   refreshToken,
 }: {
   /** Konsolun tek kimliği; onay, eğitim ve terfi kayıtlarını imzalar. */
   user: string;
+  onReviewEvent: (eventId: string) => void;
   onOpenEvent: (eventId: string) => void;
   refreshToken: number;
 }) {
@@ -122,15 +127,12 @@ export default function ModelMaintenancePanel({
     return () => clearInterval(id);
   }, [jobRunning, load]);
 
-  const maintenanceStages = useMemo(
-    () => view?.stages.filter((item) => item.stage !== "review") ?? [],
-    [view],
-  );
   const active: PipelineStage = stage
-    ?? (view ? firstActionableStage(maintenanceStages) : "approval");
+    ?? (view ? firstActionableStage(view.stages) : "review");
 
   const visibleEvents = useMemo(() => {
     if (!view) return [];
+    if (active === "review") return view.review_items.slice(0, THUMBNAIL_LIMIT);
     if (active === "approval") return view.approval_items.slice(0, THUMBNAIL_LIMIT);
     return [];
   }, [view, active]);
@@ -223,7 +225,7 @@ export default function ModelMaintenancePanel({
                       : "text-zinc-500 hover:text-zinc-200"
                   }`}
                 >
-                  {STAGE_TR[name]}
+                  {MAINTENANCE_STAGE_TR[name]}
                   {count > 0 && (
                     <span
                       className={`ml-1.5 inline-flex min-w-4 items-center justify-center rounded-sm px-1 font-mono text-[10px] leading-4 ${
@@ -277,7 +279,7 @@ export default function ModelMaintenancePanel({
 
       <div className="panel min-h-0 flex-1">
         <div className="panel-title">
-          <span>{STAGE_TR[active]}</span>
+          <span>{MAINTENANCE_STAGE_TR[active]}</span>
           <span className="microlabel normal-case tracking-normal">
             {STAGE_NOTE[active]}
           </span>
@@ -290,6 +292,25 @@ export default function ModelMaintenancePanel({
         </div>
 
         <div className="panel-body space-y-2 p-2">
+          {active === "review" && (
+            view.review_items.length === 0 ? (
+              <Empty>İnceleme bekleyen olay yok.</Empty>
+            ) : (
+              <>
+                {view.review_items.map((item) => (
+                  <EventCard
+                    key={item.event_id}
+                    item={item}
+                    media={media[item.event_id]}
+                    onOpen={onReviewEvent}
+                    actionLabel="Olayı incele"
+                  />
+                ))}
+                <Truncated shown={view.review_items.length} total={stageCount("review")} />
+              </>
+            )
+          )}
+
           {active === "approval" && (
             view.approval_items.length === 0 ? (
               <Empty>Onay bekleyen olay yok.</Empty>
@@ -344,6 +365,7 @@ export default function ModelMaintenancePanel({
                     item={item}
                     media={media[item.event_id]}
                     onOpen={onOpenEvent}
+                    actionLabel="Onayı değerlendir"
                     checked={selected.includes(item.event_id)}
                     onToggle={() => toggle(item.event_id)}
                   />
@@ -387,12 +409,14 @@ function EventCard({
   onOpen,
   checked,
   onToggle,
+  actionLabel = "Bakım kaydını aç",
 }: {
   item: PipelineEventItem;
   media?: IncidentMedia | null;
   onOpen: (eventId: string) => void;
   checked?: boolean;
   onToggle?: () => void;
+  actionLabel?: string;
 }) {
   const label = eventLabel(item.event_type);
   return (
@@ -454,7 +478,7 @@ function EventCard({
             onClick={() => onOpen(item.event_id)}
             className="btn btn-accent w-full"
           >
-            İncele
+            {actionLabel}
           </button>
         </div>
       </div>

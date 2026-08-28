@@ -165,6 +165,12 @@ export default function App() {
     setTrainingEventId(eventId);
   }, []);
 
+  const openMaintenanceReviewEvent = useCallback((eventId: string) => {
+    setOpenedFromMaintenance(true);
+    setTrainingReviewMode("review");
+    setTrainingEventId(eventId);
+  }, []);
+
   const openReviewEvent = useCallback((eventId: string) => {
     setOpenedFromMaintenance(false);
     setTrainingReviewMode("review");
@@ -681,6 +687,7 @@ export default function App() {
         <div className="flex min-h-0 flex-1 flex-col">
           <ModelMaintenancePanel
             user={user}
+            onReviewEvent={openMaintenanceReviewEvent}
             onOpenEvent={openMaintenanceEvent}
             refreshToken={maintenanceRefreshToken}
           />
