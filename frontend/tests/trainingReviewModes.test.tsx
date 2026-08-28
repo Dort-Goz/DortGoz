@@ -27,8 +27,8 @@ describe("olay inceleme ve bakım görev kipleri", () => {
   test("bakım yalnız öğrenme ve model yaşam döngüsü araçlarını gösterir", () => {
     const markup = render("maintenance");
 
-    expect(markup).toContain("Bakım Kaydı");
-    expect(markup).toContain("Geliştirme onayı");
+    expect(markup).toContain("IT Bakım Kaydı");
+    expect(markup).toContain("Fine-tune ve değerlendirme onayı");
     expect(markup).toContain("Kareleri hazırla");
     expect(markup).not.toContain("Evet, doğru");
     expect(markup).not.toContain("Hayır, düzenle");

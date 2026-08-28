@@ -132,7 +132,7 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(source).not.toContain("presentation.title");
     expect(source).toContain("Besleyeceği bileşenler");
     expect(source).toContain("İnceleme bekleyen olay yok.");
-    expect(source).toContain("Onay bekleyen olay yok.");
+    expect(source).toContain("Fine-tune onayı bekleyen olay yok.");
     expect(source).toContain("refreshToken: number;");
     expect(source).toContain("[load, refreshToken]");
     expect(MAINTENANCE_STAGE_ORDER).toEqual([
@@ -141,7 +141,7 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(source).toContain('active === "review"');
     expect(source).toContain('review: "İnceleme bekliyor"');
     expect(source).toContain('actionLabel="Olayı incele"');
-    expect(source).toContain('actionLabel="Onayı değerlendir"');
+    expect(source).toContain('actionLabel="Fine-tune için değerlendir"');
   });
 
   test("teknik ayrıntılar kapalı bölümde kalır ve öğrenme kendi çalışma alanıdır", () => {
@@ -166,12 +166,14 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(detail).not.toContain("Kayma gözcüsü");
     expect(app).toContain("openedFromMaintenance");
     expect(app).toContain("onReviewEvent={openMaintenanceReviewEvent}");
+    expect(app).toContain("handoffEventId={maintenanceHandoffEventId}");
+    expect(app).toContain('history.replaceState(null, "", "#bakim")');
     expect(app).toContain("onBack={openedFromMaintenance ? returnToMaintenance : undefined}");
     expect(app).toContain("refreshToken={maintenanceRefreshToken}");
     expect(app).toContain("setMaintenanceRefreshToken((current) => current + 1)");
     expect(detail).toContain("← Geri dön");
     expect(detail).toContain("Bakım ekranına dön");
-    expect(detail).toContain("Onay ver ve geri dön");
+    expect(detail).toContain("Fine-tune adayına al");
   });
 
   test("olay kararıyla bakım iznini ayrı görev kiplerinde tutar", () => {
@@ -195,11 +197,11 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(detail).not.toContain("Hayır, sorun yok");
     expect(detail).not.toContain("Ayrıntılı karara git");
     expect(detail).not.toContain("Hayır, yanlış");
-    expect(detail).toContain("Sistem bu olaydan öğrensin mi?");
+    expect(detail).toContain("Fine-tune adayına alınsın mı?");
     expect(detail).toContain("İstemiyorum");
     expect(detail).toContain("rejectEventLearningApproval");
-    expect(detail).toContain("Kayıt geliştirme kuyruğundan çıkarıldı.");
-    expect(detail).toContain("Onay ver ve kapat");
+    expect(detail).toContain("Kayıt fine-tune hazırlığından çıkarıldı.");
+    expect(detail).toContain("Fine-tune adayına al ve kapat");
     expect(detail).toContain("approved_uses: recommendedApprovalUses");
     expect(detail).toContain('export type TrainingReviewMode = "review" | "maintenance";');
     expect(detail).toContain('mode === "review"');

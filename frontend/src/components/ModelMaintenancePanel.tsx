@@ -35,6 +35,7 @@ export const MAINTENANCE_STAGE_ORDER: PipelineStage[] = [...STAGE_ORDER];
 const MAINTENANCE_STAGE_TR: Record<PipelineStage, string> = {
   ...STAGE_TR,
   review: "İnceleme bekliyor",
+  approval: "Fine-tune onayı",
 };
 
 const BAND_TR = {
@@ -47,7 +48,7 @@ const BAND_TR = {
 /** Aşamanın bakım mühendisi için ne anlama geldiği; sekme başlığında durur. */
 const STAGE_NOTE: Record<PipelineStage, string> = {
   review: "insan kararı Olay inceleme kipinde verilir",
-  approval: "adı kayda geçen ayrı geliştirme izni",
+  approval: "IT ekibi uygun kaydı geliştirme havuzuna alır",
   queue: "izinli kareler COCO'ya aktarılmayı bekliyor",
   training: "münhasır iş; aynı anda tek eğitim çalışır",
   measurement: "değişmez dış test kümesi ister",
@@ -88,12 +89,16 @@ export default function ModelMaintenancePanel({
   onReviewEvent,
   onOpenEvent,
   refreshToken,
+  handoffEventId,
+  onDismissHandoff,
 }: {
   /** Konsolun tek kimliği; onay, eğitim ve terfi kayıtlarını imzalar. */
   user: string;
   onReviewEvent: (eventId: string) => void;
   onOpenEvent: (eventId: string) => void;
   refreshToken: number;
+  handoffEventId?: string;
+  onDismissHandoff?: () => void;
 }) {
   const [view, setView] = useState<LearningPipelineView | null>(null);
   const [media, setMedia] = useState<Record<string, IncidentMedia | null>>({});
@@ -115,6 +120,10 @@ export default function ModelMaintenancePanel({
   useEffect(() => {
     void load();
   }, [load, refreshToken]);
+
+  useEffect(() => {
+    if (handoffEventId) setStage("approval");
+  }, [handoffEventId]);
 
   const jobRunning = useMemo(
     () => (view?.jobs ?? []).some((job) => job.status === "running"),
@@ -271,6 +280,25 @@ export default function ModelMaintenancePanel({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-1.5 p-1.5 text-xs">
+        {handoffEventId && (
+          <div className="flex shrink-0 items-center gap-3 border border-sky-900 bg-sky-950/30 px-3 py-2 text-sky-100">
+            <span className="text-base text-sky-400">→</span>
+            <span>
+              <strong className="font-semibold">Olay incelemesi tamamlandı.</strong>{" "}
+              Kayıt, IT ekibinin fine-tune aday değerlendirmesine devredildi.
+            </span>
+            {onDismissHandoff && (
+              <button
+                type="button"
+                onClick={onDismissHandoff}
+                className="ml-auto text-sky-400 hover:text-sky-100"
+                aria-label="Görev devri bildirimini kapat"
+              >
+                Kapat ×
+              </button>
+            )}
+          </div>
+        )}
       {error && (
         <div className="shrink-0 border border-red-900 bg-red-950/40 px-3 py-2 text-red-200">
           {error}
@@ -313,16 +341,16 @@ export default function ModelMaintenancePanel({
 
           {active === "approval" && (
             view.approval_items.length === 0 ? (
-              <Empty>Onay bekleyen olay yok.</Empty>
+              <Empty>Fine-tune onayı bekleyen olay yok.</Empty>
             ) : (
               <>
                 <div className="flex flex-wrap items-end gap-2 bg-zinc-900 p-2">
                   <label className="min-w-48 flex-1 space-y-0.5">
-                    <span className="microlabel block">gerekçe</span>
+                    <span className="microlabel block">fine-tune gerekçesi</span>
                     <input
                       value={note}
                       onChange={(e) => setNote(e.target.value)}
-                      placeholder="toplu onay gerekçesi"
+                      placeholder="toplu fine-tune kabul gerekçesi"
                       className="field w-full"
                     />
                   </label>
@@ -356,7 +384,7 @@ export default function ModelMaintenancePanel({
                   >
                     {busy === "batch"
                       ? "Onaylanıyor…"
-                      : `Seçilenleri onayla (${selected.length})`}
+                      : `Fine-tune adayına al (${selected.length})`}
                   </button>
                 </div>
                 {view.approval_items.map((item) => (
@@ -365,7 +393,7 @@ export default function ModelMaintenancePanel({
                     item={item}
                     media={media[item.event_id]}
                     onOpen={onOpenEvent}
-                    actionLabel="Onayı değerlendir"
+                    actionLabel="Fine-tune için değerlendir"
                     checked={selected.includes(item.event_id)}
                     onToggle={() => toggle(item.event_id)}
                   />

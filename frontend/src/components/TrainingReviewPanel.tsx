@@ -466,7 +466,7 @@ export default function TrainingReviewPanel({
       <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 shadow-2xl">
         <header className="flex shrink-0 items-center gap-3 border-b border-zinc-800 px-4 py-3">
           <h2 className="text-sm font-semibold text-zinc-100">
-            {mode === "review" ? "Olayı İncele" : "Bakım Kaydı"}
+            {mode === "review" ? "Olayı İncele" : "IT Bakım Kaydı"}
           </h2>
           <div className="ml-auto flex items-center gap-2">
             {onBack && (
@@ -569,19 +569,19 @@ export default function TrainingReviewPanel({
               }`}>
                 <h3 className="text-sm font-semibold text-zinc-100">
                   {activeDevelopmentApproval
-                    ? "Onay verildi"
+                    ? "Fine-tune adayı kabul edildi"
                     : activeRejectedApproval
-                      ? "Öğrenme reddedildi"
+                      ? "Fine-tune adayı reddedildi"
                       : approvalNeedsRenewal
-                        ? "Yeniden onay verilsin mi?"
-                        : "Sistem bu olaydan öğrensin mi?"}
+                        ? "Fine-tune onayı yenilensin mi?"
+                        : "Fine-tune adayına alınsın mı?"}
                 </h3>
                 <p className="mt-1.5 leading-relaxed text-zinc-400">
                   {activeDevelopmentApproval
-                    ? "Bu kayıt geliştirme hazırlığına alındı."
+                    ? "Bu kayıt seçilen teknik geliştirme havuzlarına alındı."
                     : activeRejectedApproval
-                      ? "Bu kayıt geliştirme kuyruğuna alınmadı."
-                      : "Onay verirseniz bu kayıt, sistemi geliştirmek için hazırlanır."}
+                      ? "Bu kayıt fine-tune hazırlığına alınmadı."
+                      : "İnsan olay kararı tamamlandı. IT bakım ekibi bu kaydın fine-tune veya değerlendirme havuzuna girip girmeyeceğine karar verir."}
                 </p>
                 <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">
                   Canlı sistem otomatik değişmez. Otomatik eğitim başlamaz.
@@ -604,10 +604,10 @@ export default function TrainingReviewPanel({
                           () => rejectEventLearningApproval(eventId, {
                             review_id: latestReview.review_id,
                             reviewer: reviewerName,
-                            note: "Operatör bu olayın sistem geliştirme hazırlığında kullanılmasını istemedi.",
+                            note: "IT bakım sorumlusu bu olayın fine-tune hazırlığında kullanılmasını istemedi.",
                             ...(latestApproval ? { supersedes_approval_id: latestApproval.approval_id } : {}),
                           }),
-                          "Kayıt geliştirme kuyruğundan çıkarıldı.",
+                          "Kayıt fine-tune hazırlığından çıkarıldı.",
                         );
                         if (completed) (onBack ?? onClose)();
                       }}
@@ -624,16 +624,16 @@ export default function TrainingReviewPanel({
                             review_id: latestReview.review_id,
                             approved_uses: recommendedApprovalUses,
                             reviewer: reviewerName,
-                            note: "Operatör bu olayın sistem geliştirme hazırlığında kullanılmasını onayladı.",
+                            note: "IT bakım sorumlusu bu olayın fine-tune hazırlığında kullanılmasını onayladı.",
                             ...(latestApproval ? { supersedes_approval_id: latestApproval.approval_id } : {}),
                           }),
-                          "Geliştirme onayı kaydedildi.",
+                          "Fine-tune kararı kaydedildi.",
                         );
                         if (completed) (onBack ?? onClose)();
                       }}
                       className="btn btn-accent h-9 text-sm"
                     >
-                      {onBack ? "Onay ver ve geri dön" : "Onay ver ve kapat"}
+                      {onBack ? "Fine-tune adayına al" : "Fine-tune adayına al ve kapat"}
                     </button>
                   </div>
                 )}
@@ -777,7 +777,7 @@ export default function TrainingReviewPanel({
                 </button>
                 {latestReview && (
                   <p className="text-[10px] leading-relaxed text-amber-300">
-                    İnceleme sonucu değişirse önceki geliştirme onayı geçersiz olur. Yeniden onay gerekir.
+                    İnceleme sonucu değişirse önceki fine-tune kararı geçersiz olur. Yeniden onay gerekir.
                   </p>
                 )}
               </div>
@@ -894,7 +894,7 @@ export default function TrainingReviewPanel({
             <div className="mb-2.5 space-y-1 rounded-md border border-zinc-800 bg-zinc-900 p-2.5">
               <div className="flex items-center gap-1.5 font-medium text-zinc-200">
                 <span className="chip border border-zinc-700 text-zinc-300 font-mono">2</span>
-                Geliştirme onayı
+                Fine-tune ve değerlendirme onayı
               </div>
               <div className={activeDevelopmentApproval
                 ? "text-emerald-400"
@@ -908,9 +908,9 @@ export default function TrainingReviewPanel({
                 {activeDevelopmentApproval
                   ? `${activeDevelopmentApproval.approved_uses.length} işlem onaylandı`
                   : activeRejectedApproval
-                    ? "Geliştirme kullanımı reddedildi"
+                    ? "Fine-tune kullanımı reddedildi"
                     : latestApproval?.status === "revoked"
-                      ? "Geliştirme onayı geri alındı"
+                      ? "Fine-tune onayı geri alındı"
                       : approvalNeedsRenewal
                         ? "İnceleme sonucu değiştiği için yeniden onay gerekiyor."
                         : "Onay bekliyor"}
@@ -946,7 +946,7 @@ export default function TrainingReviewPanel({
                     rows={2}
                     maxLength={4000}
                     className="field-area"
-                    aria-label="Geliştirme kullanım onay notu"
+                    aria-label="Fine-tune kullanım onay notu"
                   />
                   <button
                     disabled={busy || !reviewerName || !approvalNote.trim() || selectedUses.length === 0}
@@ -958,7 +958,7 @@ export default function TrainingReviewPanel({
                         note: approvalNote.trim(),
                         ...(latestApproval ? { supersedes_approval_id: latestApproval.approval_id } : {}),
                       }),
-                      "Seçilen geliştirme işlemleri onaylandı.",
+                      "Seçilen fine-tune işlemleri onaylandı.",
                     )}
                     className="btn btn-accent w-full"
                   >
@@ -972,7 +972,7 @@ export default function TrainingReviewPanel({
                   onClick={() => setRevokeOpen(true)}
                   className="btn btn-outline mt-2 w-full border-red-900 text-red-300 hover:border-red-700 hover:text-red-200"
                 >
-                  Geliştirme onayını geri al
+                  Fine-tune onayını geri al
                 </button>
               )}
               {activeDevelopmentApproval && revokeOpen && (
@@ -985,7 +985,7 @@ export default function TrainingReviewPanel({
                     maxLength={4000}
                     className="field-area"
                     placeholder="Geri alma gerekçesi"
-                    aria-label="Geliştirme onayı geri alma gerekçesi"
+                    aria-label="Fine-tune onayı geri alma gerekçesi"
                   />
                   <div className="grid grid-cols-2 gap-1.5">
                     <button
@@ -1012,7 +1012,7 @@ export default function TrainingReviewPanel({
                           setRevocationNote("");
                           return result;
                         },
-                        "Geliştirme onayı geri alındı.",
+                        "Fine-tune onayı geri alındı.",
                       )}
                       className="btn btn-danger"
                     >
@@ -1025,7 +1025,7 @@ export default function TrainingReviewPanel({
 
             {approvals.length > 0 && (
               <details className="mb-2.5 rounded-md border border-zinc-800 bg-zinc-950 p-2">
-                <summary className="cursor-pointer text-zinc-400 hover:text-zinc-200">Onay geçmişi · {approvals.length}</summary>
+                <summary className="cursor-pointer text-zinc-400 hover:text-zinc-200">Fine-tune karar geçmişi · {approvals.length}</summary>
                 <div className="mt-2 space-y-2">
                   {[...approvals].reverse().map((approval) => (
                     <div key={approval.approval_id} className="rounded-md border border-zinc-800 bg-zinc-900 p-2">

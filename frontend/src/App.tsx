@@ -119,6 +119,7 @@ export default function App() {
   const [reportT, setReportT] = useState<number | null>(null);
   const [openedFromMaintenance, setOpenedFromMaintenance] = useState(false);
   const [maintenanceRefreshToken, setMaintenanceRefreshToken] = useState(0);
+  const [maintenanceHandoffEventId, setMaintenanceHandoffEventId] = useState("");
   const [reviewRefreshToken, setReviewRefreshToken] = useState(0);
   const [fixtureMode, setFixtureMode] = useState(false);
   const [livePending, setLivePending] = useState(0);
@@ -141,12 +142,18 @@ export default function App() {
   }, []);
 
   const finishEventReview = useCallback(() => {
+    const reviewedEventId = trainingEventId;
     setTrainingEventId("");
     setTrainingReviewMode("review");
     setOpenedFromMaintenance(false);
     setReviewRefreshToken((current) => current + 1);
     setMaintenanceRefreshToken((current) => current + 1);
-  }, []);
+    setMaintenanceHandoffEventId(reviewedEventId);
+    setLiveView(false);
+    setReviewView(false);
+    setMaintenanceView(true);
+    history.replaceState(null, "", "#bakim");
+  }, [trainingEventId]);
 
   const returnToMaintenance = useCallback(() => {
     setTrainingEventId("");
@@ -424,6 +431,7 @@ export default function App() {
         setLiveView(value === "live");
         setReviewView(value === "review");
         setMaintenanceView(value === "maintenance");
+        if (value !== "maintenance") setMaintenanceHandoffEventId("");
         history.replaceState(null, "", WORKSPACE_HASH[value]);
       }}
       className={`h-full px-2.5 transition-colors ${
@@ -690,6 +698,8 @@ export default function App() {
             onReviewEvent={openMaintenanceReviewEvent}
             onOpenEvent={openMaintenanceEvent}
             refreshToken={maintenanceRefreshToken}
+            handoffEventId={maintenanceHandoffEventId}
+            onDismissHandoff={() => setMaintenanceHandoffEventId("")}
           />
         </div>
       )}
