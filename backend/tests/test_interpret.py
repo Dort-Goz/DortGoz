@@ -48,6 +48,37 @@ def test_to_report_dikkat_branch():
     assert r.events[0].severity_hint == "yuksek"
 
 
+def test_to_report_drops_camera_issue_events():
+    raw = json.dumps({
+        "durum": "dikkat", "anomaly_type": "unknown_anomaly",
+        "summary": "Kamera açısı değişti.",
+        "events": [
+            {"t": 3.0, "severity_hint": "orta", "event_type": "unknown_anomaly",
+             "desc": "Kamera açısı ani olarak değişti, görüntü sarsıntılı ve bozuldu."},
+            {"t": 9.0, "severity_hint": "yuksek", "event_type": "physical_fight",
+             "desc": "İki kişi yumruklaşıyor."},
+        ],
+        "uncertainties": [],
+    })
+    r = _to_report(0.0, 30.0, raw)
+    assert [e.event_type for e in r.events] == ["physical_fight"]
+    assert any("olay sayılmadı" in u for u in r.uncertainties)
+
+
+def test_to_report_camera_only_window_goes_normal():
+    raw = json.dumps({
+        "durum": "dikkat", "anomaly_type": "unknown_anomaly",
+        "summary": "Kamera görüntüsü bozuldu.",
+        "events": [
+            {"t": 5.0, "severity_hint": "orta", "event_type": "unknown_anomaly",
+             "desc": "Kamera görüntüsü aniden bozuldu, büyük ışık lekeleri ve bulanıklık oluştu."},
+        ],
+        "uncertainties": [],
+    })
+    r = _to_report(0.0, 30.0, raw)
+    assert r.events == [] and r.anomaly_type == "normal"
+
+
 def test_to_report_single_tier_backcompat():
     raw = json.dumps({"anomaly_type": "normal", "summary": "s", "events": [],
                       "uncertainties": []})

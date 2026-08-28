@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import math
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -495,6 +496,36 @@ def repair_truncated_json(raw: str) -> str | None:
     return raw[:cut] + "".join(reversed(cut_stack))
 
 
+_KAMERA_KONU = re.compile(r"kamera|görüntü|lens|yayın")
+_KAMERA_SORUN = re.compile(
+    r"açı(?!k)|sarsı|titre|bulanı|bozul|bozuk|distorsiyon|karanlık|karard|kararm"
+    r"|kaybol|yerinden oyna|görülemez|odak|çözünürlük|donma|dondu|kesil|parazit"
+    r"|leke|preset"
+)
+_KAMERA_TIPLER = {None, CanonicalEventType.NORMAL, CanonicalEventType.UNCERTAIN,
+                  CanonicalEventType.UNKNOWN_ANOMALY}
+
+
+def _drop_camera_issue_events(report: WindowReport) -> None:
+    kept = []
+    dropped = []
+    for event in report.events:
+        desc = event.desc.lower()
+        if (event.event_type in _KAMERA_TIPLER
+                and _KAMERA_KONU.search(desc)
+                and _KAMERA_SORUN.search(desc)):
+            dropped.append(event)
+        else:
+            kept.append(event)
+    if not dropped:
+        return
+    report.events = kept
+    report.uncertainties.extend(
+        f"kamera/yayın sorunu, olay sayılmadı: {event.desc}" for event in dropped)
+    if not kept:
+        report.anomaly_type = "normal"
+
+
 def _to_report(
     start: float,
     end: float,
@@ -557,6 +588,7 @@ def _to_report(
         report = WindowReport(window_start=start, window_end=end, **data)
         if frame_refs is not None:
             _guard_evidence_references(report, frame_refs)
+    _drop_camera_issue_events(report)
     if note:
         report.uncertainties.append(note)
     return report
