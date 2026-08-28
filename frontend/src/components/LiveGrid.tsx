@@ -5,7 +5,6 @@ import type {
 import ActionLog, { pendingActionCount } from "./ActionLog";
 import ClampText from "./ClampText";
 import ActivityBar from "./ActivityBar";
-import LiveArchive from "./LiveArchive";
 import OperatorReportDialog from "./OperatorReport";
 import TriagePanel from "./TriagePanel";
 import { startPreviewStream } from "../lib/livePreview";
@@ -64,7 +63,6 @@ function LiveGrid({
   const [active, setActive] = useState(false);
   const [error, setError] = useState("");
   const [zoom, setZoom] = useState<string | null>(null);
-  const [view, setView] = useState<"duvar" | "kayitlar">("duvar");
   const [reportFeed, setReportFeed] = useState<string | null>(null);
   const [preview, setPreview] = useState<Record<string, string>>({});
   const [previewLive, setPreviewLive] = useState(false);
@@ -200,33 +198,6 @@ function LiveGrid({
           {active ? "Canlıyı durdur" : "Canlı akışları başlat"}
         </button>
 
-        <div className="toolbar-group">
-          <span className="microlabel block">görünüm</span>
-          <nav
-            aria-label="Canlı görünümü"
-            className="flex h-7 items-center gap-0.5 rounded-sm border border-zinc-800 bg-zinc-950 p-0.5"
-          >
-            {([
-              ["duvar", "▦ Akış duvarı"],
-              ["kayitlar", "⛁ Olay kayıtları"],
-            ] as const).map(
-              ([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setView(value)}
-                  className={`h-full px-2 transition-colors ${
-                    view === value
-                      ? "bg-zinc-800 font-medium text-zinc-100"
-                      : "text-zinc-500 hover:text-zinc-200"
-                  }`}
-                >
-                  {label}
-                </button>
-              ),
-            )}
-          </nav>
-        </div>
 
         <label className="toolbar-group">
           <span className="microlabel block">kamera</span>
@@ -318,8 +289,6 @@ function LiveGrid({
       <div className="flex min-h-0 flex-1 flex-col gap-1.5 p-1.5">
 
       <div className="flex min-h-0 flex-1 gap-1.5">
-        {view === "kayitlar" ? <LiveArchive feedNames={labels} /> : (
-      <>
       <div className={`panel ${zoomed ? "w-[14vw] min-w-48 max-w-80 shrink-0" : "flex-1"}`}>
       <div className="panel-title">
         <span>{zoomed ? "Diğer akışlar" : "Akış Duvarı"}</span>
@@ -416,8 +385,6 @@ function LiveGrid({
           onReport={() => setReportFeed(zoomed.name)}
           onClose={() => setZoom(null)}
         />
-      )}
-      </>
       )}
       <TriagePanel
         user={user}
