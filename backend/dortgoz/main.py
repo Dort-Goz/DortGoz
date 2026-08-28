@@ -609,8 +609,20 @@ async def triage_report(body: OperatorReportInput) -> dict:
 
 @app.post("/api/live/start")
 async def live_start(body: dict | None = None) -> list[dict]:
+    payload = body or {}
+    feeds = None
     try:
-        statuses = await _live_service().start(mode=(body or {}).get("mode", ""))
+        count = int(payload.get("count") or 0)
+        width = int(payload.get("width") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="count ve width tam sayı olmalı")
+    if count > 0:
+        feeds = load_feeds()[:count]
+    if width > 0:
+        settings.video_input_width = max(240, min(1280, width))
+    try:
+        statuses = await _live_service().start(
+            mode=payload.get("mode", ""), feeds=feeds)
     except (RuntimeError, FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     return [vars(s) for s in statuses]

@@ -249,46 +249,79 @@ export function PendingCard({
     }
   };
 
-  const headerBlock = (
-      <div className="flex items-center gap-2">
-        {item.thumbnail && !modal && (
-          <img src={item.thumbnail} alt="" className="h-10 w-14 rounded-sm object-cover" />
-        )}
-        <div className="min-w-0">
-          {!modal && (
-            <div className="truncate font-medium text-zinc-200" title={item.title}>
-              {CATEGORY_TR[item.model_category] ?? item.model_category}
-            </div>
+  const winStart = item.event_start ?? item.clip_start;
+  const winEnd = item.event_end ?? item.clip_end;
+  const eventWindow = winStart != null && winEnd != null
+    ? `${clock(winStart)}–${clock(winEnd)}`
+    : "";
+  const bandChip = (
+    <span
+      className={`chip shrink-0 ${severityClass(item.intervention_band)}`}
+      title={item.intervention_reasons.join("\n")}
+    >
+      <span className="font-mono">{item.intervention_score}</span> · {severityLabel(item.intervention_band)}
+    </span>
+  );
+  const extraChips = (item.sample || item.tekrar > 1) && (
+    <div className="mt-1 flex flex-wrap gap-1">
+      {item.sample && <span className="chip chip-dusuk">denetim örneği</span>}
+      {item.tekrar > 1 && (
+        <span className="chip chip-notr"
+              title="Aynı kameradan aynı sınıfta tekrar tespit — tek kartta birleştirildi">
+          ×<span className="font-mono">{item.tekrar}</span>
+        </span>
+      )}
+    </div>
+  );
+
+  const headerBlock = !modal ? (
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          {item.thumbnail && (
+            <img src={item.thumbnail} alt="" className="h-10 w-14 shrink-0 rounded-sm object-cover" />
           )}
-          {!modal && (
-            <div className="truncate text-zinc-400" title={feedLabel}>
-              {feedLabel}
-            </div>
-          )}
-          {modal && <div className="text-zinc-300">{item.title}</div>}
-          {(item.event_start ?? item.clip_start) != null
-            && (item.event_end ?? item.clip_end) != null && (
-            <div className="text-zinc-500">
-              olay{" "}
-              <span className="font-mono text-sky-300">
-                {clock((item.event_start ?? item.clip_start)!)}
-                –{clock((item.event_end ?? item.clip_end)!)}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline gap-1.5">
+              {bandChip}
+              <span className="min-w-0 truncate font-medium text-zinc-200">
+                {CATEGORY_TR[item.model_category] ?? item.model_category}
+                {eventWindow && (
+                  <span className="font-mono text-zinc-400"> @ {eventWindow}</span>
+                )}
               </span>
-              {modal && (
-                <> · zirve <span className="font-mono text-zinc-400">{clock(item.t)}</span></>
-              )}
+            </div>
+            <div className="truncate text-zinc-400" title={feedLabel}>{feedLabel}</div>
+            {extraChips}
+          </div>
+          {onSeek && item.video && !item.live && !onOpen && (
+            <button
+              onClick={() => onSeek(item.feed, item.t, item.video, item.live)}
+              className="btn btn-sm btn-outline-accent shrink-0"
+              title="Videoyu olay anına götür"
+            >
+              ▶ videoda aç
+            </button>
+          )}
+        </div>
+        <ClampText
+          text={item.title}
+          lines={3}
+          className="text-[11px] leading-snug text-zinc-500"
+        />
+      </div>
+  ) : (
+      <div className="flex items-center gap-2">
+        <div className="min-w-0">
+          <div className="text-zinc-300">{item.title}</div>
+          {eventWindow && (
+            <div className="text-zinc-500">
+              olay <span className="font-mono text-sky-300">{eventWindow}</span>
+              {" · "}zirve <span className="font-mono text-zinc-400">{clock(item.t)}</span>
             </div>
           )}
           <div className="mt-1 flex flex-wrap gap-1">
-            <span
-              className={`chip ${severityClass(item.intervention_band)}`}
-              title={item.intervention_reasons.join("\n")}
-            >
-              <span className="font-mono">{item.intervention_score}</span> · {severityLabel(item.intervention_band)}
-            </span>
-            {item.sample && (
-              <span className="chip chip-dusuk">denetim örneği</span>
-            )}
+            {bandChip}
+            {item.sample && <span className="chip chip-dusuk">denetim örneği</span>}
             {item.tekrar > 1 && (
               <span className="chip chip-notr"
                     title="Aynı kameradan aynı sınıfta tekrar tespit — tek kartta birleştirildi">
@@ -297,15 +330,6 @@ export function PendingCard({
             )}
           </div>
         </div>
-        {onSeek && item.video && !item.live && !modal && !onOpen && (
-          <button
-            onClick={() => onSeek(item.feed, item.t, item.video, item.live)}
-            className="btn btn-sm btn-outline-accent ml-auto shrink-0"
-            title="Videoyu olay anına götür"
-          >
-            ▶ videoda aç
-          </button>
-        )}
       </div>
   );
 

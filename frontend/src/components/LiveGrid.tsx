@@ -72,6 +72,17 @@ function LiveGrid({
     setRate(v);
     localStorage.setItem("dortgoz.canliKareOrani", String(v));
   };
+  const [available, setAvailable] = useState(0);
+  const [count, setCount] = useState<number>(() =>
+    Number(localStorage.getItem("dortgoz.canliKameraSayisi") || 0));
+  const [width, setWidth] = useState<number>(() =>
+    Number(localStorage.getItem("dortgoz.canliCozunurluk") || 0));
+  const [columns, setColumns] = useState<number>(() =>
+    Number(localStorage.getItem("dortgoz.canliSutun") || 0));
+  const remember = (key: string, set: (v: number) => void) => (v: number) => {
+    set(v);
+    localStorage.setItem(key, String(v));
+  };
 
   useEffect(() => {
     let alive = true;
@@ -89,13 +100,22 @@ function LiveGrid({
     return () => { alive = false; clearInterval(id); };
   }, []);
 
+  useEffect(() => {
+    fetch("/api/live/feeds")
+      .then((r) => r.json())
+      .then((list: unknown[]) => setAvailable(Array.isArray(list) ? list.length : 0))
+      .catch(() => setAvailable(0));
+  }, []);
+
   const start = useCallback(async () => {
     setError("");
     const r = await fetch("/api/live/start", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ count, width }),
     });
     if (!r.ok) setError((await r.json()).detail ?? r.statusText);
-  }, []);
+  }, [count, width]);
 
   const stop = useCallback(async () => {
     await fetch("/api/live/stop", { method: "POST" });
@@ -183,6 +203,55 @@ function LiveGrid({
         </div>
 
         <label className="toolbar-group">
+          <span className="microlabel block">kamera</span>
+          <select
+            value={count}
+            disabled={active}
+            onChange={(e) => remember("dortgoz.canliKameraSayisi", setCount)(
+              Number(e.target.value))}
+            title="Kaç kamera çalışsın — az kamera analiz gecikmesini düşürür"
+            className="field w-28"
+          >
+            <option value={0}>tümü{available ? ` (${available})` : ""}</option>
+            {[2, 3, 4, 6, 9, 12, 16]
+              .filter((n) => !available || n < available)
+              .map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+
+        <label className="toolbar-group">
+          <span className="microlabel block">çözünürlük</span>
+          <select
+            value={width}
+            disabled={active}
+            onChange={(e) => remember("dortgoz.canliCozunurluk", setWidth)(
+              Number(e.target.value))}
+            title="Modele giden kare genişliği — düşük değer hızlandırır, uzak nesnede doğruluk düşer"
+            className="field w-24"
+          >
+            <option value={0}>varsayılan</option>
+            <option value={360}>360 px</option>
+            <option value={540}>540 px</option>
+            <option value={720}>720 px</option>
+            <option value={960}>960 px</option>
+          </select>
+        </label>
+
+        <label className="toolbar-group">
+          <span className="microlabel block">sütun</span>
+          <select
+            value={columns}
+            onChange={(e) => remember("dortgoz.canliSutun", setColumns)(
+              Number(e.target.value))}
+            title="Duvardaki sütun sayısı — az sütun büyük kutucuk"
+            className="field w-24"
+          >
+            <option value={0}>otomatik</option>
+            {[1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+
+        <label className="toolbar-group">
           <span className="microlabel block">kare tazeleme</span>
           <select
             value={rate}
@@ -239,7 +308,7 @@ function LiveGrid({
         className="panel-body grid content-start gap-1 p-1.5"
         style={{
           gridTemplateColumns: `repeat(${
-            zoomed ? 1 : Math.max(1, Math.ceil(Math.sqrt(feeds.length)))
+            zoomed ? 1 : columns || Math.max(1, Math.ceil(Math.sqrt(feeds.length)))
           }, minmax(0, 1fr))`,
         }}
       >

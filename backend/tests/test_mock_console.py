@@ -82,6 +82,25 @@ def test_live_endpoints_in_mock(tmp_path, monkeypatch):
         assert client.get("/api/live/status").json()["active"] is False
 
 
+def test_live_start_limits_feed_count_and_clamps_width(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "mock", True)
+    monkeypatch.setattr(settings, "mock_speed", 500.0)
+    monkeypatch.setattr(settings, "media_dir", tmp_path)
+    monkeypatch.setattr(settings, "video_input_width", 540)
+    with TestClient(app) as client:
+        started = client.post("/api/live/start", json={"count": 2, "width": 9999})
+        assert started.status_code == 200
+        assert len(started.json()) == 2
+        assert settings.video_input_width == 1280
+        client.post("/api/live/stop")
+
+        client.post("/api/live/start", json={"width": 10})
+        assert settings.video_input_width == 240
+        client.post("/api/live/stop")
+
+        assert client.post("/api/live/start", json={"count": "abc"}).status_code == 422
+
+
 def test_placeholder_frame_is_svg():
     body = placeholder_frame(12.5)
     assert body.startswith(b"<svg") and b"12.5" in body
