@@ -239,8 +239,8 @@ function LiveGrid({
             className="field w-28"
           >
             <option value={0}>tümü{available ? ` (${available})` : ""}</option>
-            {[2, 3, 4, 6, 9, 12, 16]
-              .filter((n) => !available || n < available)
+            {[2, 3, 4, 6, 9, 12, 16, 25]
+              .filter((n) => !available || n <= available)
               .map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
