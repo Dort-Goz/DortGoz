@@ -644,13 +644,6 @@ export default function TriagePanel({
     localStorage.setItem("dortgoz.uyariSesi", muted ? "kapali" : "acik");
   }, [muted]);
 
-  const loadSnapshot = useCallback(async () => {
-    const response = await fetch("/api/triage");
-    if (!response.ok) throw new Error("İnceleme kayıtları alınamadı.");
-    setSnap(await response.json());
-    setError("");
-  }, []);
-
   useEffect(() => {
     let alive = true;
     const poll = async () => {
@@ -727,34 +720,6 @@ export default function TriagePanel({
     setSnap(body);
   };
 
-  const requestAction = async (item: TriageItem, action: string) => {
-    setError("");
-    let response: Response;
-    try {
-      response = await fetch("/api/actions/request", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action,
-          incident_id: item.incident_id,
-          feed: item.feed,
-        }),
-      });
-    } catch {
-      setError("Aksiyon taslağı sunucuya iletilemedi.");
-      return;
-    }
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      setError(body.detail || "Aksiyon taslağı istenemedi.");
-      return;
-    }
-    try {
-      await loadSnapshot();
-    } catch {
-    }
-  };
-
   const inScope = useCallback(
     (item: TriageItem) =>
       (scopeFeed === undefined || item.feed === scopeFeed)
@@ -817,10 +782,6 @@ export default function TriagePanel({
     );
   }
   const pending = scopedPending;
-  const startable = snap.confirmed.filter(
-    (item) => inScope(item)
-      && (item.suggested_actions ?? []).some((s) => s.status === "available"),
-  );
   const alertStack = (
     <LiveAlerts
       alerts={alerts}
@@ -931,32 +892,6 @@ export default function TriagePanel({
           )}
         </div>
         <div className="flex min-h-0 flex-1 flex-col">
-          {startable.length > 0 && (
-            <div className="shrink-0 space-y-1 border-b border-zinc-800 p-1.5 text-xs">
-              <div className="microlabel">Doğrulanan olay · yerel taslak başlat</div>
-              {startable.map((i) => (
-                <div key={i.key} className="flex flex-wrap items-center gap-1">
-                  <span className="min-w-0 flex-1 truncate text-zinc-300"
-                        title={i.title}>
-                    {CATEGORY_TR[i.operator_category] ?? i.operator_category}
-                    {" · "}{feedNames[i.feed] || i.feed || "ana akış"}
-                  </span>
-                  {(i.suggested_actions ?? [])
-                    .filter((suggestion) => suggestion.status === "available")
-                    .map((suggestion) => (
-                      <button
-                        key={suggestion.action}
-                        onClick={() => requestAction(i, suggestion.action)}
-                        className="btn btn-sm btn-outline-warn"
-                        title="Yalnız operatör onayına gidecek yerel taslak isteği oluşturur"
-                      >
-                        + {suggestion.label}
-                      </button>
-                    ))}
-                </div>
-              ))}
-            </div>
-          )}
           {logPanel}
         </div>
       </div>

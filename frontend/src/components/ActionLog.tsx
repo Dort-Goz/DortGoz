@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useEffect, useState } from "react";
 import type { ActuatorRequest, ActuatorResult } from "../types/events";
 import ClampText from "./ClampText";
 import { categoryLabel, severityClass, severityLabel } from "../lib/labels";
@@ -22,6 +22,108 @@ function resultLabel(result: ActuatorResult): { text: string; cls: string } {
     : { text: "REDDEDİLDİ", cls: "text-zinc-400" };
 }
 
+interface StartableSuggestion {
+  action: string;
+  label: string;
+  status: string;
+}
+
+interface StartableItem {
+  key: string;
+  feed: string;
+  live: boolean;
+  title: string;
+  incident_id: string;
+  operator_category: string;
+  suggested_actions?: StartableSuggestion[];
+}
+
+export function ManualActionStrip({ scopeLive, feedNames = {} }: {
+  scopeLive: boolean;
+  feedNames?: Record<string, string>;
+}) {
+  const [confirmed, setConfirmed] = useState<StartableItem[]>([]);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    const poll = async () => {
+      try {
+        const response = await fetch("/api/triage");
+        if (!response.ok) throw new Error();
+        const snap = await response.json();
+        if (alive) {
+          setConfirmed((snap.confirmed ?? []).filter(
+            (item: StartableItem) => item.live === scopeLive,
+          ));
+        }
+      } catch {
+      }
+    };
+    poll();
+    const id = setInterval(poll, 2500);
+    return () => { alive = false; clearInterval(id); };
+  }, [scopeLive]);
+
+  const requestAction = async (item: StartableItem, action: string) => {
+    setError("");
+    let response: Response;
+    try {
+      response = await fetch("/api/actions/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          incident_id: item.incident_id,
+          feed: item.feed,
+        }),
+      });
+    } catch {
+      setError("Aksiyon taslağı sunucuya iletilemedi.");
+      return;
+    }
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      setError(body.detail || "Aksiyon taslağı istenemedi.");
+    }
+  };
+
+  const startable = confirmed.filter(
+    (item) => (item.suggested_actions ?? []).some((s) => s.status === "available"),
+  );
+  if (startable.length === 0 && !error) return null;
+  return (
+    <div className="shrink-0 space-y-1 border-b border-zinc-800 p-1.5 text-xs">
+      <div className="microlabel">Doğrulanan olay · yerel taslak başlat</div>
+      {error && (
+        <div className="rounded-sm border border-red-900 bg-red-950/40 px-2 py-1 text-red-200">
+          {error}
+        </div>
+      )}
+      {startable.map((item) => (
+        <div key={item.key} className="flex flex-wrap items-center gap-1">
+          <span className="min-w-0 flex-1 truncate text-zinc-300" title={item.title}>
+            {categoryLabel(item.operator_category)}
+            {" · "}{feedNames[item.feed] || item.feed || "ana akış"}
+          </span>
+          {(item.suggested_actions ?? [])
+            .filter((suggestion) => suggestion.status === "available")
+            .map((suggestion) => (
+              <button
+                key={suggestion.action}
+                onClick={() => requestAction(item, suggestion.action)}
+                className="btn btn-sm btn-outline-warn"
+                title="Yalnız operatör onayına gidecek yerel taslak isteği oluşturur"
+              >
+                + {suggestion.label}
+              </button>
+            ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function pendingActionCount(
   requests: ActuatorRequest[], results: ActuatorResult[],
 ): number {
@@ -30,12 +132,14 @@ export function pendingActionCount(
 }
 
 function ActionLog({
-  requests, results, onRespond, bare = false,
+  requests, results, onRespond, bare = false, manualScope, feedNames,
 }: {
   requests: ActuatorRequest[];
   results: ActuatorResult[];
   onRespond: (request_id: string, approved: boolean) => void;
   bare?: boolean;
+  manualScope?: "live" | "analysis";
+  feedNames?: Record<string, string>;
 }) {
   const resolved = new Map(results.map((result) => [result.request_id, result]));
   const pendingCount = pendingActionCount(requests, results);
@@ -123,7 +227,11 @@ function ActionLog({
       </div>
   );
 
-  if (bare) return body;
+  const strip = manualScope
+    ? <ManualActionStrip scopeLive={manualScope === "live"} feedNames={feedNames} />
+    : null;
+
+  if (bare) return <>{strip}{body}</>;
 
   return (
     <div className="panel h-full flex-1">
@@ -135,6 +243,7 @@ function ActionLog({
           </span>
         )}
       </div>
+      {strip}
       {body}
     </div>
   );

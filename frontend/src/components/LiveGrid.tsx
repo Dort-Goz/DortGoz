@@ -398,6 +398,8 @@ function LiveGrid({
             requests={actionRequests}
             results={actionResults}
             onRespond={onRespond}
+            manualScope="live"
+            feedNames={labels}
           />
         )}
       />

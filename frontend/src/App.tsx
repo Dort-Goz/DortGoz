@@ -662,6 +662,7 @@ export default function App() {
             requests={analysisActionRequests}
             results={analysisActionResults}
             onRespond={send.actuator}
+            manualScope="analysis"
           />
         </div>
       </div>
