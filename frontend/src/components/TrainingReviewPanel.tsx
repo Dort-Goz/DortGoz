@@ -97,6 +97,8 @@ const clock = (seconds: number) => {
   return `${String(minutes).padStart(2, "0")}:${rest.toFixed(1).padStart(4, "0")}`;
 };
 
+export type TrainingReviewMode = "review" | "maintenance";
+
 function messageOf(error: unknown): string {
   if (error instanceof ApiError && error.code === "TRAINING_MEDIA_MISSING") {
     return "Video bu bilgisayarda yok. Bu adımı videonun bulunduğu bilgisayarda çalıştırın.";
@@ -245,14 +247,18 @@ function BoxEditor({
 export default function TrainingReviewPanel({
   user,
   eventId,
+  mode,
   onClose,
   onBack,
+  onReviewSaved,
 }: {
   /** Konsolun tek kimliği; üst çubuktan gelir ve kararı imzalar. */
   user: string;
   eventId: string;
+  mode: TrainingReviewMode;
   onClose: () => void;
   onBack?: () => void;
+  onReviewSaved?: () => void;
 }) {
   const [canonicalEvent, setCanonicalEvent] = useState<CanonicalEvent | null>(null);
   const [reviews, setReviews] = useState<HumanReview[]>([]);
@@ -284,21 +290,26 @@ export default function TrainingReviewPanel({
 
   const load = useCallback(async () => {
     setError("");
-    const [
-      eventResult,
-      reviewResult,
-      approvalResult,
-      sampleResult,
-      mediaResult,
-      learningResult,
-    ] = await Promise.all([
+    const corePromise = Promise.all([
       getCanonicalEvent(eventId),
       getEventReviews(eventId),
-      getDevelopmentApprovals(eventId),
-      getTrainingSamples(eventId),
       getIncidentMedia(eventId),
-      getLearningPlan(eventId),
     ]);
+    const maintenancePromise = mode === "maintenance"
+      ? Promise.all([
+        getDevelopmentApprovals(eventId),
+        getTrainingSamples(eventId),
+        getLearningPlan(eventId),
+      ])
+      : Promise.resolve([
+        [] as DevelopmentApproval[],
+        [] as TrainingSample[],
+        null as LearningPlan | null,
+      ] as const);
+    const [
+      [eventResult, reviewResult, mediaResult],
+      [approvalResult, sampleResult, learningResult],
+    ] = await Promise.all([corePromise, maintenancePromise]);
     setCanonicalEvent(eventResult);
     setReviews(reviewResult);
     setApprovals(approvalResult);
@@ -311,7 +322,7 @@ export default function TrainingReviewPanel({
       latestDevelopment?.status === "approved"
         && latestDevelopment.review_id === latest?.review_id
         ? latestDevelopment.approved_uses
-        : learningResult.routes
+        : (learningResult?.routes ?? [])
           .filter((route) => route.recommended && route.use !== "camera_rule")
           .map((route) => route.use),
     );
@@ -351,7 +362,7 @@ export default function TrainingReviewPanel({
       peak: eventResult.peak_time ?? (start + end) / 2,
       end,
     });
-  }, [eventId]);
+  }, [eventId, mode]);
 
   useEffect(() => {
     load().catch((reason) => setError(messageOf(reason)));
@@ -442,11 +453,21 @@ export default function TrainingReviewPanel({
     setNotice("");
   };
 
+  const completeReview = async (
+    operation: () => Promise<unknown>,
+    success: string,
+  ) => {
+    const completed = await run(operation, success);
+    if (completed) onReviewSaved?.();
+  };
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
       <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 shadow-2xl">
         <header className="flex shrink-0 items-center gap-3 border-b border-zinc-800 px-4 py-3">
-          <h2 className="text-sm font-semibold text-zinc-100">Olayı İncele</h2>
+          <h2 className="text-sm font-semibold text-zinc-100">
+            {mode === "review" ? "Olayı İncele" : "Bakım Kaydı"}
+          </h2>
           <div className="ml-auto flex items-center gap-2">
             {onBack && (
               <button type="button" onClick={onBack} className="btn btn-outline">
@@ -461,6 +482,7 @@ export default function TrainingReviewPanel({
 
         <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[23rem_minmax(0,1fr)] lg:overflow-hidden">
           <aside className="border-b border-zinc-800 p-3 text-xs lg:overflow-y-auto lg:border-b-0 lg:border-r">
+            {mode === "review" && (
             <section className="mb-3 rounded-md bg-zinc-900 p-3">
               {!reviewPending ? (
                 <div className="flex items-center justify-between gap-3">
@@ -488,7 +510,7 @@ export default function TrainingReviewPanel({
                     <button
                       type="button"
                       disabled={busy || !reviewerName}
-                      onClick={() => run(
+                      onClick={() => void completeReview(
                         () => saveEventReview(eventId, {
                           decision: "confirm",
                           reviewer: reviewerName,
@@ -514,7 +536,7 @@ export default function TrainingReviewPanel({
                     <button
                       type="button"
                       disabled={busy || !reviewerName}
-                      onClick={() => run(
+                      onClick={() => void completeReview(
                         () => saveEventReview(eventId, {
                           decision: "reject",
                           reviewer: reviewerName,
@@ -532,8 +554,12 @@ export default function TrainingReviewPanel({
                 </div>
               )}
             </section>
+            )}
 
-            {!reviewPending && latestReview && recommendedApprovalUses.length > 0 && (
+            {mode === "maintenance"
+              && !reviewPending
+              && latestReview
+              && recommendedApprovalUses.length > 0 && (
               <section className={`mb-3 rounded-md p-3 ${
                 activeDevelopmentApproval
                   ? "border border-emerald-900 bg-emerald-950/30"
@@ -614,7 +640,7 @@ export default function TrainingReviewPanel({
               </section>
             )}
 
-            {reviewOpen && canonicalEvent && (
+            {mode === "review" && reviewOpen && canonicalEvent && (
               <div className="mb-2.5 space-y-2 rounded-md border border-amber-900 bg-amber-950 p-2.5">
                 <div className="flex items-center justify-between">
                   <p className="text-amber-200">
@@ -725,7 +751,7 @@ export default function TrainingReviewPanel({
                 </label>
                 <button
                   disabled={busy || !canSaveReview}
-                  onClick={() => run(
+                  onClick={() => void completeReview(
                     () => saveEventReview(eventId, {
                       decision: reviewVerdict === "anomali" ? "edit" : "reject",
                       reviewer: reviewerName,
@@ -763,7 +789,9 @@ export default function TrainingReviewPanel({
               </summary>
               <div className="mt-3 space-y-2.5">
                 <p className="text-[10px] leading-relaxed text-zinc-600">
-                  Geçmiş kararlar ve geliştirme ekibi araçları bu alandadır.
+                  {mode === "review"
+                    ? "Önceki insan kararları bu alandadır."
+                    : "İnsan kararı bağlamı ve bakım araçları bu alandadır."}
                 </p>
                 <p className="text-zinc-500">
                   İşlemi yapan: <span className="text-zinc-300">{reviewerName || "—"}</span>
@@ -798,6 +826,8 @@ export default function TrainingReviewPanel({
               </details>
             )}
 
+            {mode === "maintenance" && (
+              <>
             {learningPlan && (
               <div className="mb-2.5 space-y-2 rounded-md border border-sky-900 bg-zinc-900 p-2.5">
                 <div className="font-medium text-sky-300">Bu olay için geliştirme önerileri</div>
@@ -1068,6 +1098,8 @@ export default function TrainingReviewPanel({
                 ))}
               </div>
             </div>
+              </>
+            )}
               </div>
             </details>
           </aside>
@@ -1102,7 +1134,7 @@ export default function TrainingReviewPanel({
                 </video>
               </section>
             )}
-            {selected && (
+            {mode === "maintenance" && selected && (
               <div className="mx-auto max-w-4xl space-y-3">
                 <div className="flex items-center gap-2 text-xs text-zinc-400">
                   <span className="chip bg-zinc-800 text-zinc-300">

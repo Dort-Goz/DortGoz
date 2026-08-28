@@ -113,9 +113,13 @@ export default function App() {
     () => localStorage.getItem("dortgoz.reviewer") ?? "operator",
   );
   const [trainingEventId, setTrainingEventId] = useState("");
+  const [trainingReviewMode, setTrainingReviewMode] = useState<"review" | "maintenance">(
+    "review",
+  );
   const [reportT, setReportT] = useState<number | null>(null);
   const [openedFromMaintenance, setOpenedFromMaintenance] = useState(false);
   const [maintenanceRefreshToken, setMaintenanceRefreshToken] = useState(0);
+  const [reviewRefreshToken, setReviewRefreshToken] = useState(0);
   const [fixtureMode, setFixtureMode] = useState(false);
   const [livePending, setLivePending] = useState(0);
   const [resolvedKeys, setResolvedKeys] = useState<string[]>([]);
@@ -132,11 +136,21 @@ export default function App() {
 
   const closeTrainingReview = useCallback(() => {
     setTrainingEventId("");
+    setTrainingReviewMode("review");
     setOpenedFromMaintenance(false);
+  }, []);
+
+  const finishEventReview = useCallback(() => {
+    setTrainingEventId("");
+    setTrainingReviewMode("review");
+    setOpenedFromMaintenance(false);
+    setReviewRefreshToken((current) => current + 1);
+    setMaintenanceRefreshToken((current) => current + 1);
   }, []);
 
   const returnToMaintenance = useCallback(() => {
     setTrainingEventId("");
+    setTrainingReviewMode("review");
     setOpenedFromMaintenance(false);
     setMaintenanceRefreshToken((current) => current + 1);
     setLiveView(false);
@@ -147,8 +161,23 @@ export default function App() {
 
   const openMaintenanceEvent = useCallback((eventId: string) => {
     setOpenedFromMaintenance(true);
+    setTrainingReviewMode("maintenance");
     setTrainingEventId(eventId);
   }, []);
+
+  const openReviewEvent = useCallback((eventId: string) => {
+    setOpenedFromMaintenance(false);
+    setTrainingReviewMode("review");
+    setTrainingEventId(eventId);
+  }, []);
+
+  const openEventInMaintenance = useCallback((eventId: string) => {
+    setLiveView(false);
+    setReviewView(false);
+    setMaintenanceView(true);
+    history.replaceState(null, "", "#bakim");
+    openMaintenanceEvent(eventId);
+  }, [openMaintenanceEvent]);
 
   useEffect(() => {
     const socket = new DortgozSocket(
@@ -552,16 +581,16 @@ export default function App() {
           <button
             onClick={() => {
               if (feed.highlight && run?.run_id) {
-                setTrainingEventId(`${run.run_id}:${feed.highlight.incident_id}`);
+                openReviewEvent(`${run.run_id}:${feed.highlight.incident_id}`);
               }
             }}
             disabled={!detailReady}
             title={detailReady
-              ? "Seçili olayı insan incelemesine aç"
+              ? "Seçili olay için kararı ver veya değiştir"
               : "Önce analizi bitirin ve bir olay seçin"}
             className="btn btn-outline-accent"
           >
-            ◎ ayrıntılı incele
+            ◎ olayı incele
           </button>
           <button
             onClick={() => { if (exportRunId) location.href = `/api/runs/${exportRunId}/export`; }}
@@ -641,7 +670,11 @@ export default function App() {
 
       {workspace === "review" && (
         <div className="flex min-h-0 flex-1 flex-col">
-          <ReviewConsole onOpenTraining={setTrainingEventId} />
+          <ReviewConsole
+            onReviewEvent={openReviewEvent}
+            onOpenMaintenance={openEventInMaintenance}
+            refreshToken={reviewRefreshToken}
+          />
         </div>
       )}
       {workspace === "maintenance" && (
@@ -671,8 +704,10 @@ export default function App() {
         <TrainingReviewPanel
           user={user}
           eventId={trainingEventId}
-          onClose={closeTrainingReview}
+          mode={trainingReviewMode}
+          onClose={openedFromMaintenance ? returnToMaintenance : closeTrainingReview}
           onBack={openedFromMaintenance ? returnToMaintenance : undefined}
+          onReviewSaved={finishEventReview}
         />
       )}
     </div>

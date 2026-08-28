@@ -51,7 +51,9 @@ describe("olay inceleme merkezi", () => {
 
     // Sayfa adı artık üst çubuktaki sekmededir; panelin içinde başlık hücresi yok.
     expect(console_).toContain('className="toolbar"');
-    expect(app).toContain("<ReviewConsole onOpenTraining={setTrainingEventId} />");
+    expect(app).toContain("onReviewEvent={openReviewEvent}");
+    expect(app).toContain("onOpenMaintenance={openEventInMaintenance}");
+    expect(app).toContain("refreshToken={reviewRefreshToken}");
     expect(app).toContain('["analysis", "Analiz"]');
     expect(app).toContain('["live", "Canlı"]');
     expect(app).toContain('["review", "Olay inceleme"]');
@@ -67,6 +69,8 @@ describe("olay inceleme merkezi", () => {
     expect(panel).toContain("Doğrulanan olay · yerel taslak başlat");
     expect(panel).toContain("if (!r.ok) throw new Error()");
     expect(panel).toContain("İnceleme kayıtları alınamadı. Bağlantıyı denetleyin.");
+    expect(console_).toContain('open.verdict ? "Kararı değiştir" : "Karar ver"');
+    expect(console_).toContain("Bakımda aç →");
   });
 
   test("inceleme merkezi kaynak, durum ve aciliyet süzgeçlerini sunar", () => {

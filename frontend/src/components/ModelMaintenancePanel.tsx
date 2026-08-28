@@ -29,6 +29,11 @@ import type {
 } from "../types/domain";
 import type { CanonicalEventType } from "../types/events";
 
+/** İnsan olay kararı Olay inceleme'de verilir; Bakım bu karardan sonra başlar. */
+export const MAINTENANCE_STAGE_ORDER = STAGE_ORDER.filter(
+  (stage): stage is Exclude<PipelineStage, "review"> => stage !== "review",
+);
+
 const BAND_TR = {
   low: "Düşük",
   medium: "Orta",
@@ -117,12 +122,15 @@ export default function ModelMaintenancePanel({
     return () => clearInterval(id);
   }, [jobRunning, load]);
 
+  const maintenanceStages = useMemo(
+    () => view?.stages.filter((item) => item.stage !== "review") ?? [],
+    [view],
+  );
   const active: PipelineStage = stage
-    ?? (view ? firstActionableStage(view.stages) : "review");
+    ?? (view ? firstActionableStage(maintenanceStages) : "approval");
 
   const visibleEvents = useMemo(() => {
     if (!view) return [];
-    if (active === "review") return view.review_items.slice(0, THUMBNAIL_LIMIT);
     if (active === "approval") return view.approval_items.slice(0, THUMBNAIL_LIMIT);
     return [];
   }, [view, active]);
@@ -197,7 +205,7 @@ export default function ModelMaintenancePanel({
             aria-label="Bakım aşamaları"
             className="flex h-7 items-center gap-0.5 rounded-sm border border-zinc-800 bg-zinc-950 p-0.5"
           >
-            {STAGE_ORDER.map((name) => {
+            {MAINTENANCE_STAGE_ORDER.map((name) => {
               const summary = view.stages.find((item) => item.stage === name);
               const count = summary?.count ?? 0;
               const blocked = summary?.blocked_count ?? 0;
@@ -282,24 +290,6 @@ export default function ModelMaintenancePanel({
         </div>
 
         <div className="panel-body space-y-2 p-2">
-          {active === "review" && (
-            view.review_items.length === 0 ? (
-              <Empty>İnceleme bekleyen olay yok.</Empty>
-            ) : (
-              <>
-                {view.review_items.map((item) => (
-                  <EventCard
-                    key={item.event_id}
-                    item={item}
-                    media={media[item.event_id]}
-                    onOpen={onOpenEvent}
-                  />
-                ))}
-                <Truncated shown={view.review_items.length} total={stageCount("review")} />
-              </>
-            )
-          )}
-
           {active === "approval" && (
             view.approval_items.length === 0 ? (
               <Empty>Onay bekleyen olay yok.</Empty>

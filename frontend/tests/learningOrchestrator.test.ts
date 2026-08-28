@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { maintenanceSource } from "./maintenanceSource";
+import { MAINTENANCE_STAGE_ORDER } from "../src/components/ModelMaintenancePanel";
 import { readFileSync } from "node:fs";
 import {
   approvalWaitingCount,
@@ -130,10 +131,13 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(source).toContain("presentation.technicalComponent");
     expect(source).not.toContain("presentation.title");
     expect(source).toContain("Besleyeceği bileşenler");
-    expect(source).toContain("İnceleme bekleyen olay yok.");
     expect(source).toContain("Onay bekleyen olay yok.");
     expect(source).toContain("refreshToken: number;");
     expect(source).toContain("[load, refreshToken]");
+    expect(MAINTENANCE_STAGE_ORDER).toEqual([
+      "approval", "queue", "training", "measurement", "promotion",
+    ]);
+    expect(source).not.toContain('active === "review"');
   });
 
   test("teknik ayrıntılar kapalı bölümde kalır ve öğrenme kendi çalışma alanıdır", () => {
@@ -165,7 +169,7 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(detail).toContain("Onay ver ve geri dön");
   });
 
-  test("olay ayrıntısını tek karar ve tek onay akışına indirir", () => {
+  test("olay kararıyla bakım iznini ayrı görev kiplerinde tutar", () => {
     const detail = readFileSync(
       new URL("../src/components/TrainingReviewPanel.tsx", import.meta.url),
       "utf8",
@@ -192,14 +196,20 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(detail).toContain("Kayıt geliştirme kuyruğundan çıkarıldı.");
     expect(detail).toContain("Onay ver ve kapat");
     expect(detail).toContain("approved_uses: recommendedApprovalUses");
+    expect(detail).toContain('export type TrainingReviewMode = "review" | "maintenance";');
+    expect(detail).toContain('mode === "review"');
+    expect(detail).toContain('mode === "maintenance"');
+    expect(detail).toContain("onReviewSaved?.()");
     expect(detail).toContain("const reviewPending = latestReview === null || reviewRestarted;");
     expect(detail).toContain("onClick={restartReview}");
     expect(detail).toContain("{!reviewPending ? (");
-    expect(detail).toContain("{!reviewPending && latestReview && recommendedApprovalUses.length > 0 && (");
+    expect(detail).toContain('mode === "maintenance"');
+    expect(detail).toContain("&& recommendedApprovalUses.length > 0 && (");
     expect(detail).toContain('setReviewNote("");');
     expect(detail).toContain('setIntervention("");');
     expect(detail).toContain("Diğer bilgiler");
-    expect(detail).toContain("Geçmiş kararlar ve geliştirme ekibi araçları bu alandadır.");
+    expect(detail).toContain("Önceki insan kararları bu alandadır.");
+    expect(detail).toContain("İnsan kararı bağlamı ve bakım araçları bu alandadır.");
     expect(detail).not.toContain("Olay İnceleme ve Geliştirme Hazırlığı");
     expect(detail).not.toContain("Sol taraftaki adımları tamamlayın");
   });

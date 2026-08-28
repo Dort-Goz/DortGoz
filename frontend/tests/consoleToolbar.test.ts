@@ -13,7 +13,7 @@ describe("analiz üst çubuğu", () => {
       "Başlat",
       "⊞ demo",
       "✕ temizle",
-      "◎ ayrıntılı incele",
+      "◎ olayı incele",
       "↓ dışarı çıkar",
       "<ImportPackage />",
     ];

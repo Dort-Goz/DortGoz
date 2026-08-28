@@ -66,8 +66,14 @@ const stamp = (epoch: number) =>
 
 const PAGE = 60;
 
-export default function ReviewConsole({ onOpenTraining }: {
-  onOpenTraining?: (eventId: string) => void;
+export default function ReviewConsole({
+  onReviewEvent,
+  onOpenMaintenance,
+  refreshToken,
+}: {
+  onReviewEvent?: (eventId: string) => void;
+  onOpenMaintenance?: (eventId: string) => void;
+  refreshToken?: number;
 }) {
   const [origin, setOrigin] = useState("all");
   const [status, setStatus] = useState("all");
@@ -98,7 +104,7 @@ export default function ReviewConsole({ onOpenTraining }: {
     } catch {
       setError("Olay kayıtları alınamadı. Bağlantıyı denetleyin.");
     }
-  }, [origin, status, urgency, category, feed, query, offset]);
+  }, [origin, status, urgency, category, feed, query, offset, refreshToken]);
 
   useEffect(() => {
     load();
@@ -386,13 +392,24 @@ export default function ReviewConsole({ onOpenTraining }: {
                       ↓ kaydı indir
                     </a>
                   )}
-                  {onOpenTraining && (
+                  {onReviewEvent && (
                     <button
-                      onClick={() => onOpenTraining(open.event_id)}
+                      onClick={() => onReviewEvent(open.event_id)}
                       className="btn btn-sm btn-outline-accent"
-                      title="Kaydı yeniden incele ve ayrı geliştirme izni ver"
+                      title={open.verdict
+                        ? "İnsan kararını yeni bir revizyonla değiştir"
+                        : "Bu kayıt için insan kararını ver"}
                     >
-                      ◎ ayrıntılı incele
+                      {open.verdict ? "Kararı değiştir" : "Karar ver"}
+                    </button>
+                  )}
+                  {open.verdict && onOpenMaintenance && (
+                    <button
+                      onClick={() => onOpenMaintenance(open.event_id)}
+                      className="btn btn-outline h-6 px-2"
+                      title="İnsan kararı verilmiş kaydı Bakım ekranında aç"
+                    >
+                      Bakımda aç →
                     </button>
                   )}
                 </div>
