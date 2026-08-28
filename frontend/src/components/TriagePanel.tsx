@@ -255,16 +255,22 @@ export function PendingCard({
           <img src={item.thumbnail} alt="" className="h-10 w-14 rounded-sm object-cover" />
         )}
         <div className="min-w-0">
-          {/* Kip başlığı zaten başlığı ve kamerayı yazıyor; burada tekrar etmeyiz. */}
           {!modal && (
-            <ClampText text={item.title} lines={2} className="font-medium text-zinc-200" />
+            <div className="truncate font-medium text-zinc-200" title={item.title}>
+              {CATEGORY_TR[item.model_category] ?? item.model_category}
+            </div>
           )}
-          {/* Kip başlığı kamerayı ve duvar saatini zaten yazıyor. */}
           {!modal && (
-            <div className="text-zinc-400">
+            <div className="truncate text-zinc-400">
               {feedLabel} · video <span className="font-mono">{clock(item.t)}</span>
             </div>
           )}
+          <ClampText
+            text={item.title}
+            lines={1}
+            expanded={modal}
+            className={modal ? "text-zinc-300" : "text-zinc-500"}
+          />
           {(item.event_start ?? item.clip_start) != null
             && (item.event_end ?? item.clip_end) != null && (
             <div className="text-zinc-500">
@@ -288,9 +294,6 @@ export function PendingCard({
             {item.sample && (
               <span className="chip chip-dusuk">denetim örneği</span>
             )}
-            <span className="chip chip-notr">
-              {CATEGORY_TR[item.model_category] ?? item.model_category}
-            </span>
             {item.tekrar > 1 && (
               <span className="chip chip-notr"
                     title="Aynı kameradan aynı sınıfta tekrar tespit — tek kartta birleştirildi">
@@ -943,10 +946,10 @@ export default function TriagePanel({
       )}
       {openItem ? (
         <LiveEventModal
-          title={openItem.title}
+          title={CATEGORY_TR[openItem.model_category] ?? openItem.model_category}
           subtitle={`${feedNames[openItem.feed] || openItem.feed || "ana akış"} · ${
-            CATEGORY_TR[openItem.model_category] ?? openItem.model_category
-          } · ${wallClock(openItem.wall)}`}
+            wallClock(openItem.wall)
+          }`}
           onClose={() => setOpenKey("")}
           alerts={alertStack}
         >

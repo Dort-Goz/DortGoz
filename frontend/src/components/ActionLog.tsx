@@ -76,7 +76,7 @@ function ActionLog({
                 )}
               </div>
 
-              <ClampText text={request.incident_title} lines={2} className="text-xs text-zinc-300" />
+              <ClampText text={request.incident_title} lines={1} className="text-xs text-zinc-300" />
               <p className="text-xs text-zinc-400">{request.reason}</p>
               {(request.evidence_timestamps ?? []).length > 0 && (
                 <p className="font-mono text-[10px] text-zinc-500">

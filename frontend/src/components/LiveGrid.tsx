@@ -380,7 +380,7 @@ function FocusedFeed({
           ⚑ bildir
         </button>
         <button onClick={onClose} className="btn btn-sm btn-ghost" title="Duvara dön">
-          kapat ✕
+          ✕ kapat
         </button>
       </div>
 
@@ -435,13 +435,14 @@ function FocusedFeed({
                   <img src={i.thumbnail} alt="" className="h-12 w-20 shrink-0 object-cover" />
                 )}
                 <div className="min-w-0 flex-1 space-y-0.5">
-                  <div className="text-zinc-100">{i.title}</div>
+                  <div className="truncate font-medium text-zinc-100" title={i.title}>
+                    {TYPE_TR[i.anomaly_type] ?? i.anomaly_type}
+                  </div>
                   {i.detail && (
                     <div className="line-clamp-2 text-zinc-400">{humanizeEnums(i.detail)}</div>
                   )}
                   <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-zinc-500">
                     <span className={`chip border risk-${i.risk}`}>risk {RISK_TR[i.risk]}</span>
-                    <span>{TYPE_TR[i.anomaly_type] ?? i.anomaly_type}</span>
                     <span className="font-mono">{clock(i.t)}</span>
                     <span>{PHASE_TR[i.phase] ?? i.phase}</span>
                     {i.needs_review && <span className="text-amber-400">inceleme bekliyor</span>}

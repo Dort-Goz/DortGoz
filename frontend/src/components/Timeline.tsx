@@ -147,7 +147,7 @@ const IncidentCard = memo(function IncidentCard(
           </div>
           <ClampText
             text={inc.title}
-            lines={2}
+            lines={1}
             expanded={inc.incident_id === highlightId}
             className="mt-0.5 text-sm font-medium text-zinc-200"
           />
