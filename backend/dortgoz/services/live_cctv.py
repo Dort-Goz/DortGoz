@@ -308,10 +308,9 @@ class LiveFeedWorker:
                 self.status.last_error = str(exc)
                 return False
         try:
+            from ..pipeline.interpret import SYSTEM_TR
             from ..pipeline.runner import run_video
             from .triage import store as triage_store
-
-            from ..pipeline.interpret import SYSTEM_TR
 
             system_prompt = (SYSTEM_TR + self._camera_note()
                              + triage_store.feed_note(self.status.name))

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import logging
+import os.path
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -71,7 +72,7 @@ async def hwaccel_args() -> list[str]:
         _hwaccel = []
         return _hwaccel
     device = settings.hwaccel_device.strip()
-    if not device or not Path(device).exists():
+    if not device or not await asyncio.to_thread(os.path.exists, device):
         _hwaccel = []
         return _hwaccel
     try:
