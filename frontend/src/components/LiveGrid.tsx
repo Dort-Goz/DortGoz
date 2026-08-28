@@ -47,7 +47,6 @@ function lagBadge(f: LiveFeed): { text: string; cls: string; hint: string } {
 
 function LiveGrid({
   user, incidents, activity, actionRequests, actionResults, onRespond, onSelectFeed,
-  onOpenTraining,
 }: {
   /** Konsolun tek kimliği; üst çubuktan gelir ve nöbet kararlarını imzalar. */
   user: string;
@@ -57,7 +56,6 @@ function LiveGrid({
   actionResults: ActuatorResult[];
   onRespond: (requestId: string, approved: boolean) => void;
   onSelectFeed: (feed: string) => void;
-  onOpenTraining: (eventId: string) => void;
 }) {
   const [feeds, setFeeds] = useState<LiveFeed[]>([]);
   const [active, setActive] = useState(false);
@@ -326,7 +324,6 @@ function LiveGrid({
       <TriagePanel
         user={user}
         onSelectFeed={onSelectFeed}
-        onOpenTraining={onOpenTraining}
         scopeLive
         feedNames={labels}
         logPending={pendingActionCount(actionRequests, actionResults)}

@@ -588,7 +588,6 @@ export default function App() {
             actionResults={state.liveActuatorResults}
             onRespond={send.actuator}
             onSelectFeed={selectLiveFeed}
-            onOpenTraining={setTrainingEventId}
           />
         </div>
       )}

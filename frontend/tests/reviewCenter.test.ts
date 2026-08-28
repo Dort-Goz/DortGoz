@@ -64,7 +64,7 @@ describe("olay inceleme merkezi", () => {
     expect(console_).toContain("setStatus");
     expect(panel).toContain("Kanıt karesi");
     expect(panel).toContain("Operatör notu");
-    expect(panel).toContain("Güvenli yerel taslak önerileri");
+    expect(panel).toContain("Doğrulanan olay · yerel taslak başlat");
     expect(panel).toContain("if (!r.ok) throw new Error()");
     expect(panel).toContain("İnceleme kayıtları alınamadı. Bağlantıyı denetleyin.");
   });

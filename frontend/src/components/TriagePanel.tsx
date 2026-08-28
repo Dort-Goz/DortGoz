@@ -636,7 +636,6 @@ export function PendingCard({
 export default function TriagePanel({
   user,
   onSelectFeed,
-  onOpenTraining,
   onSeek,
   feedNames = {},
   scopeFeed,
@@ -649,7 +648,6 @@ export default function TriagePanel({
   /** Konsolun tek kimliği; üst çubuktan gelir ve kararı imzalar. */
   user: string;
   onSelectFeed?: (feed: string) => void;
-  onOpenTraining?: (eventId: string) => void;
   onSeek?: (feed: string, timestamp: number, video: string, live: boolean) => void;
 
   feedNames?: Record<string, string>;
@@ -670,9 +668,6 @@ export default function TriagePanel({
   );
   const seenRef = useRef<Set<string> | null>(null);
   const chimedRef = useRef<Set<string>>(new Set());
-  const [lowerTab, setLowerTab] = useState<"tespit" | "aksiyon">(
-    () => (logPanel && logPending > 0 ? "aksiyon" : "tespit"),
-  );
 
   useEffect(() => {
     localStorage.setItem("dortgoz.uyariSesi", muted ? "kapali" : "acik");
@@ -851,7 +846,10 @@ export default function TriagePanel({
     );
   }
   const pending = scopedPending;
-  const confirmed = snap.confirmed.filter(inScope);
+  const startable = snap.confirmed.filter(
+    (item) => inScope(item)
+      && (item.suggested_actions ?? []).some((s) => s.status === "available"),
+  );
   const alertStack = (
     <LiveAlerts
       alerts={alerts}
@@ -951,112 +949,47 @@ export default function TriagePanel({
           </div>
         )}
       </div>
+      {logPanel && (
       <div className={`panel ${layout === "sidebar" ? "max-h-[45%]" : ""}`}>
-        <div className="panel-title gap-0.5">
-          {logPanel ? (
-            <>
-              {([
-                ["tespit", `✔ Tespit edilenler (${confirmed.length})`],
-                ["aksiyon", `⚙ Aksiyon günlüğü${logPending > 0 ? ` (${logPending} beklemede)` : ""}`],
-              ] as const).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setLowerTab(value)}
-                  className={`h-full px-2 transition-colors ${
-                    lowerTab === value
-                      ? "bg-zinc-800 text-zinc-100"
-                      : value === "aksiyon" && logPending > 0
-                        ? "text-amber-400 hover:text-amber-300"
-                        : "text-zinc-500 hover:text-zinc-200"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-              <span className="flex-1" />
-            </>
-          ) : (
-            <>
-              <span className="flex-1 truncate" title="Bu oturumda tespit edilenler">✔ Tespit edilenler</span>
-              <span className="chip border border-zinc-800 text-zinc-400">
-                <span className="font-mono">{confirmed.length}</span> anomali · <span className="font-mono">{snap.dismissed_count}</span> elendi
-              </span>
-            </>
+        <div className="panel-title">
+          <span className="flex-1 truncate">⚙ Aksiyon günlüğü</span>
+          {logPending > 0 && (
+            <span className="chip border border-amber-900 bg-amber-950/40 font-mono normal-case tracking-normal text-amber-300">
+              {logPending} beklemede
+            </span>
           )}
         </div>
-        {logPanel && lowerTab === "aksiyon" ? logPanel : (
-        <div className="panel-body space-y-1 p-1.5 text-xs">
-          {confirmed.length === 0 && (
-            <div className="text-zinc-500">Henüz doğrulanan anomali yok.</div>
-          )}
-          {confirmed.map((i) => (
-            <div key={i.key} className="space-y-1 rounded-sm border-l-2 border-emerald-700 bg-zinc-950 px-2 py-1.5">
-              <span className="font-medium text-emerald-300">
-                {CATEGORY_TR[i.operator_category] ?? i.operator_category}
-              </span>
-              <span className={`chip ml-1 ${PRIORITY_CLS[i.intervention_band]}`}>
-                <span className="font-mono">{i.intervention_score}</span> · {PRIORITY_TR[i.intervention_band]}
-              </span>
-              {i.source === "operator" && (
-                <span
-                  className="chip ml-1 border border-sky-900 bg-sky-950/40 text-sky-300"
-                  title="Sistemin kaçırdığı, operatörün gözle bildirdiği olay"
-                >
-                  ⚑ operatör
-                </span>
-              )}
-              <span className="text-zinc-400">
-                {" "}· {feedNames[i.feed] || i.feed || "ana akış"}
-                {!(i.live && i.source === "operator") && (
-                  <> · <span className="font-mono">{clock(i.t)}</span></>
-                )}
-                {i.decided_wall && <span className="font-mono"> · {wallClock(i.decided_wall)}</span>}
-              </span>
-              <div className="truncate text-zinc-300">{i.title}</div>
-              {i.note && <div className="truncate text-zinc-500">{i.note}</div>}
-              <div className="text-zinc-500">
-                Risk: {RISK_TR[i.operator_risk || i.risk] ?? (i.operator_risk || i.risk)}
-                {i.intervention_required != null
-                  ? ` · Müdahale ${i.intervention_required ? "gerekli" : "gerekli değil"}`
-                  : ""}
-              </div>
-              {onOpenTraining && i.event_id && (
-                <button
-                  onClick={() => onOpenTraining(i.event_id!)}
-                  className="btn btn-outline-accent mt-1 h-6"
-                  title="Sonucu yeniden incele ve ayrı geliştirme izni ver"
-                >
-                  Ayrıntılı incele
-                </button>
-              )}
-              {(i.suggested_actions ?? []).length > 0 && (
-                <div className="border-t border-zinc-800 pt-1">
-                  <div className="microlabel mb-1">
-                    Güvenli yerel taslak önerileri
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {(i.suggested_actions ?? []).map((suggestion) => (
+        <div className="flex min-h-0 flex-1 flex-col">
+          {startable.length > 0 && (
+            <div className="shrink-0 space-y-1 border-b border-zinc-800 p-1.5 text-xs">
+              <div className="microlabel">Doğrulanan olay · yerel taslak başlat</div>
+              {startable.map((i) => (
+                <div key={i.key} className="flex flex-wrap items-center gap-1">
+                  <span className="min-w-0 flex-1 truncate text-zinc-300"
+                        title={i.title}>
+                    {CATEGORY_TR[i.operator_category] ?? i.operator_category}
+                    {" · "}{feedNames[i.feed] || i.feed || "ana akış"}
+                  </span>
+                  {(i.suggested_actions ?? [])
+                    .filter((suggestion) => suggestion.status === "available")
+                    .map((suggestion) => (
                       <button
                         key={suggestion.action}
-                        disabled={suggestion.status !== "available"}
                         onClick={() => requestAction(i, suggestion.action)}
-                        className="btn btn-outline-warn h-6 px-1.5 text-[10px] disabled:border-zinc-800 disabled:text-zinc-600"
+                        className="btn btn-outline-warn h-6 px-1.5 text-[10px]"
                         title="Yalnız operatör onayına gidecek yerel taslak isteği oluşturur"
                       >
-                        {suggestion.status === "available"
-                          ? `+ ${suggestion.label}`
-                          : `${suggestion.label} · ${suggestion.status}`}
+                        + {suggestion.label}
                       </button>
                     ))}
-                  </div>
                 </div>
-              )}
+              ))}
             </div>
-          ))}
+          )}
+          {logPanel}
         </div>
-        )}
       </div>
+      )}
       {openItem ? (
         <LiveEventModal
           title={openItem.title}

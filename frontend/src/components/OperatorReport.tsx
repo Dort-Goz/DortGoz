@@ -235,7 +235,7 @@ export default function OperatorReportDialog({
           )}
           {done ? (
             <div className="rounded-sm border border-emerald-900 bg-emerald-950/40 px-2 py-1 text-emerald-300">
-              ✔ Kayda geçti — “Tespit edilenler” listesinde.
+              ✔ Kayda geçti — nöbet defterine yazıldı, “Olay inceleme” sekmesinde açılır.
             </div>
           ) : (
             <div className="flex items-center justify-end gap-1.5">
