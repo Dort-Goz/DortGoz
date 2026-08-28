@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { categoryLabel, clock } from "../lib/labels";
+import ImportPackage from "./ImportPackage";
 
 export { categoryLabel };
 
@@ -220,6 +221,7 @@ export default function ReviewConsole({ onOpenTraining }: {
           >
             {total} kayıt
           </span>
+          <ImportPackage />
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,3fr)_minmax(22rem,2fr)] gap-1.5 p-1.5 text-sm">

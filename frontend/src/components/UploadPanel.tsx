@@ -15,8 +15,14 @@ export default function UploadPanel({ onUploaded }: { onUploaded: (video: VideoM
   };
   return <div className="flex shrink-0 items-center gap-1.5">
     <input ref={input} className="hidden" type="file" accept="video/*" onChange={(e) => choose(e.target.files?.[0])} />
-    <button onClick={() => input.current?.click()} disabled={busy} className="btn btn-outline">
-      {busy ? "Yükleniyor…" : "Video yükle"}
+    <button
+      onClick={() => input.current?.click()}
+      disabled={busy}
+      title="Video yükle — kaydı kaynak listesine ekler"
+      aria-label="Video yükle"
+      className="btn btn-outline w-7 px-0 text-sm leading-none"
+    >
+      {busy ? "…" : "+"}
     </button>
     {error && <span className="max-w-40 truncate text-[10px] text-red-300" title={error}>{error}</span>}
   </div>;

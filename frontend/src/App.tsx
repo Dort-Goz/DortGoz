@@ -6,7 +6,7 @@ import Timeline from "./components/Timeline";
 import AgentTrace from "./components/AgentTrace";
 import ChatPanel from "./components/ChatPanel";
 import ActionLog from "./components/ActionLog";
-import ExperimentPanel, { type InterpretConfig } from "./components/ExperimentPanel";
+import ImportPackage from "./components/ImportPackage";
 import FeedStrip from "./components/FeedStrip";
 import LiveGrid from "./components/LiveGrid";
 import ModelMaintenancePanel from "./components/ModelMaintenancePanel";
@@ -29,8 +29,6 @@ import {
   feedNames,
   initialState,
 } from "./state";
-
-const EXPERIMENT_KEY = "dortgoz.experiment";
 
 function createDialogueId(): string {
   return globalThis.crypto?.randomUUID?.()
@@ -103,17 +101,10 @@ export default function App() {
   const socketRef = useRef<DortgozSocket | null>(null);
   const [videos, setVideos] = useState<string[]>([]);
   const [selected, setSelected] = useState("");
-  const [interpretCfg, setInterpretCfg] = useState<InterpretConfig | null>(null);
-  const [showExperiment, setShowExperiment] = useState(false);
-  const [model, setModel] = useState("");
-  const [systemPrompt, setSystemPrompt] = useState("");
-  const [taskPrompt, setTaskPrompt] = useState("");
   const [runMode, setRunMode] = useState<"" | "temkinli" | "genis">("");
   const [demoCount, setDemoCount] = useState(4);
   const startPendingRef = useRef(false);
   const [startPending, setStartPending] = useState(false);
-  const [importNote, setImportNote] = useState("");
-  const importInputRef = useRef<HTMLInputElement | null>(null);
   const [liveView, setLiveView] = useState(() => location.hash === "#canli");
   const [reviewView, setReviewView] = useState(() => location.hash === "#inceleme");
   const [maintenanceView, setMaintenanceView] = useState(() => location.hash === "#bakim");
@@ -235,30 +226,6 @@ export default function App() {
     return () => { alive = false; clearInterval(id); };
   }, []);
 
-  useEffect(() => {
-    fetch("/api/interpret_config")
-      .then((r) => r.json())
-      .then((cfg: InterpretConfig) => {
-        setInterpretCfg(cfg);
-        let saved: Record<string, string> = {};
-        try { saved = JSON.parse(localStorage.getItem(EXPERIMENT_KEY) ?? "{}"); } catch {}
-        setModel(saved.model || cfg.default_model);
-        setSystemPrompt(saved.system_prompt || cfg.system_prompt);
-        setTaskPrompt(saved.task_prompt || cfg.task_prompt);
-        if (saved.model || saved.system_prompt || saved.task_prompt) setShowExperiment(true);
-      })
-      .catch(() => setInterpretCfg(null));
-  }, []);
-
-  useEffect(() => {
-    if (!interpretCfg) return;
-    localStorage.setItem(EXPERIMENT_KEY, JSON.stringify({
-      model: model !== interpretCfg.default_model ? model : "",
-      system_prompt: systemPrompt !== interpretCfg.system_prompt ? systemPrompt : "",
-      task_prompt: taskPrompt !== interpretCfg.task_prompt ? taskPrompt : "",
-    }));
-  }, [model, systemPrompt, taskPrompt, interpretCfg]);
-
   const analysisFeeds = useMemo(
     () => Object.fromEntries(
       feedNames(state, false).map((name) => [name, state.feeds[name]])),
@@ -339,14 +306,7 @@ export default function App() {
     [state.actuatorResults, fixtureMode, analysisRuns],
   );
 
-  const overrides = useCallback(() => ({
-    model: interpretCfg && model !== interpretCfg.default_model ? model : "",
-    system_prompt:
-      interpretCfg && systemPrompt !== interpretCfg.system_prompt ? systemPrompt : "",
-    task_prompt:
-      interpretCfg && taskPrompt !== interpretCfg.task_prompt ? taskPrompt : "",
-    mode: runMode,
-  }), [interpretCfg, model, systemPrompt, taskPrompt, runMode]);
+  const overrides = useCallback(() => ({ mode: runMode }), [runMode]);
 
   const startRun = useCallback(() => {
     const started = startCanonicalRun({
@@ -387,24 +347,7 @@ export default function App() {
   const clearAnalysis = useCallback(() => {
     resetDialogue();
     dispatch({ kind: "clear_analysis" });
-    setImportNote("");
   }, [resetDialogue]);
-
-  const importPackage = useCallback(async (file: File) => {
-    setImportNote("içe alınıyor…");
-    try {
-      const r = await fetch("/api/runs/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/zip" },
-        body: file,
-      });
-      const body = await r.json();
-      if (!r.ok) throw new Error(body.detail ?? r.statusText);
-      setImportNote(`✔ ${body.run_id}: ${body.verdict}`);
-    } catch (err) {
-      setImportNote(`✖ içe aktarma başarısız: ${(err as Error).message}`);
-    }
-  }, []);
 
   const runState = run?.state ?? "idle";
   const rawPct = Math.round((run?.progress ?? 0) * 100);
@@ -417,14 +360,13 @@ export default function App() {
     ),
     [resolvedKeys, analysisActive],
   );
-  const experimentDirty = Boolean(interpretCfg && (
-    model !== interpretCfg.default_model ||
-    systemPrompt !== interpretCfg.system_prompt ||
-    taskPrompt !== interpretCfg.task_prompt
-  ));
   const detailReady = Boolean(
     feed.highlight && run?.run_id && run.run_id !== "-" && run.state === "done",
   );
+  // Paket yalnız biten bir koşu için üretilir; kanıtlar videodan yeniden türetilir.
+  const exportRunId = run?.run_id && run.run_id !== "-" && run.state === "done"
+    ? run.run_id
+    : "";
 
   const workspaceTab = (value: Workspace, label: string) => (
     <button
@@ -511,22 +453,29 @@ export default function App() {
 
       {workspace === "analysis" && (
         <div className="toolbar">
-          <label className="toolbar-group">
+          <div className="toolbar-group">
             <span className="microlabel block">kaynak</span>
-            <select
-              value={selected}
-              onChange={(e) => selectVideo(e.target.value)}
-              disabled={busy || videos.length === 0}
-              className="field w-52"
-            >
-              {videos.length === 0 && (
-                <option value={selected}>
-                  {fixtureMode ? "sanal kayıt (media/ boş)" : "media/ boş"}
-                </option>
-              )}
-              {videos.map((v) => <option key={v} value={v}>{v}</option>)}
-            </select>
-          </label>
+            <span className="flex items-center gap-1">
+              <select
+                aria-label="Kaynak video"
+                value={selected}
+                onChange={(e) => selectVideo(e.target.value)}
+                disabled={busy || videos.length === 0}
+                className="field w-52"
+              >
+                {videos.length === 0 && (
+                  <option value={selected}>
+                    {fixtureMode ? "sanal kayıt (media/ boş)" : "media/ boş"}
+                  </option>
+                )}
+                {videos.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+              <UploadPanel onUploaded={(video) => {
+                setVideos((current) => includeUploadedVideo(current, video.stored_filename));
+                selectVideo(video.stored_filename);
+              }} />
+            </span>
+          </div>
           <label className="toolbar-group">
             <span className="microlabel block">çalışma kipi</span>
             <select
@@ -583,17 +532,7 @@ export default function App() {
             ✕ temizle
           </button>
 
-          <div className="min-w-0 flex-1">
-            {importNote && (
-              <button
-                onClick={() => setImportNote("")}
-                title={`${importNote} — kapatmak için tıklayın`}
-                className="block max-w-full truncate text-xs text-zinc-400 hover:text-zinc-200"
-              >
-                {importNote}
-              </button>
-            )}
-          </div>
+          <div className="min-w-0 flex-1" />
 
           <button
             onClick={() => {
@@ -609,52 +548,18 @@ export default function App() {
           >
             ◎ ayrıntılı incele
           </button>
-          {interpretCfg && (
-            <button
-              onClick={() => setShowExperiment((s) => !s)}
-              title="Model ve istem deneyleri"
-              className={`btn ${showExperiment ? "btn-outline-warn" : "btn-outline"}`}
-            >
-              ⚗ deney
-              {experimentDirty && <span className="text-amber-400">●</span>}
-            </button>
-          )}
-          <UploadPanel onUploaded={(video) => {
-            setVideos((current) => includeUploadedVideo(current, video.stored_filename));
-            selectVideo(video.stored_filename);
-          }} />
-          <input
-            ref={importInputRef}
-            type="file"
-            accept=".zip"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) importPackage(file);
-              e.target.value = "";
-            }}
-          />
           <button
-            onClick={() => importInputRef.current?.click()}
-            title="Dışa aktarılmış analiz paketini (.zip) içe al — sohbet paket üzerinde tam yetenekle çalışır"
+            onClick={() => { if (exportRunId) location.href = `/api/runs/${exportRunId}/export`; }}
+            disabled={!exportRunId}
+            title={exportRunId
+              ? "Biten koşuyu taşınabilir paket (.zip) olarak dışarı çıkar"
+              : "Önce bir analiz tamamlanmalı"}
             className="btn btn-outline"
           >
-            ⇪ paket al
+            ↓ dışarı çıkar
           </button>
+          <ImportPackage />
         </div>
-      )}
-
-      {workspace === "analysis" && showExperiment && interpretCfg && (
-        <ExperimentPanel
-          config={interpretCfg}
-          model={model}
-          systemPrompt={systemPrompt}
-          taskPrompt={taskPrompt}
-          busy={busy}
-          onModel={setModel}
-          onSystemPrompt={setSystemPrompt}
-          onTaskPrompt={setTaskPrompt}
-        />
       )}
 
 

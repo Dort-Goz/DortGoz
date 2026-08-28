@@ -67,21 +67,6 @@ function ChatPanel({
     <div className="panel panel-accent h-full">
       <div className="panel-title flex items-center gap-2">
         <span>Operatör Sohbeti</span>
-        {questionSet && (
-          <button
-            type="button"
-            onClick={() => setShowQuestions((visible) => !visible)}
-            aria-expanded={showQuestions}
-            title="Seçili olayı üç genel ve iki kategori sorusuyla ayrıntılı incele"
-            className={`ml-auto h-6 rounded-sm border px-2 normal-case tracking-normal transition-colors ${
-              showQuestions
-                ? "border-sky-700 bg-sky-950/60 text-sky-200"
-                : "border-zinc-700 text-zinc-300 hover:border-sky-800 hover:text-sky-200"
-            }`}
-          >
-            Olayı aydınlat
-          </button>
-        )}
       </div>
       <div ref={ref} onScroll={onScroll} className="panel-body space-y-1.5 p-2">
         {messages.length === 0 && (
@@ -148,11 +133,26 @@ function ChatPanel({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && submit()}
-          placeholder={incident ? "Sorunuzu yazın veya 'Olayı aydınlat'ı açın" : "Ajana sorun"}
+          placeholder={incident ? "Sorunuzu yazın veya ✦ ile olayı aydınlatın" : "Ajana sorun"}
           className="field h-7 min-w-0 flex-1"
         />
-        <button onClick={submit} className="btn btn-accent">
-          Gönder
+        {questionSet && (
+          <button
+            type="button"
+            onClick={() => setShowQuestions((visible) => !visible)}
+            aria-expanded={showQuestions}
+            aria-label="Olayı aydınlat"
+            title="Olayı aydınlat — seçili olay için üç genel ve iki kategori sorusu"
+            className={`btn w-7 px-0 ${
+              showQuestions ? "btn-accent" : "btn-outline-accent"
+            }`}
+          >
+            ✦
+          </button>
+        )}
+        <button onClick={submit} aria-label="Gönder" title="Gönder"
+                className="btn btn-accent w-7 px-0">
+          ➤
         </button>
       </div>
     </div>
