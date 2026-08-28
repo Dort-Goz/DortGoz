@@ -265,6 +265,7 @@ export default function TrainingReviewPanel({
   const [manifest, setManifest] = useState("training_manifest.json");
   const [times, setTimes] = useState({ start: 0, peak: 0, end: 0 });
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewRestarted, setReviewRestarted] = useState(false);
   const [reviewVerdict, setReviewVerdict] = useState<"anomali" | "sorun_degil">("anomali");
   const [reviewEventType, setReviewEventType] = useState<CanonicalEventType>("unknown_anomaly");
   const [reviewRisk, setReviewRisk] = useState<Risk>("orta");
@@ -314,6 +315,7 @@ export default function TrainingReviewPanel({
           .map((route) => route.use),
     );
     setReviewOpen(false);
+    setReviewRestarted(false);
     setReviewVerdict(latest?.decision === "reject" ? "sorun_degil" : "anomali");
     const eventType = latest?.event_type ?? eventResult.event_type;
     setReviewEventType(
@@ -406,6 +408,34 @@ export default function TrainingReviewPanel({
   const canonicalEventLabel = canonicalEvent
     ? CANONICAL_TYPE_TR[canonicalEvent.event_type as CanonicalEventType] ?? canonicalEvent.event_type
     : "";
+  const reviewPending = latestReview === null || reviewRestarted;
+
+  const restartReview = () => {
+    const eventType = canonicalEvent?.event_type ?? "unknown_anomaly";
+    setReviewVerdict("anomali");
+    setReviewEventType(
+      EVENT_TYPES.includes(eventType as CanonicalEventType)
+        ? eventType as CanonicalEventType
+        : "unknown_anomaly",
+    );
+    setReviewRisk("orta");
+    setFalseAlarmReason("");
+    setIntervention("");
+    setReviewNote("");
+    if (canonicalEvent) {
+      const start = canonicalEvent.start_time ?? 0;
+      const end = canonicalEvent.end_time ?? start;
+      setTimes({
+        start,
+        peak: canonicalEvent.peak_time ?? (start + end) / 2,
+        end,
+      });
+    }
+    setReviewOpen(false);
+    setReviewRestarted(true);
+    setError("");
+    setNotice("");
+  };
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
@@ -427,7 +457,7 @@ export default function TrainingReviewPanel({
         <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[23rem_minmax(0,1fr)] lg:overflow-hidden">
           <aside className="border-b border-zinc-800 p-3 text-xs lg:overflow-y-auto lg:border-b-0 lg:border-r">
             <section className="mb-3 rounded-md bg-zinc-900 p-3">
-              {latestReview ? (
+              {!reviewPending ? (
                 <div className="flex items-center justify-between gap-3">
                   <span className="font-medium text-emerald-400">
                     ✓ {canonicalEventLabel ? `${canonicalEventLabel} olarak incelendi` : "İnceleme tamamlandı"}
@@ -435,7 +465,7 @@ export default function TrainingReviewPanel({
                   {!reviewOpen && (
                     <button
                       type="button"
-                      onClick={() => setReviewOpen(true)}
+                      onClick={restartReview}
                       className="text-zinc-400 underline decoration-zinc-700 underline-offset-2 hover:text-zinc-200"
                     >
                       Kararı değiştir
@@ -498,7 +528,7 @@ export default function TrainingReviewPanel({
               )}
             </section>
 
-            {latestReview && recommendedApprovalUses.length > 0 && (
+            {!reviewPending && latestReview && recommendedApprovalUses.length > 0 && (
               <section className={`mb-3 rounded-md p-3 ${
                 activeDevelopmentApproval
                   ? "border border-emerald-900 bg-emerald-950/30"
@@ -556,7 +586,7 @@ export default function TrainingReviewPanel({
               <div className="mb-2.5 space-y-2 rounded-md border border-amber-900 bg-amber-950 p-2.5">
                 <div className="flex items-center justify-between">
                   <p className="text-amber-200">
-                    {latestReview ? "Yeni bir karar revizyonu ekleyin." : "Model sonucunu doğrulayın."}
+                    {reviewPending ? "Model sonucunu doğrulayın." : "Yeni bir karar revizyonu ekleyin."}
                   </p>
                   <button
                     type="button"
@@ -679,11 +709,13 @@ export default function TrainingReviewPanel({
                       }),
                       intervention_required: intervention === "yes",
                     }),
-                    latestReview ? "Olay kararı yeni revizyon olarak kaydedildi." : "Olay incelemesi kaydedildi.",
+                    reviewRestarted || !latestReview
+                      ? "Olay incelemesi kaydedildi."
+                      : "Olay kararı yeni revizyon olarak kaydedildi.",
                   )}
                   className="btn btn-accent w-full"
                 >
-                  {latestReview ? "Düzeltmeyi yeni revizyon olarak kaydet" : "İnsan kararını kaydet"}
+                  {reviewPending ? "İnsan kararını kaydet" : "Düzeltmeyi yeni revizyon olarak kaydet"}
                 </button>
                 {latestReview && (
                   <p className="text-[10px] leading-relaxed text-amber-300">

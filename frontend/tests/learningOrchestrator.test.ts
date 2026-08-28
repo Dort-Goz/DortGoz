@@ -185,6 +185,12 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(detail).toContain("Sistem bu olaydan öğrensin mi?");
     expect(detail).toContain("Onay ver ve kapat");
     expect(detail).toContain("approved_uses: recommendedApprovalUses");
+    expect(detail).toContain("const reviewPending = latestReview === null || reviewRestarted;");
+    expect(detail).toContain("onClick={restartReview}");
+    expect(detail).toContain("{!reviewPending ? (");
+    expect(detail).toContain("{!reviewPending && latestReview && recommendedApprovalUses.length > 0 && (");
+    expect(detail).toContain('setReviewNote("");');
+    expect(detail).toContain('setIntervention("");');
     expect(detail).toContain("Diğer bilgiler");
     expect(detail).toContain("Geçmiş kararlar ve geliştirme ekibi araçları bu alandadır.");
     expect(detail).not.toContain("Olay İnceleme ve Geliştirme Hazırlığı");
