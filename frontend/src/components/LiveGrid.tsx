@@ -117,7 +117,15 @@ function LiveGrid({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ count, width }),
     });
-    if (!r.ok) setError((await r.json()).detail ?? r.statusText);
+    if (!r.ok) {
+      setError((await r.json()).detail ?? r.statusText);
+      return;
+    }
+    const started = await r.json().catch(() => null);
+    if (count > 0 && Array.isArray(started) && started.length !== count) {
+      setError(`${count} kamera seçildi ama sunucu ${started.length} akış başlattı`
+        + " — backend eski sürüm olabilir, yeniden başlatın.");
+    }
   }, [count, width]);
 
   const stop = useCallback(async () => {
