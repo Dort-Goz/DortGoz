@@ -193,6 +193,22 @@ def test_human_review_creates_revision_without_erasing_automatic_event() -> None
     assert [item.status for item in revisions] == [EventStatus.HUMAN_REVIEW, EventStatus.CONFIRMED]
 
 
+def test_service_keeps_confirm_when_model_evidence_gate_permits_it() -> None:
+    repository = ready_repository()
+    repository.save_event(event())
+    service = EventMemoryService(repository)
+
+    review = service.review_event(
+        "event-memory-1",
+        ReviewDecision.CONFIRM,
+        reviewer="operator-1",
+        note="Operatör geçerli kanıtı doğruladı.",
+    )
+
+    assert review.decision == ReviewDecision.CONFIRM
+    assert repository.get_event("event-memory-1").status == EventStatus.CONFIRMED
+
+
 def test_development_decision_is_separate_and_revocable() -> None:
     repository = ready_repository()
     repository.save_event(event())

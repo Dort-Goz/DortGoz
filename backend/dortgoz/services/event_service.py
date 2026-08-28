@@ -101,6 +101,23 @@ class EventMemoryService:
         false_alarm_reason: FalseAlarmReason | None = None,
         intervention_required: bool | None = None,
     ) -> HumanReview:
+        event = self.repository.get_event(event_id)
+        if (
+            decision == ReviewDecision.CONFIRM
+            and event is not None
+            and (
+                event.validation is None
+                or not event.validation.permits_confirmation
+                or not event.evidence
+            )
+        ):
+            # İnsan kararı model kanıt kapısını atlamaz. Triage ile aynı biçimde
+            # olayı incelenmiş tutar ve operatör etiketini ayrı revizyon olarak yazar.
+            decision = ReviewDecision.EDIT
+            event_type = event_type or event.event_type.value
+            start_time = event.start_time if start_time is None else start_time
+            peak_time = event.peak_time if peak_time is None else peak_time
+            end_time = event.end_time if end_time is None else end_time
         review = HumanReview(
             review_id=str(uuid4()),
             event_id=event_id,

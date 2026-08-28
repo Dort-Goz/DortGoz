@@ -161,15 +161,17 @@ def test_rejected_learning_decision_leaves_the_approval_queue(monkeypatch) -> No
         review = client.post(
             f"/api/events/{event_id}/review",
             json={
-                "decision": "edit",
+                "decision": "confirm",
                 "reviewer": "operator",
                 "note": "Olay kararı doğrulandı.",
-                "start_time": 1,
-                "peak_time": 2,
-                "end_time": 3,
             },
         )
         assert review.status_code == 200
+        assert review.json()["decision"] == "edit"
+        assert review.json()["event_type"] == "possible_theft"
+        assert review.json()["start_time"] == 1
+        assert review.json()["peak_time"] == 2
+        assert review.json()["end_time"] == 3
 
         before = client.get("/api/learning/pipeline").json()
         assert event_id in {item["event_id"] for item in before["approval_items"]}
