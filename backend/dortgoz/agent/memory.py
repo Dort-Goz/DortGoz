@@ -135,8 +135,18 @@ class Ledger:
                 inc.olay_baslangic, inc.clamp_end(float(review["bitis_t"]))
             )
         unc = [str(u).strip() for u in review.get("belirsizlikler", []) if str(u).strip()]
-        inc.needs_review = was_review_required or bool(unc) or inc.anomaly_type == "bilinmeyen"
-        if previous_review_reason:
+        # İkinci geçiş "olay yok" diyor ve kendi belirsizliği yoksa operatöre
+        # sorulacak bir şey kalmaz. İlk geçişin bayrağı burada düşer; ölçüm
+        # (2026-08-28, canlı kuyruk) 200 kartın 106'sının yalnız bu yapışkanlık
+        # yüzünden beklediklerini gösterdi; hiçbirinde 2. geçiş belirsizliği yoktu.
+        inc.needs_review = (
+            bool(unc)
+            or inc.anomaly_type == "bilinmeyen"
+            or (was_review_required and inc.anomaly_type != "normal")
+        )
+        if not inc.needs_review:
+            inc.review_reason = ""
+        elif previous_review_reason:
             inc.review_reason = previous_review_reason
         elif unc:
             inc.review_reason = f"2. geçiş: {_short(_deref_frames(unc[0]))}"

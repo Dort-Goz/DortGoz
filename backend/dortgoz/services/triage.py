@@ -166,6 +166,9 @@ class TriageStore:
         self._resolved: list[TriageItem] = []
         self.dismissed_count = 0
         self.auto_dismissed = 0
+        # Model kendi kararıyla kapattığı güncelleme sayısı (kart başına birden
+        # çok olabilir); kuyruğa girmeyen gürültünün ölçüsüdür.
+        self.model_closed_count = 0
         self.queue_overflow_count = 0
         self.expired_count = 0
         self.emsal_shadow_count = 0
@@ -266,6 +269,15 @@ class TriageStore:
         if payload.incident_id.startswith(OPERATOR_INCIDENT_PREFIX):
             return
         key = f"{event.feed}:{payload.incident_id}"
+        # Modelin ikinci geçişi "olay yok" dedi ve inceleme de istemiyorsa
+        # operatöre soracak bir şey yoktur. Kart kuyruğa girmez, açıksa düşer.
+        # Canonical olay kaydı yerinde kalır; hiçbir insan kararı uydurulmaz.
+        # Kalan kapı denetim örneklemesidir (`review_sample`).
+        if payload.anomaly_type == "normal" and not payload.needs_review:
+            if self._pending.pop(key, None) is not None:
+                LOGGER.info("nöbet kartı model kararıyla kapandı: %s", key)
+            self.model_closed_count += 1
+            return
         event_id = self._resolve_event_id(event.feed, payload.incident_id)
         priority = self._priority_values(payload, event_id)
         if key in self._pending:
@@ -901,6 +913,7 @@ class TriageStore:
             "dismissed_count": self.dismissed_count,
             "auto_dismissed": self.auto_dismissed,
             "queue_overflow_count": self.queue_overflow_count,
+            "model_closed_count": self.model_closed_count,
             "expired_count": self.expired_count,
             "critical_overflow_count": max(0, len(self._pending) - MAX_PENDING),
             "rule_proposals": proposals,
@@ -929,6 +942,7 @@ class TriageStore:
         self._resolved.clear()
         self.dismissed_count = 0
         self.auto_dismissed = 0
+        self.model_closed_count = 0
         self.queue_overflow_count = 0
         self.expired_count = 0
         self.emsal_shadow_count = 0

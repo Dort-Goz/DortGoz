@@ -176,6 +176,52 @@ def test_incident_update_lands_in_pending(store):
     assert item["priority_ruleset_version"] == "intervention-priority-v1"
 
 
+def test_model_normal_verdict_leaves_the_operator_queue(store):
+    store.observe(_incident())
+    assert len(store.snapshot()["pending"]) == 1
+
+    closing = Event.wrap(
+        IncidentUpdate(
+            incident_id="inc-1",
+            t=42.0,
+            phase="sonuclandi",
+            title="Kamera açısı değişti, sahne yeniden oturdu",
+            anomaly_type="normal",
+            risk="dusuk",
+            needs_review=False,
+        ),
+        feed="KAM-1",
+    )
+    store.observe(closing)
+    snapshot = store.snapshot()
+
+    assert snapshot["pending"] == []
+    assert snapshot["model_closed_count"] == 1
+    assert snapshot["dismissed_count"] == 0
+    assert snapshot["auto_dismissed"] == 0
+    assert store.repo.list_reviews("event:KAM-1:inc-1") == []
+
+
+def test_model_normal_verdict_still_queues_when_review_is_needed(store):
+    store.observe(Event.wrap(
+        IncidentUpdate(
+            incident_id="inc-2",
+            t=10.0,
+            phase="sonuclandi",
+            title="Sahne belirsiz",
+            anomaly_type="normal",
+            risk="dusuk",
+            needs_review=True,
+            review_reason="2. geçiş: görüntü kalitesi düşük",
+        ),
+        feed="KAM-1",
+    ))
+    snapshot = store.snapshot()
+
+    assert [item["incident_id"] for item in snapshot["pending"]] == ["inc-2"]
+    assert snapshot["model_closed_count"] == 0
+
+
 def test_enabled_exemplar_suppression_persists_canonical_review(
     store: CanonicalTriageStore,
     monkeypatch: pytest.MonkeyPatch,

@@ -184,6 +184,34 @@ def test_title_truncation_cuts_on_a_word_boundary():
     assert long_title.startswith(opened.title.rstrip("… "))
 
 
+def test_normal_second_pass_clears_the_first_pass_review_flag():
+    from dortgoz.agent.memory import Ledger
+    led = Ledger()
+    iid = led.ingest(_serious_report(), uncertain="sınırda")[0].incident_id
+
+    up = led.apply_review(iid, {"anomaly_type": "normal", "risk": "orta",
+                                "zirve": "Kamera açısı değişti, sahne oturdu",
+                                "zirve_t": 6.0, "baslangic": "b", "sonuc": "s",
+                                "belirsizlikler": []})
+
+    assert up.needs_review is False
+    assert up.review_reason == ""
+
+
+def test_normal_second_pass_keeps_its_own_uncertainty():
+    from dortgoz.agent.memory import Ledger
+    led = Ledger()
+    iid = led.ingest(_serious_report(), uncertain="sınırda")[0].incident_id
+
+    up = led.apply_review(iid, {"anomaly_type": "normal", "risk": "orta",
+                                "zirve": "Sahne belirsiz kaldı", "zirve_t": 6.0,
+                                "baslangic": "b", "sonuc": "s",
+                                "belirsizlikler": ["görüntü kalitesi düşük"]})
+
+    assert up.needs_review is True
+    assert "sınırda" in up.review_reason
+
+
 def test_review_to_normal_drops_alarm_risk():
     from dortgoz.agent.memory import Ledger
     led = Ledger()
