@@ -447,7 +447,6 @@ export default function App() {
       <header className="flex h-11 shrink-0 items-center gap-3 border-b border-zinc-800 bg-zinc-900 px-3">
         <div className="flex items-baseline gap-2">
           <span className="text-sm font-bold tracking-widest text-zinc-100">DÖRTGÖZ</span>
-          <span className="microlabel hidden sm:inline">operatör konsolu</span>
         </div>
 
         {/* operatör çalışma alanları */}
