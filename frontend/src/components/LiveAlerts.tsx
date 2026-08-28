@@ -111,7 +111,7 @@ export default function LiveAlerts({
   if (alerts.length === 0 || !host) return null;
   return createPortal(
     // z-40: kip pencerelerinin (z-50/z-60) altında kalmak zorunda.
-    <div className="pointer-events-none fixed bottom-3 right-3 z-40 flex w-80 flex-col-reverse gap-1.5">
+    <div className="pointer-events-none fixed bottom-3 right-[21.5rem] z-40 flex w-80 flex-col-reverse gap-1.5">
       {alerts.map((alert) => {
         const tone = TONE[severityRank(alert)];
         return (
