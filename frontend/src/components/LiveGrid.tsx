@@ -223,7 +223,7 @@ function LiveGrid({
             disabled={active}
             onChange={(e) => remember("dortgoz.canliCozunurluk", setWidth)(
               Number(e.target.value))}
-            title="Modele giden kare genişliği — düşük değer hızlandırır, uzak nesnede doğruluk düşer"
+            title="Modele giden kare genişliği — gecikme kaldıracı DEĞİLDİR (ölçüldü); yalnız bant genişliği ve uzak nesne doğruluğu değişir"
             className="field w-24"
           >
             <option value={0}>varsayılan</option>
