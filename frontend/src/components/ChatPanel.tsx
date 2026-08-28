@@ -136,20 +136,21 @@ function ChatPanel({
           placeholder={incident ? "Sorunuzu yazın veya ✦ ile olayı aydınlatın" : "Ajana sorun"}
           className="field h-7 min-w-0 flex-1"
         />
-        {questionSet && (
-          <button
-            type="button"
-            onClick={() => setShowQuestions((visible) => !visible)}
-            aria-expanded={showQuestions}
-            aria-label="Olayı aydınlat"
-            title="Olayı aydınlat — seçili olay için üç genel ve iki kategori sorusu"
-            className={`btn w-7 px-0 ${
-              showQuestions ? "btn-accent" : "btn-outline-accent"
-            }`}
-          >
-            ✦
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => setShowQuestions((visible) => !visible)}
+          disabled={!questionSet}
+          aria-expanded={showQuestions}
+          aria-label="Olayı aydınlat"
+          title={questionSet
+            ? "Olayı aydınlat — seçili olay için üç genel ve iki kategori sorusu"
+            : "Olayı aydınlat — önce zaman çizelgesinden bir olay seçin"}
+          className={`btn w-7 px-0 ${
+            showQuestions ? "btn-accent" : "btn-outline-accent"
+          }`}
+        >
+          ✦
+        </button>
         <button onClick={submit} aria-label="Gönder" title="Gönder"
                 className="btn btn-accent w-7 px-0">
           ➤
