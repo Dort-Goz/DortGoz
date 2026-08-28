@@ -132,6 +132,8 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(source).toContain("Besleyeceği bileşenler");
     expect(source).toContain("İnceleme bekleyen olay yok.");
     expect(source).toContain("Onay bekleyen olay yok.");
+    expect(source).toContain("refreshToken: number;");
+    expect(source).toContain("[load, refreshToken]");
   });
 
   test("teknik ayrıntılar kapalı bölümde kalır ve öğrenme kendi çalışma alanıdır", () => {
@@ -156,6 +158,8 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(detail).not.toContain("Kayma gözcüsü");
     expect(app).toContain("openedFromMaintenance");
     expect(app).toContain("onBack={openedFromMaintenance ? returnToMaintenance : undefined}");
+    expect(app).toContain("refreshToken={maintenanceRefreshToken}");
+    expect(app).toContain("setMaintenanceRefreshToken((current) => current + 1)");
     expect(detail).toContain("← Geri dön");
     expect(detail).toContain("Bakım ekranına dön");
     expect(detail).toContain("Onay ver ve geri dön");
@@ -183,6 +187,9 @@ describe("Öğrenme Merkezi operatör sunumu", () => {
     expect(detail).not.toContain("Ayrıntılı karara git");
     expect(detail).not.toContain("Hayır, yanlış");
     expect(detail).toContain("Sistem bu olaydan öğrensin mi?");
+    expect(detail).toContain("İstemiyorum");
+    expect(detail).toContain("rejectEventLearningApproval");
+    expect(detail).toContain("Kayıt geliştirme kuyruğundan çıkarıldı.");
     expect(detail).toContain("Onay ver ve kapat");
     expect(detail).toContain("approved_uses: recommendedApprovalUses");
     expect(detail).toContain("const reviewPending = latestReview === null || reviewRestarted;");

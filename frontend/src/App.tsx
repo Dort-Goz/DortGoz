@@ -123,6 +123,7 @@ export default function App() {
   const [trainingEventId, setTrainingEventId] = useState("");
   const [reportT, setReportT] = useState<number | null>(null);
   const [openedFromMaintenance, setOpenedFromMaintenance] = useState(false);
+  const [maintenanceRefreshToken, setMaintenanceRefreshToken] = useState(0);
   const [fixtureMode, setFixtureMode] = useState(false);
   const [livePending, setLivePending] = useState(0);
   const [resolvedKeys, setResolvedKeys] = useState<string[]>([]);
@@ -145,6 +146,7 @@ export default function App() {
   const returnToMaintenance = useCallback(() => {
     setTrainingEventId("");
     setOpenedFromMaintenance(false);
+    setMaintenanceRefreshToken((current) => current + 1);
     setLiveView(false);
     setReviewView(false);
     setMaintenanceView(true);
@@ -698,7 +700,11 @@ export default function App() {
       )}
       {workspace === "maintenance" && (
         <div className="flex min-h-0 flex-1 flex-col">
-          <ModelMaintenancePanel user={user} onOpenEvent={openMaintenanceEvent} />
+          <ModelMaintenancePanel
+            user={user}
+            onOpenEvent={openMaintenanceEvent}
+            refreshToken={maintenanceRefreshToken}
+          />
         </div>
       )}
 

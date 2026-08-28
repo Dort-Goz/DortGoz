@@ -78,10 +78,12 @@ function feedsLine(item: PipelineEventItem): string {
 export default function ModelMaintenancePanel({
   user,
   onOpenEvent,
+  refreshToken,
 }: {
   /** Konsolun tek kimliği; onay, eğitim ve terfi kayıtlarını imzalar. */
   user: string;
   onOpenEvent: (eventId: string) => void;
+  refreshToken: number;
 }) {
   const [view, setView] = useState<LearningPipelineView | null>(null);
   const [media, setMedia] = useState<Record<string, IncidentMedia | null>>({});
@@ -102,7 +104,7 @@ export default function ModelMaintenancePanel({
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, refreshToken]);
 
   const jobRunning = useMemo(
     () => (view?.jobs ?? []).some((job) => job.status === "running"),

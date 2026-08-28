@@ -152,6 +152,49 @@ def test_batch_approval_moves_reviewed_events_into_the_queue(monkeypatch) -> Non
     assert stages["review"] == 0
 
 
+def test_rejected_learning_decision_leaves_the_approval_queue(monkeypatch) -> None:
+    runtime = ApiRuntime()
+    monkeypatch.setattr(api_module, "runtime", runtime)
+    event_id = _seed_reviewed_event(runtime, 4)
+
+    with TestClient(app) as client:
+        review = client.post(
+            f"/api/events/{event_id}/review",
+            json={
+                "decision": "edit",
+                "reviewer": "operator",
+                "note": "Olay kararı doğrulandı.",
+                "start_time": 1,
+                "peak_time": 2,
+                "end_time": 3,
+            },
+        )
+        assert review.status_code == 200
+
+        before = client.get("/api/learning/pipeline").json()
+        assert event_id in {item["event_id"] for item in before["approval_items"]}
+
+        rejected = client.post(
+            f"/api/events/{event_id}/development-approval",
+            json={
+                "review_id": review.json()["review_id"],
+                "status": "rejected",
+                "approved_uses": [],
+                "reviewer": "operator",
+                "note": "Bu olay geliştirme hazırlığında kullanılmayacak.",
+            },
+        )
+        assert rejected.status_code == 200
+        assert rejected.json()["status"] == "rejected"
+
+        after = client.get("/api/learning/pipeline").json()
+
+    assert event_id not in {item["event_id"] for item in after["approval_items"]}
+    stages = {stage["stage"]: stage["count"] for stage in after["stages"]}
+    assert stages["approval"] == 0
+    assert stages["queue"] == 0
+
+
 def test_training_endpoints_refuse_when_the_machine_is_not_configured(monkeypatch) -> None:
     runtime = ApiRuntime()
     monkeypatch.setattr(api_module, "runtime", runtime)

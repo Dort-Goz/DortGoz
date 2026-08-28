@@ -179,6 +179,19 @@ export const approveEventForDFine = (
   approved_uses: ["d_fine_training"],
 });
 
+export const rejectEventLearningApproval = (
+  eventId: string,
+  body: {
+    review_id: string;
+    reviewer: string;
+    note: string;
+    supersedes_approval_id?: string;
+  },
+) => request<DevelopmentApproval>(
+  `/api/events/${encodeURIComponent(eventId)}/development-approval`,
+  json({ ...body, status: "rejected", approved_uses: [] }),
+);
+
 export const revokeEventLearningApproval = (
   eventId: string,
   body: {

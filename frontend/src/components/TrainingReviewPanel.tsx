@@ -15,6 +15,7 @@ import {
   getLearningPlan,
   getTrainingSamples,
   prepareTrainingSamples,
+  rejectEventLearningApproval,
   revokeEventLearningApproval,
   saveEventReview,
   verifyTrainingSample,
@@ -370,6 +371,10 @@ export default function TrainingReviewPanel({
     && latestApproval.review_id === latestReview?.review_id
     ? latestApproval
     : null;
+  const activeRejectedApproval = latestApproval?.status === "rejected"
+    && latestApproval.review_id === latestReview?.review_id
+    ? latestApproval
+    : null;
   const activeApproval = activeDevelopmentApproval?.approved_uses.includes("d_fine_training")
     ? activeDevelopmentApproval
     : null;
@@ -532,24 +537,30 @@ export default function TrainingReviewPanel({
               <section className={`mb-3 rounded-md p-3 ${
                 activeDevelopmentApproval
                   ? "border border-emerald-900 bg-emerald-950/30"
-                  : "border border-sky-900 bg-sky-950/20"
+                  : activeRejectedApproval
+                    ? "border border-zinc-800 bg-zinc-900"
+                    : "border border-sky-900 bg-sky-950/20"
               }`}>
                 <h3 className="text-sm font-semibold text-zinc-100">
                   {activeDevelopmentApproval
                     ? "Onay verildi"
-                    : approvalNeedsRenewal
-                      ? "Yeniden onay verilsin mi?"
-                      : "Sistem bu olaydan öğrensin mi?"}
+                    : activeRejectedApproval
+                      ? "Öğrenme reddedildi"
+                      : approvalNeedsRenewal
+                        ? "Yeniden onay verilsin mi?"
+                        : "Sistem bu olaydan öğrensin mi?"}
                 </h3>
                 <p className="mt-1.5 leading-relaxed text-zinc-400">
                   {activeDevelopmentApproval
                     ? "Bu kayıt geliştirme hazırlığına alındı."
-                    : "Onay verirseniz bu kayıt, sistemi geliştirmek için hazırlanır."}
+                    : activeRejectedApproval
+                      ? "Bu kayıt geliştirme kuyruğuna alınmadı."
+                      : "Onay verirseniz bu kayıt, sistemi geliştirmek için hazırlanır."}
                 </p>
                 <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">
                   Canlı sistem otomatik değişmez. Otomatik eğitim başlamaz.
                 </p>
-                {activeDevelopmentApproval ? (
+                {activeDevelopmentApproval || activeRejectedApproval ? (
                   <button
                     type="button"
                     onClick={onBack ?? onClose}
@@ -558,26 +569,47 @@ export default function TrainingReviewPanel({
                     {onBack ? "Bakım ekranına dön" : "Tamam, kapat"}
                   </button>
                 ) : (
-                  <button
-                    type="button"
-                    disabled={busy || !reviewerName}
-                    onClick={async () => {
-                      const completed = await run(
-                        () => approveEventForLearning(eventId, {
-                          review_id: latestReview.review_id,
-                          approved_uses: recommendedApprovalUses,
-                          reviewer: reviewerName,
-                          note: "Operatör bu olayın sistem geliştirme hazırlığında kullanılmasını onayladı.",
-                          ...(latestApproval ? { supersedes_approval_id: latestApproval.approval_id } : {}),
-                        }),
-                        "Geliştirme onayı kaydedildi.",
-                      );
-                      if (completed) (onBack ?? onClose)();
-                    }}
-                    className="btn btn-accent mt-3 h-9 w-full text-sm"
-                  >
-                    {onBack ? "Onay ver ve geri dön" : "Onay ver ve kapat"}
-                  </button>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      disabled={busy || !reviewerName}
+                      onClick={async () => {
+                        const completed = await run(
+                          () => rejectEventLearningApproval(eventId, {
+                            review_id: latestReview.review_id,
+                            reviewer: reviewerName,
+                            note: "Operatör bu olayın sistem geliştirme hazırlığında kullanılmasını istemedi.",
+                            ...(latestApproval ? { supersedes_approval_id: latestApproval.approval_id } : {}),
+                          }),
+                          "Kayıt geliştirme kuyruğundan çıkarıldı.",
+                        );
+                        if (completed) (onBack ?? onClose)();
+                      }}
+                      className="btn btn-outline h-9 text-sm"
+                    >
+                      İstemiyorum
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy || !reviewerName}
+                      onClick={async () => {
+                        const completed = await run(
+                          () => approveEventForLearning(eventId, {
+                            review_id: latestReview.review_id,
+                            approved_uses: recommendedApprovalUses,
+                            reviewer: reviewerName,
+                            note: "Operatör bu olayın sistem geliştirme hazırlığında kullanılmasını onayladı.",
+                            ...(latestApproval ? { supersedes_approval_id: latestApproval.approval_id } : {}),
+                          }),
+                          "Geliştirme onayı kaydedildi.",
+                        );
+                        if (completed) (onBack ?? onClose)();
+                      }}
+                      className="btn btn-accent h-9 text-sm"
+                    >
+                      {onBack ? "Onay ver ve geri dön" : "Onay ver ve kapat"}
+                    </button>
+                  </div>
                 )}
               </section>
             )}
@@ -834,14 +866,24 @@ export default function TrainingReviewPanel({
                 <span className="chip border border-zinc-700 text-zinc-300 font-mono">2</span>
                 Geliştirme onayı
               </div>
-              <div className={activeDevelopmentApproval ? "text-emerald-400" : latestApproval?.status === "revoked" ? "text-red-400" : approvalNeedsRenewal ? "text-amber-400" : "text-zinc-500"}>
+              <div className={activeDevelopmentApproval
+                ? "text-emerald-400"
+                : activeRejectedApproval
+                  ? "text-zinc-400"
+                  : latestApproval?.status === "revoked"
+                    ? "text-red-400"
+                    : approvalNeedsRenewal
+                      ? "text-amber-400"
+                      : "text-zinc-500"}>
                 {activeDevelopmentApproval
                   ? `${activeDevelopmentApproval.approved_uses.length} işlem onaylandı`
-                  : latestApproval?.status === "revoked"
-                    ? "Geliştirme onayı geri alındı"
-                    : approvalNeedsRenewal
-                      ? "İnceleme sonucu değiştiği için yeniden onay gerekiyor."
-                      : "Onay bekliyor"}
+                  : activeRejectedApproval
+                    ? "Geliştirme kullanımı reddedildi"
+                    : latestApproval?.status === "revoked"
+                      ? "Geliştirme onayı geri alındı"
+                      : approvalNeedsRenewal
+                        ? "İnceleme sonucu değiştiği için yeniden onay gerekiyor."
+                        : "Onay bekliyor"}
               </div>
               {latestReview && !activeDevelopmentApproval && (
                 <div className="mt-2 space-y-2">
