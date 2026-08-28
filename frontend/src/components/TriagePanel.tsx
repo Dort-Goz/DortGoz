@@ -643,6 +643,8 @@ export default function TriagePanel({
   scopeLive,
   title = "Nöbet kuyruğu",
   layout = "sidebar",
+  logPanel,
+  logPending = 0,
 }: {
   /** Konsolun tek kimliği; üst çubuktan gelir ve kararı imzalar. */
   user: string;
@@ -655,6 +657,8 @@ export default function TriagePanel({
   scopeLive?: boolean;
   title?: string;
   layout?: "sidebar" | "workspace";
+  logPanel?: React.ReactNode;
+  logPending?: number;
 }) {
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [error, setError] = useState("");
@@ -666,6 +670,9 @@ export default function TriagePanel({
   );
   const seenRef = useRef<Set<string> | null>(null);
   const chimedRef = useRef<Set<string>>(new Set());
+  const [lowerTab, setLowerTab] = useState<"tespit" | "aksiyon">(
+    () => (logPanel && logPending > 0 ? "aksiyon" : "tespit"),
+  );
 
   useEffect(() => {
     localStorage.setItem("dortgoz.uyariSesi", muted ? "kapali" : "acik");
@@ -945,12 +952,40 @@ export default function TriagePanel({
         )}
       </div>
       <div className={`panel ${layout === "sidebar" ? "max-h-[45%]" : ""}`}>
-        <div className="panel-title">
-          <span className="flex-1 truncate" title="Bu oturumda tespit edilenler">✔ Tespit edilenler</span>
-          <span className="chip border border-zinc-800 text-zinc-400">
-            <span className="font-mono">{confirmed.length}</span> anomali · <span className="font-mono">{snap.dismissed_count}</span> elendi
-          </span>
+        <div className="panel-title gap-0.5">
+          {logPanel ? (
+            <>
+              {([
+                ["tespit", `✔ Tespit edilenler (${confirmed.length})`],
+                ["aksiyon", `⚙ Aksiyon günlüğü${logPending > 0 ? ` (${logPending} beklemede)` : ""}`],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setLowerTab(value)}
+                  className={`h-full px-2 transition-colors ${
+                    lowerTab === value
+                      ? "bg-zinc-800 text-zinc-100"
+                      : value === "aksiyon" && logPending > 0
+                        ? "text-amber-400 hover:text-amber-300"
+                        : "text-zinc-500 hover:text-zinc-200"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+              <span className="flex-1" />
+            </>
+          ) : (
+            <>
+              <span className="flex-1 truncate" title="Bu oturumda tespit edilenler">✔ Tespit edilenler</span>
+              <span className="chip border border-zinc-800 text-zinc-400">
+                <span className="font-mono">{confirmed.length}</span> anomali · <span className="font-mono">{snap.dismissed_count}</span> elendi
+              </span>
+            </>
+          )}
         </div>
+        {logPanel && lowerTab === "aksiyon" ? logPanel : (
         <div className="panel-body space-y-1 p-1.5 text-xs">
           {confirmed.length === 0 && (
             <div className="text-zinc-500">Henüz doğrulanan anomali yok.</div>
@@ -1020,6 +1055,7 @@ export default function TriagePanel({
             </div>
           ))}
         </div>
+        )}
       </div>
       {openItem ? (
         <LiveEventModal

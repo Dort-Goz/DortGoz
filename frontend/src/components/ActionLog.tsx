@@ -27,27 +27,26 @@ function resultLabel(result: ActuatorResult): { text: string; cls: string } {
     : { text: "REDDEDİLDİ", cls: "text-zinc-400" };
 }
 
+export function pendingActionCount(
+  requests: ActuatorRequest[], results: ActuatorResult[],
+): number {
+  const resolved = new Set(results.map((result) => result.request_id));
+  return requests.filter((request) => !resolved.has(request.request_id)).length;
+}
+
 function ActionLog({
-  requests, results, onRespond, readOnly = false,
+  requests, results, onRespond, readOnly = false, bare = false,
 }: {
   requests: ActuatorRequest[];
   results: ActuatorResult[];
   onRespond: (request_id: string, approved: boolean) => void;
   readOnly?: boolean;
+  bare?: boolean;
 }) {
   const resolved = new Map(results.map((result) => [result.request_id, result]));
-  const pendingCount = requests.filter((request) => !resolved.has(request.request_id)).length;
+  const pendingCount = pendingActionCount(requests, results);
 
-  return (
-    <div className="panel h-full">
-      <div className="panel-title">
-        <span>Aksiyon Günlüğü</span>
-        {pendingCount > 0 && !readOnly && (
-          <span className="chip border border-amber-900 bg-amber-950/40 font-mono normal-case tracking-normal text-amber-300">
-            {pendingCount} beklemede
-          </span>
-        )}
-      </div>
+  const body = (
       <div className="panel-body space-y-1.5 p-2">
         {requests.length === 0 && (
           <p className="p-2 text-xs text-zinc-600">Aksiyon kaydı yok.</p>
@@ -146,6 +145,21 @@ function ActionLog({
           );
         })}
       </div>
+  );
+
+  if (bare) return body;
+
+  return (
+    <div className="panel h-full flex-1">
+      <div className="panel-title">
+        <span>Aksiyon Günlüğü</span>
+        {pendingCount > 0 && !readOnly && (
+          <span className="chip border border-amber-900 bg-amber-950/40 font-mono normal-case tracking-normal text-amber-300">
+            {pendingCount} beklemede
+          </span>
+        )}
+      </div>
+      {body}
     </div>
   );
 }

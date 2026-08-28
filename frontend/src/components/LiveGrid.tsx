@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ActivityStrip, ActuatorRequest, ActuatorResult, IncidentUpdate,
 } from "../types/events";
-import ActionLog from "./ActionLog";
+import ActionLog, { pendingActionCount } from "./ActionLog";
 import ActivityBar from "./ActivityBar";
 import LiveArchive from "./LiveArchive";
 import OperatorReportDialog from "./OperatorReport";
@@ -329,6 +329,15 @@ function LiveGrid({
         onOpenTraining={onOpenTraining}
         scopeLive
         feedNames={labels}
+        logPending={pendingActionCount(actionRequests, actionResults)}
+        logPanel={(
+          <ActionLog
+            bare
+            requests={actionRequests}
+            results={actionResults}
+            onRespond={onRespond}
+          />
+        )}
       />
       </div>
       </div>
