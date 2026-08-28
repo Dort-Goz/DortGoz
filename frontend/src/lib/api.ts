@@ -41,6 +41,32 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+const MAINTENANCE_API_MISMATCH =
+  "Bakım servisi güncel değil. Backend'i güncelleyip yeniden başlatın.";
+
+async function maintenanceRequest<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  try {
+    return await request<T>(path, init);
+  } catch (error) {
+    if (
+      error instanceof ApiError
+      && error.status === 404
+      && error.code === "NOT_FOUND"
+      && error.message === "Not Found"
+    ) {
+      throw new ApiError(
+        MAINTENANCE_API_MISMATCH,
+        "MAINTENANCE_API_UNAVAILABLE",
+        503,
+      );
+    }
+    throw error;
+  }
+}
+
 const json = (body: unknown): RequestInit => ({
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -113,14 +139,14 @@ export interface MaintenanceReviewInput {
 }
 
 export const getMaintenanceReviews = (eventId: string) =>
-  request<MaintenanceReview[]>(
+  maintenanceRequest<MaintenanceReview[]>(
     `/api/events/${encodeURIComponent(eventId)}/maintenance-reviews`,
   );
 
 export const saveMaintenanceReview = (
   eventId: string,
   body: MaintenanceReviewInput,
-) => request<MaintenanceReview>(
+) => maintenanceRequest<MaintenanceReview>(
   `/api/events/${encodeURIComponent(eventId)}/maintenance-review`,
   json(body),
 );
