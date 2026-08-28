@@ -263,10 +263,9 @@ export default function ReviewConsole({
                   <span className="chip chip-notr">{item.live ? "canlı" : "dosya"}</span>
                   <span
                     className={`chip w-20 justify-center ${severityClass(item.intervention_band)}`}
-                    title="Müdahale önceliği"
+                    title={`Müdahale önceliği ${item.intervention_score}/100`}
                   >
-                    <span className="font-mono">{item.intervention_score}</span>{" "}
-                    · {severityLabel(item.intervention_band)}
+                    {severityLabel(item.intervention_band)}
                   </span>
                   <span
                     className={`chip w-4 justify-center ${STATUS_CLS[item.status] ?? "chip-notr"}`}
@@ -333,8 +332,10 @@ export default function ReviewConsole({
                   </div>
                 )}
                 <div className="flex flex-wrap gap-1">
-                  <span className={`chip ${severityClass(open.intervention_band)}`}>
-                    öncelik <span className="font-mono">{open.intervention_score}</span> ·{" "}
+                  <span
+                    className={`chip ${severityClass(open.intervention_band)}`}
+                    title={`Müdahale önceliği ${open.intervention_score}/100`}
+                  >
                     {severityLabel(open.intervention_band)}
                   </span>
                   {open.risk !== "undetermined" && (

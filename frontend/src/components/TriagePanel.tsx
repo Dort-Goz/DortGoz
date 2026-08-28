@@ -257,9 +257,10 @@ export function PendingCard({
   const bandChip = (
     <span
       className={`chip shrink-0 ${severityClass(item.intervention_band)}`}
-      title={item.intervention_reasons.join("\n")}
+      title={[`Müdahale önceliği ${item.intervention_score}/100`,
+              ...item.intervention_reasons].join("\n")}
     >
-      <span className="font-mono">{item.intervention_score}</span> · {severityLabel(item.intervention_band)}
+      {severityLabel(item.intervention_band)}
     </span>
   );
   const extraChips = (item.sample || item.tekrar > 1) && (
@@ -319,16 +320,7 @@ export function PendingCard({
               {" · "}zirve <span className="font-mono text-zinc-400">{clock(item.t)}</span>
             </div>
           )}
-          <div className="mt-1 flex flex-wrap gap-1">
-            {bandChip}
-            {item.sample && <span className="chip chip-dusuk">denetim örneği</span>}
-            {item.tekrar > 1 && (
-              <span className="chip chip-notr"
-                    title="Aynı kameradan aynı sınıfta tekrar tespit — tek kartta birleştirildi">
-                ×<span className="font-mono">{item.tekrar}</span>
-              </span>
-            )}
-          </div>
+          {extraChips}
         </div>
       </div>
   );
@@ -406,7 +398,7 @@ export function PendingCard({
             poster={item.media_thumbnail_url ?? undefined}
             src={item.clip_url ?? item.evidence ?? undefined}
             className={modal
-              ? "mx-auto max-h-[46vh] w-full rounded-sm bg-black object-contain"
+              ? "mx-auto max-h-[62vh] w-full rounded-sm bg-black object-contain"
               : "mx-auto max-h-56 w-full max-w-lg rounded-sm bg-black object-contain"}
           >
             Tarayıcınız olay klibini oynatamıyor.
@@ -419,7 +411,7 @@ export function PendingCard({
   );
 
   const decisionBlock = !verdict ? (
-        <div className={`flex gap-1 ${modal ? "mx-auto max-w-md" : ""}`}>
+        <div className="flex gap-1">
           <button
             onClick={() => setVerdict("anomali")}
             className="btn btn-primary flex-1"
@@ -561,7 +553,11 @@ export function PendingCard({
   if (modal) {
     return (
       <div className="space-y-2 text-xs">
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(17rem,2fr)]">
+        <div className={`grid items-start gap-3 ${
+          evidenceBlock || reasonBlock
+            ? "lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]"
+            : ""
+        }`}>
           <div className="space-y-2">{mediaBlock}</div>
           <div className="space-y-2">
             {headerBlock}
@@ -971,6 +967,15 @@ export default function TriagePanel({
           subtitle={`${feedNames[openItem.feed] || openItem.feed || "ana akış"} · ${
             wallClock(openItem.wall)
           }`}
+          badge={(
+            <span
+              className={`chip shrink-0 ${severityClass(openItem.intervention_band)}`}
+              title={[`Müdahale önceliği ${openItem.intervention_score}/100`,
+                      ...openItem.intervention_reasons].join("\n")}
+            >
+              {severityLabel(openItem.intervention_band)}
+            </span>
+          )}
           onClose={() => setOpenKey("")}
           alerts={alertStack}
         >
