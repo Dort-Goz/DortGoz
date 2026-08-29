@@ -227,7 +227,7 @@ def test_sqlite_v8_uses_normalized_tables_and_persists_development_gate(
             "audit_log",
         } <= tables
         assert "repository_snapshot" not in tables
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 9
         assert connection.execute("SELECT COUNT(*) FROM human_reviews").fetchone()[0] == 1
         assert (
             connection.execute("SELECT COUNT(*) FROM maintenance_reviews").fetchone()[0]
@@ -396,7 +396,7 @@ def test_sqlite_v1_snapshot_is_migrated_without_deleting_rollback_data(
 
     migrated = SqliteEventRepository(database_path)
 
-    assert migrated.schema_version == 8
+    assert migrated.schema_version == 9
     assert migrated.get_video(VIDEO_ID) is not None
     assert migrated.get_event("event-offline-1") is not None
     with sqlite3.connect(database_path) as connection:
@@ -480,7 +480,7 @@ def test_sqlite_v2_database_adds_training_samples_without_losing_events(
 
     migrated = SqliteEventRepository(database_path)
 
-    assert migrated.schema_version == 8
+    assert migrated.schema_version == 9
     assert migrated.get_event("event-offline-1") is not None
     with sqlite3.connect(database_path) as connection:
         tables = {
@@ -736,3 +736,63 @@ def test_sqlite_training_sample_review_and_revocation_survive_restart(
         "training_sample_revoked",
         "training_sample_invalidated_by_review",
     }
+
+
+def test_duplicate_content_registers_as_own_video(tmp_path: Path) -> None:
+    database_path = tmp_path / "event_memory.sqlite3"
+    repository = SqliteEventRepository(database_path)
+    repository.create_video(_metadata())
+    duplicate_id = "00000000-0000-0000-0000-000000000201"
+    duplicate = _metadata().model_copy(
+        update={
+            "video_id": duplicate_id,
+            "stored_filename": f"{duplicate_id}.mp4",
+            "media_path": f"{duplicate_id}.mp4",
+        }
+    )
+
+    stored = repository.create_video(duplicate)
+
+    assert stored.video_id == duplicate_id
+    restarted = SqliteEventRepository(database_path)
+    assert restarted.get_video(VIDEO_ID) is not None
+    assert restarted.get_video(duplicate_id) is not None
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM videos").fetchone()[0] == 2
+
+
+def test_migration_drops_unique_hash_index(tmp_path: Path) -> None:
+    database_path = tmp_path / "event_memory.sqlite3"
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE videos (
+                video_id TEXT PRIMARY KEY,
+                file_hash_sha256 TEXT NOT NULL,
+                payload TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            "CREATE UNIQUE INDEX idx_videos_file_hash ON videos(file_hash_sha256)"
+        )
+        connection.execute("PRAGMA user_version = 8")
+
+    repository = SqliteEventRepository(database_path)
+    repository.create_video(_metadata())
+    duplicate_id = "00000000-0000-0000-0000-000000000202"
+    repository.create_video(
+        _metadata().model_copy(
+            update={
+                "video_id": duplicate_id,
+                "stored_filename": f"{duplicate_id}.mp4",
+                "media_path": f"{duplicate_id}.mp4",
+            }
+        )
+    )
+
+    assert repository.schema_version == 9
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM videos").fetchone()[0] == 2
+        unique_flags = connection.execute("PRAGMA index_list(videos)").fetchall()
+        assert all(row[2] == 0 for row in unique_flags if row[1] == "idx_videos_file_hash")

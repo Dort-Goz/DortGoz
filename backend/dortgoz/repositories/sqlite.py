@@ -27,7 +27,7 @@ from .errors import RepositoryConflictError, RepositoryError
 from .memory import InMemoryEventRepository
 
 _T = TypeVar("_T")
-_DATABASE_SCHEMA_VERSION = 8
+_DATABASE_SCHEMA_VERSION = 9
 _LEGACY_SNAPSHOT_VERSION = 1
 
 
@@ -67,6 +67,8 @@ class SqliteEventRepository(InMemoryEventRepository):
             raise RepositoryError(f"desteklenmeyen event store şeması: {current_version}")
         try:
             with self._connection:
+                if current_version < 9:
+                    self._connection.execute("DROP INDEX IF EXISTS idx_videos_file_hash")
                 self._connection.executescript(
                     """
                     CREATE TABLE IF NOT EXISTS videos (
@@ -74,7 +76,7 @@ class SqliteEventRepository(InMemoryEventRepository):
                         file_hash_sha256 TEXT NOT NULL,
                         payload TEXT NOT NULL
                     );
-                    CREATE UNIQUE INDEX IF NOT EXISTS idx_videos_file_hash
+                    CREATE INDEX IF NOT EXISTS idx_videos_file_hash
                         ON videos(file_hash_sha256);
 
                     CREATE TABLE IF NOT EXISTS analyses (
