@@ -15,7 +15,7 @@ kendi kendine yapılmaz.
 ## Teslim sunumu
 
 Güncel teslim dosyası:
-[`Dortgoz_Teslim_Sunumu_2026-08-28.pptx`](docs/contest/teslim/Dortgoz_Teslim_Sunumu_2026-08-28.pptx).
+[`DörtGöz_Sunumu.pptx`](docs/contest/teslim/DörtGöz_Sunumu.pptx).
 
 ## Uçtan uca akış
 
@@ -34,7 +34,13 @@ video / canlı akış
 herhangi bir OpenAI-uyumlu yerel uçta çalışır. Ayrıntı ve diyagram:
 [`docs/MIMARI.md`](docs/MIMARI.md).
 
-## Kurulum ve ilk çalıştırma
+## Kurulum ve çalıştırma
+
+Kurulum iki katmanlıdır: önce **arayüz test akışı** (model, GPU ve ffmpeg
+gerekmez), sonra **gerçek video analizi**. Yeni bir klon için önerilen yol
+`development` profilidir; değerlendirme profili (`competition-real`) ayrı bir
+başlıkta anlatılır. Ayrıntılı adımlar ve Windows notları:
+[`docs/SETUP.md`](docs/SETUP.md).
 
 ### Ön koşullar
 
@@ -43,11 +49,10 @@ herhangi bir OpenAI-uyumlu yerel uçta çalışır. Ayrıntı ve diyagram:
 | Git | depoyu klonlamak için |
 | [`uv`](https://docs.astral.sh/uv/) | backend Python 3.12 ortamını lock dosyasına göre kurar |
 | [Bun](https://bun.sh/) | konsolu derler ve çalıştırır |
-| `ffmpeg` + `ffprobe` | **yalnız gerçek video analizi için** |
+| Python 3 + `curl` | yalnız Adım 3-4'teki indirme betikleri için (`python` komutu sisteminizde `python3` olabilir) |
+| `ffmpeg` + `ffprobe` | yalnız gerçek video analizi için |
 
-Arayüz test akışı GPU, model ağırlığı ve ffmpeg istemez.
-
-### Adım 1 — arayüz test akışı (kurulum doğru mu?)
+### 1. Klonlayın ve arayüzü doğrulayın
 
 ```bash
 git clone https://github.com/Dort-Goz/DortGoz.git
@@ -55,15 +60,37 @@ cd DortGoz
 ./scripts/dev.sh                       # Windows: .\scripts\dev.ps1
 ```
 
-Konsol `http://localhost:5173` adresinde açılır. “Başlat” düğmesi kayıtlı bir
-örnek olay akışını oynatır. **Bu kip video analizi yapmaz**; yalnız arayüz olay
-sözleşmesini gösterir. Burası çalışıyorsa kurulum sağlandır.
+Başlatıcı bağımlılıkları kurar, API'yi (`http://localhost:8000`) ve konsolu
+(`http://localhost:5173`) açar. Konsoldaki “Başlat” düğmesi kayıtlı bir örnek
+olay akışını oynatır. **Bu kip video analizi yapmaz**; yalnız arayüz olay
+sözleşmesini gösterir. Burası çalışıyorsa kurulum sağlamdır. Durdurmak için
+`Ctrl+C` kullanın.
 
-Durdurmak için terminalde `Ctrl+C` kullanın.
+### 2. Çıkarım ucunu tanımlayın
 
-### Adım 2 — örnek video indirin
+```bash
+cp .env.example .env
+```
 
-Depoda video klibi yoktur. Gerçek analiz için `media/` klasörü dolu olmalıdır.
+`.env` içinde üç satırı doldurun:
+
+```ini
+DORTGOZ_MOCK=0
+DORTGOZ_LLAMA_BASE_URL=https://<openai-uyumlu-ucunuz>/v1
+DORTGOZ_API_KEY=<anahtarınız>
+```
+
+- Uç herhangi bir OpenAI-uyumlu servis olabilir: yarışmanın sağladığı EVREN,
+  yerel bir llama.cpp veya vLLM örneği. Bulut servisi kullanılmaz.
+- `DORTGOZ_API_KEY` boş bırakılamaz; anahtar istemeyen yerel bir uç için
+  herhangi bir değer yazın.
+- Model takma adları (`DORTGOZ_VIDEO_MODEL`, `DORTGOZ_MAIN_MODEL`, …) EVREN
+  adlarıyla önceden doludur. Başka bir uçta bunları `/v1/models` çıktısıyla
+  eşleştirin. Geçersiz bir ad hata vermez, sessizce varsayılana yönlenir.
+
+### 3. Örnek video indirin
+
+Depoda video klibi yoktur; gerçek analiz için `media/` klasörü dolu olmalıdır.
 
 ```bash
 python scripts/fetch_ucf_samples.py    # sabit örnek liste, herkese açık kaynak
@@ -72,135 +99,87 @@ python scripts/fetch_ucf_samples.py    # sabit örnek liste, herkese açık kayn
 Kendi videolarınızı da `media/` altına kopyalayabilir veya konsoldaki
 “Video yükle” düğmesini kullanabilirsiniz.
 
-### Adım 3 — yerel algı modellerini indirin
+### 4. Yerel algı modellerini indirin
 
-Model ağırlıkları depoya girmez. İki yerel bileşen vardır. İkisi de CPU'da
-çalışır; isteğe bağlı GPU yolu için [`docs/OLCEKLEME.md`](docs/OLCEKLEME.md)
-§4.2'ye bakın.
+Model ağırlıkları depoya girmez. İki yerel bileşen vardır; ikisi de CPU'da
+çalışır.
+
+**D-FINE dedektörü (41 MB):**
 
 ```bash
-./scripts/fetch_models.sh              # D-FINE dedektörü (41 MB)
+./scripts/fetch_models.sh
 ```
 
-Betik dosyayı `~/.cache/dortgoz/dfine/` altına koyar. Backend bu yolu kendisi
-bulur; ek ayar gerekmez.
+Betik dosyayı `~/.cache/dortgoz/dfine/` altına koyar; backend bu yolu kendisi
+bulur, ek ayar gerekmez.
 
-SigLIP-2 screening artifact'i (~355 MB) tek seferlik bir aktarım ister ve
-`torch` + `transformers` gerektirir. Bu paketler backend bağımlılıklarında
-yoktur; aktarımı ayrı bir sanal ortamda yapın:
+**SigLIP-2 screening artifact'i (~355 MB, isteğe bağlı):** tek seferlik bir
+aktarım ister ve `torch` + `transformers` gerektirir. Bu paketler backend
+bağımlılıklarında yoktur; aktarımı ayrı bir sanal ortamda yapın:
 
 ```bash
 python -m venv /tmp/siglip && /tmp/siglip/bin/pip install torch transformers onnxruntime numpy
 /tmp/siglip/bin/python scripts/export_siglip.py
 ```
 
-**Bu adım atlanabilir.** `development` profilinde screening artifact'i yoksa sistem
-hareket temelli bir temel modele düşer, izleme paneline `anlamsal screening
-düştü` satırını yazar ve koşmaya devam eder. Yalnız kalite düşer.
+Aktarım `models/semantic/local/` altına yazar ve depodaki
+`models/semantic/semantic-v1.json` ile `manifest.json` dosyalarını yeni
+hash'lerle günceller; bu iki dosyanın değişmiş görünmesi beklenen durumdur.
+Artifact yoksa sistem hareket temelli temel modele düşer, izleme paneline
+`anlamsal screening düştü` yazar ve koşmaya devam eder; yalnız kalite düşer.
 
-#### İsteğe bağlı: yerel algıyı GPU'da çalıştırın
+**GPU (isteğe bağlı):** NVIDIA CUDA veya AMD MIGraphX ile yerel algı süresi tam
+test bölmesinde 3.497 sn'den 389 sn'ye indi. Kurulum:
+[`docs/SETUP.md`](docs/SETUP.md) §3.4.
 
-SigLIP ve D-FINE varsayılan olarak CPU'da çalışır. GPU'nuz varsa açın — tam test
-bölmesinde yerel ayak **3.497 sn'den 389 sn'ye** indi.
+### 5. Gerçek analizi başlatın
 
-**NVIDIA (CUDA).** Önce GPU çalışma zamanını kurun:
-
-```bash
-cd backend && uv pip install onnxruntime-gpu nvidia-cudnn-cu12 nvidia-cublas-cu12 \
-  nvidia-cufft-cu12 nvidia-curand-cu12
-```
-
-Sonra `.env` içine yazın:
-
-```ini
-DORTGOZ_ONNX_DEVICE=auto     # varsa GPU, yoksa sessizce CPU
-# DORTGOZ_ONNX_DEVICE=gpu    # GPU iste; yoksa uyarı basıp CPU'ya döner
-```
-
-⚠ `uv sync --locked` bu kurulumu **geri alır** (kilit dosyasında CPU sürümü
-vardır). `./scripts/dev.sh real` sonrası tekrar kurun.
-
-**AMD (ROCm / MIGraphX).** ROCm ve `migraphx-driver` kurulu olmalıdır. Derleme tek
-seferliktir (D-FINE ~5,6 dk, SigLIP ~1,5 dk):
+İki terminal; backend `.env` dosyasını kendisi okur:
 
 ```bash
-./scripts/build_migraphx.sh
+cd backend && uv run uvicorn dortgoz.main:app --port 8000
+cd frontend && bun run dev
 ```
 
-Betik `~/.cache/dortgoz/migraphx/` altına `.mxr` dosyalarını ve bir manifest yazar,
-sonra `.env` satırını ekrana basar:
+Konsolda üst çubuktan bir kaynak seçin ve “Başlat”ı tıklayın. Liveness
+`/health`, readiness `/ready` yolundadır; `GET /ready` hangi bileşenin hazır
+olmadığını bileşen bileşen söyler. `development` profilinde eksik yerel bileşen
+uyarı verir, analizi durdurmaz.
 
-```ini
-DORTGOZ_MIGRAPHX_DIR=~/.cache/dortgoz/migraphx
-```
+### Değerlendirme profili: `competition-real`
 
-**Doğrulama.** Backend günlüğünde `MIGraphX siglip etkin` ve `MIGraphX dfine
-etkin` satırlarını arayın. `MIGraphX ... kullanılmıyor, CPU sürüyor` görürseniz
-GPU yolu kapalıdır; satır sebebi yazar.
+`.env` içinde `DORTGOZ_DEPLOYMENT_PROFILE=competition-real` eksik hiçbir bileşeni
+kabul etmez: `GET /ready` 503 döner ve analiz hiç başlamaz. Zorunlu koşullar:
 
-Seçenekler ve ölçümler: [`docs/SETUP.md`](docs/SETUP.md) §3.4 ve
-[`docs/OLCEKLEME.md`](docs/OLCEKLEME.md) §4.2.
+- Uç yalnız EVREN: yerel olmayan `https://` adres ve dolu `DORTGOZ_API_KEY`.
+- Model takma adları tam olarak `llm-fast`, `vlm`, `llm-large`, `router`,
+  `guard`, `bge-m3-embed`; hepsi `/v1/models` listesinde olmalı.
+- EVREN Qdrant kimliği: `DORTGOZ_QDRANT_URL` (`https://`), `DORTGOZ_QDRANT_PREFIX`,
+  `DORTGOZ_QDRANT_API_KEY`.
+- Yerel bileşenler: SigLIP artifact'i ve D-FINE için **hash doğrulamalı aktif
+  dağıtım manifesti** (`models/dfine/local/active_manifest.json`). Bu manifest
+  `fetch_models.sh` ile gelmez; dağıtım hattı (`scripts/dfine_feedback_training.py`)
+  üretir. **Yeni bir klonda `development` profilini kullanın.**
 
-### Adım 4 — çıkarım ucunu tanımlayın
-
-```bash
-cp .env.example .env
-```
-
-`.env` içinde en az şunları doldurun:
-
-```ini
-DORTGOZ_MOCK=0
-DORTGOZ_LLAMA_BASE_URL=https://<openai-uyumlu-ucunuz>/v1
-DORTGOZ_API_KEY=<anahtarınız>
-```
-
-Model takma adları (`DORTGOZ_VIDEO_MODEL`, `DORTGOZ_MAIN_MODEL`, …) ucunuzun
-`/v1/models` çıktısındaki adlarla eşleşmelidir. **Uyarı:** geçersiz bir ad hata
-vermez, sessizce varsayılana yönlenir.
-
-Uç herhangi bir OpenAI-uyumlu servis olabilir: yarışmanın sağladığı EVREN, yerel
-bir llama.cpp veya vLLM örneği. Bulut servisi kullanılmaz.
-
-### Adım 5 — gerçek analizi başlatın
+Başlatma — preflight bu koşulları denetler; geçmeden gerçek profil açılmaz:
 
 ```bash
 cd backend && uv run python ../scripts/preflight.py --root .. --mode real --check-tools && cd ..
 ./scripts/dev.sh real                  # Windows: .\scripts\dev.ps1 -Real
 ```
 
-Preflight geçmeden uygulama gerçek profili açmaz. Bu bilinçli bir güvenlik
-kapısıdır.
-
-Konsolda üst çubuktan bir kaynak seçin ve “Başlat”ı tıklayın. API
-`http://localhost:8000`, liveness `/health`, readiness `/ready` yolundadır.
-
-### İki dağıtım profili
-
-| Profil | Ne yapar | Ne zaman kullanılır |
-|---|---|---|
-| `development` (varsayılan) | Eksik yerel bileşen varsa uyarıp düşer, koşmaya devam eder | Geliştirme, deneme, **yeni klon** |
-| `competition-real` | D-FINE dağıtımını, SigLIP artifact'ini, prosedür manifestini ve uç kimliğini **zorunlu** sayar; eksikse analiz hiç başlamaz | Değerlendirme koşusu |
-
-Profil `.env` içinde `DORTGOZ_DEPLOYMENT_PROFILE` ile seçilir. Hangi bileşenin
-hazır olmadığını `GET /ready` çıktısı bileşen bileşen söyler.
-
-⚠ `competition-real`, D-FINE için yalnız ONNX dosyasını değil, model kaydından
-üretilmiş **hash doğrulamalı bir aktif dağıtım manifesti** ister
-(`models/dfine/local/active_manifest.json`). Bu manifest `fetch_models.sh` ile
-gelmez; dağıtım hattı (`scripts/dfine_feedback_training.py`) tarafından bir kez
-üretilir. **Yeni bir klonda `development` profilini kullanın.**
-
-Adım adım temiz kurulum ve uzaktan erişim: [`docs/SETUP.md`](docs/SETUP.md).
+`dev.sh real` ve `dev.ps1 -Real` profili her zaman `competition-real` olarak zorlar.
 
 ### Sık karşılaşılan durumlar
 
 | Belirti | Sebep ve çözüm |
 |---|---|
-| Kaynak listesi boş | `media/` boş. Adım 2'yi çalıştırın |
-| `competition-real analiz kapısı kapalı` | Zorunlu bir yerel bileşen eksik. `GET /ready` hangisi olduğunu söyler |
-| İzlemede `dedektör kapatıldı` | D-FINE ONNX bulunamadı. Adım 3'ü çalıştırın veya `DORTGOZ_DFINE_ONNX` yolunu düzeltin |
-| İzlemede `anlamsal screening düştü` | SigLIP artifact'i yok. Sistem temel modele düştü, koşu geçerlidir |
+| Kaynak listesi boş | `media/` boş. Adım 3'ü çalıştırın |
+| Günlükte `Missing credentials` | `DORTGOZ_API_KEY` boş. Anahtarsız yerel uç için herhangi bir değer yazın |
+| İzlemede `dedektör kapatıldı` | D-FINE ONNX yok. Adım 4'ü çalıştırın veya `DORTGOZ_DFINE_ONNX` yolunu düzeltin |
+| İzlemede `anlamsal screening düştü` | SigLIP artifact'i yok. Sistem temel modele düştü; koşu geçerlidir |
+| `competition-real analiz kapısı kapalı` | Zorunlu bir bileşen eksik. `GET /ready` hangisi olduğunu söyler |
+| Preflight `competition-real olmalı` / `QDRANT … zorunlu` | `dev.sh real` yalnız değerlendirme profili içindir. `development` için Adım 5'i kullanın |
 | Konsol tamamen boş | Vite proxy `127.0.0.1` kullanmalıdır; `localhost` bazı Node sürümlerinde IPv6'ya çözülür |
 
 ## Doğrulama
@@ -234,7 +213,8 @@ kaynaklardan indirilir:
 
 - **UCF-Crime** — resmî sayfa: <https://www.crcv.ucf.edu/projects/real-world/>.
   Geliştirmede kullanılan sabit örnek klip listesi ve indirme:
-  `python scripts/fetch_ucf_samples.py`.
+  `python scripts/fetch_ucf_samples.py` (klipleri Hugging Face'teki
+  `backseollgi/UCF-Crime` aynasından çeker).
 - **UCA (UCF-Crime Annotation)** — kaynak:
   <https://github.com/Xuange923/Surveillance-Video-Understanding>. İndirme ve
   SHA-256 doğrulama: `python scripts/fetch_uca.py`. Atıf:

@@ -56,6 +56,7 @@ async def test_dense_sync_and_query_keep_verified_citations(
         return {}
 
     monkeypatch.setattr(procedure_rag, "create_embedding", fake_embedding)
+    monkeypatch.setattr(procedure_rag, "main_client", lambda: None)
     service = EvrenProcedureRag(index, rag_settings, transport=transport)
 
     hits = await service.query("Kritik olayda ne yapmalıyım?")
@@ -94,6 +95,7 @@ async def test_query_drops_unverified_qdrant_payload(
         return {}
 
     monkeypatch.setattr(procedure_rag, "create_embedding", fake_embedding)
+    monkeypatch.setattr(procedure_rag, "main_client", lambda: None)
     service = EvrenProcedureRag(index, rag_settings, transport=transport)
 
     assert await service.query("soru") == []

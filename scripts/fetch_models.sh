@@ -16,4 +16,8 @@ for f in onnx/model.onnx config.json preprocessor_config.json; do
 done
 
 echo
-echo "Tamam. .env için:  DORTGOZ_DFINE_ONNX=$DEST/model.onnx"
+if [ "$DEST" = "$HOME/.cache/dortgoz/dfine" ]; then
+  echo "Tamam. Backend bu yolu kendisi bulur; .env ayarı gerekmez."
+else
+  echo "Tamam. .env için:  DORTGOZ_DFINE_ONNX=$DEST/model.onnx"
+fi
